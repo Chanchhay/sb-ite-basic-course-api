@@ -1,6 +1,5 @@
 package kh.edu.istad.ite.features.business.service;
 
-import kh.edu.istad.ite.config.security.SecurityUtils;
 import kh.edu.istad.ite.features.business.dto.BusinessCurrencyConfigurationResponse;
 import kh.edu.istad.ite.features.business.dto.BusinessCurrencyResponse;
 import kh.edu.istad.ite.features.business.dto.CreateBusinessCurrencyRequest;
@@ -10,6 +9,8 @@ import kh.edu.istad.ite.features.business.entity.BusinessCurrency;
 import kh.edu.istad.ite.features.business.mapper.BusinessMapper;
 import kh.edu.istad.ite.features.business.repository.BusinessCurrencyRepository;
 import kh.edu.istad.ite.features.business.repository.BusinessRepository;
+import kh.edu.istad.ite.shared.helper.BusinessHelper;
+import kh.edu.istad.ite.shared.helper.TextHelper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
@@ -34,6 +35,7 @@ public class BusinessCurrencyServiceImpl implements BusinessCurrencyService {
     private final BusinessRepository businessRepository;
     private final BusinessCurrencyRepository businessCurrencyRepository;
     private final BusinessMapper businessMapper;
+    private final BusinessHelper businessHelper;
 
     @Override
     @Transactional
@@ -41,7 +43,7 @@ public class BusinessCurrencyServiceImpl implements BusinessCurrencyService {
             UUID businessId,
             CreateBusinessCurrencyRequest request
     ) {
-        Business business = findOwnedBusiness(businessId);
+        Business business = businessHelper.findOwnedBusiness(businessId);
         String code = normalizeCode(request.code());
 
         if (businessCurrencyRepository.existsByBusinessIdAndCodeIgnoreCase(businessId, code)) {
@@ -51,8 +53,8 @@ public class BusinessCurrencyServiceImpl implements BusinessCurrencyService {
         BusinessCurrency currency = new BusinessCurrency();
         currency.setBusiness(business);
         currency.setCode(code);
-        currency.setName(request.name().trim());
-        currency.setSymbol(request.symbol().trim());
+        currency.setName(TextHelper.trimRequired(request.name(), "Currency name cannot be empty"));
+        currency.setSymbol(TextHelper.trimRequired(request.symbol(), "Currency symbol cannot be empty"));
         currency.setExchangeRate(normalizeExchangeRate(request.exchangeRate()));
         currency.setDecimalPlaces(validateDecimalPlaces(request.decimalPlaces()));
 
@@ -68,14 +70,14 @@ public class BusinessCurrencyServiceImpl implements BusinessCurrencyService {
     @Override
     @Transactional(readOnly = true)
     public BusinessCurrencyConfigurationResponse findAllCurrencies(UUID businessId) {
-        Business business = findOwnedBusiness(businessId);
+        Business business = businessHelper.findOwnedBusiness(businessId);
         return latestConfiguration(business);
     }
 
     @Override
     @Transactional(readOnly = true)
     public BusinessCurrencyResponse findCurrencyByCode(UUID businessId, String code) {
-        Business business = findOwnedBusiness(businessId);
+        Business business = businessHelper.findOwnedBusiness(businessId);
         BusinessCurrency currency = findCurrency(businessId, code);
         return businessMapper.toCurrencyResponse(
                 currency,
@@ -91,14 +93,14 @@ public class BusinessCurrencyServiceImpl implements BusinessCurrencyService {
             String code,
             UpdateBusinessCurrencyRequest request
     ) {
-        Business business = findOwnedBusiness(businessId);
+        Business business = businessHelper.findOwnedBusiness(businessId);
         BusinessCurrency currency = findCurrency(businessId, code);
 
         if (request.name() != null) {
-            currency.setName(trimRequired(request.name(), "Currency name cannot be empty"));
+            currency.setName(TextHelper.trimRequired(request.name(), "Currency name cannot be empty"));
         }
         if (request.symbol() != null) {
-            currency.setSymbol(trimRequired(request.symbol(), "Currency symbol cannot be empty"));
+            currency.setSymbol(TextHelper.trimRequired(request.symbol(), "Currency symbol cannot be empty"));
         }
         if (request.decimalPlaces() != null) {
             currency.setDecimalPlaces(validateDecimalPlaces(request.decimalPlaces()));
@@ -123,7 +125,7 @@ public class BusinessCurrencyServiceImpl implements BusinessCurrencyService {
     @Override
     @Transactional
     public BusinessCurrencyConfigurationResponse setDisplayCurrency(UUID businessId, String code) {
-        Business business = findOwnedBusiness(businessId);
+        Business business = businessHelper.findOwnedBusiness(businessId);
         BusinessCurrency currency = findCurrency(businessId, code);
 
         business.setDisplayCurrency(currency.getCode());
@@ -135,7 +137,7 @@ public class BusinessCurrencyServiceImpl implements BusinessCurrencyService {
     @Override
     @Transactional
     public BusinessCurrencyConfigurationResponse setBaseCurrency(UUID businessId, String code) {
-        Business business = findOwnedBusiness(businessId);
+        Business business = businessHelper.findOwnedBusiness(businessId);
         BusinessCurrency newBaseCurrency = findCurrency(businessId, code);
 
         if (newBaseCurrency.getCode().equalsIgnoreCase(business.getBaseCurrency())) {
@@ -166,7 +168,7 @@ public class BusinessCurrencyServiceImpl implements BusinessCurrencyService {
     @Override
     @Transactional
     public BusinessCurrencyConfigurationResponse removeCurrency(UUID businessId, String code) {
-        Business business = findOwnedBusiness(businessId);
+        Business business = businessHelper.findOwnedBusiness(businessId);
         BusinessCurrency currency = findCurrency(businessId, code);
 
         if (currency.getCode().equalsIgnoreCase(business.getBaseCurrency())) {
@@ -183,18 +185,6 @@ public class BusinessCurrencyServiceImpl implements BusinessCurrencyService {
         businessCurrencyRepository.flush();
 
         return latestConfiguration(business);
-    }
-
-    private Business findOwnedBusiness(UUID businessId) {
-        UUID keycloakUserId = UUID.fromString(SecurityUtils.extractUserId());
-        Business business = businessRepository.findById(businessId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Business has not been found"));
-
-        if (!business.getKeycloakUserId().equals(keycloakUserId)) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You have been forbidden");
-        }
-
-        return business;
     }
 
     private BusinessCurrency findCurrency(UUID businessId, String code) {
@@ -233,11 +223,4 @@ public class BusinessCurrencyServiceImpl implements BusinessCurrencyService {
         return decimalPlaces;
     }
 
-    private String trimRequired(String value, String message) {
-        if (!StringUtils.hasText(value)) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, message);
-        }
-
-        return value.trim();
-    }
 }
