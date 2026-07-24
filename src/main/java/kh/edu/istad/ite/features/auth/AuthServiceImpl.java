@@ -30,6 +30,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 
 @Service
 @Slf4j
@@ -145,7 +146,7 @@ public class AuthServiceImpl implements AuthService{
 
     private void saveUserProfile(String createdUserId, RegisterRequest registerRequest) {
         UserProfile userProfile = new UserProfile();
-        userProfile.setUserId(createdUserId);
+        userProfile.setUserId(UUID.fromString(createdUserId));
         userProfile.setPhoneNumber(registerRequest.phoneNumber());
         userProfile.setGender(registerRequest.gender());
         userProfileRepository.save(userProfile);

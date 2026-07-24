@@ -4,6 +4,8 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
+import java.util.UUID;
+
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
@@ -24,8 +26,8 @@ import kh.edu.istad.ite.features.catalog.entity.Product;
 public class StockLevel {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
+    @GeneratedValue(strategy = GenerationType.UUID)
+    private UUID id;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "business_owner_id")
@@ -36,5 +38,5 @@ public class StockLevel {
     private Product product;
 
     @Column(name = "location_id")
-    private Long locationId;
+    private UUID locationId;
 }

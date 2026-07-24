@@ -1,20 +1,24 @@
 package kh.edu.istad.ite.features.business.entity;
 
 import jakarta.persistence.*;
+import kh.edu.istad.ite.config.audit.BasedAuditingEntity;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+
+import java.util.UUID;
 
 @Entity
 @Getter
 @Setter
 @NoArgsConstructor
 @Table(name = "business_categories")
-public class BusinessCategory {
+public class BusinessCategory extends BasedAuditingEntity {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
+    @GeneratedValue(strategy = GenerationType.UUID)
+    @Column(nullable = false, updatable = false)
+    private UUID id;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "parent_id", foreignKey = @ForeignKey(name = "fk_business_categories_parent"))

@@ -4,6 +4,8 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
+import java.util.UUID;
+
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
@@ -24,8 +26,8 @@ import kh.edu.istad.ite.features.customer.entity.Customer;
 public class BotSession {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
+    @GeneratedValue(strategy = GenerationType.UUID)
+    private UUID id;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "business_owner_id")
@@ -36,5 +38,5 @@ public class BotSession {
     private Customer customer;
 
     @Column(name = "cart_id")
-    private Long cartId;
+    private UUID cartId;
 }

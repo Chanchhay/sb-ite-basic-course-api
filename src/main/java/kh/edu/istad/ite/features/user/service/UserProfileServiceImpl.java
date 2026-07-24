@@ -16,6 +16,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.util.UUID;
+
 @Service
 @RequiredArgsConstructor
 @Slf4j
@@ -31,6 +33,7 @@ public class UserProfileServiceImpl implements UserProfileService {
     public UserProfileResponse updateProfile(UpdateUserProfileRequest updateUserProfileRequest) {
         // Get current logged in userId
         String userId = SecurityUtils.extractUserId();
+        UUID userUuid = UUID.fromString(userId);
 
         // Update profile in Keycloak
         UserResource userResource = keycloak
@@ -45,7 +48,7 @@ public class UserProfileServiceImpl implements UserProfileService {
         userResource.update(userRepresentation);
 
         // Update profile in Database
-        UserProfile userProfile = userProfileRepository.findById(userId)
+        UserProfile userProfile = userProfileRepository.findById(userUuid)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User profile has not been found"));
         userProfileMapper.mapUpdateUserProfileRequestToUserProfile(
                 updateUserProfileRequest,
@@ -64,13 +67,14 @@ public class UserProfileServiceImpl implements UserProfileService {
     public UserProfileResponse me() {
         // 1. Profile from Keycloak by userId
         String userId = SecurityUtils.extractUserId();
+        UUID userUuid = UUID.fromString(userId);
         UserRepresentation keycloakUser = keycloak.realm(props.getTargetRealm())
                 .users()
                 .get(userId)
                 .toRepresentation();
 
         // 2. Profile from Database by userId
-        UserProfile userProfile = userProfileRepository.findById(userId)
+        UserProfile userProfile = userProfileRepository.findById(userUuid)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User profile has not been found"));
 
         return userProfileMapper.toUserProfileResponse(keycloakUser, userProfile);
