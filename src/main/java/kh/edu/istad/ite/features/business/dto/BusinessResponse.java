@@ -26,7 +26,7 @@ public record BusinessResponse(
         Boolean isEnabled,
         Boolean isListing,
         Boolean isClosed,
-        BusinessCategoryResponse category,
+        BusinessSubCategoryResponse category,
         String baseCurrency,
         String displayCurrency,
         List<Map<String, String>> socialLinks

@@ -20,12 +20,8 @@ public class BusinessCategory extends BasedAuditingEntity {
     @Column(nullable = false, updatable = false)
     private UUID id;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "parent_id", foreignKey = @ForeignKey(name = "fk_business_categories_parent"))
-    private BusinessCategory parent;
-
-    @Column(nullable = false)
-    private Short level = 1;
+    @ManyToOne
+    private BusinessCategory parentCategory;
 
     @Column(nullable = false, length = 150)
     private String name;

@@ -41,7 +41,7 @@ public class BusinessServiceImpl implements BusinessService {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Business already exists for current user");
         }
 
-        BusinessCategory category = findCategory(UUID.fromString(request.categoryId()));
+        BusinessCategory category = findSelectableCategory(UUID.fromString(request.categoryId()));
 
         Business business = new Business();
         business.setKeycloakUserId(keycloakUserId);
@@ -88,7 +88,7 @@ public class BusinessServiceImpl implements BusinessService {
         }
 
         if (request.categoryId() != null) {
-            business.setBusinessCategory(findCategory(UUID.fromString(request.categoryId())));
+            business.setBusinessCategory(findSelectableCategory(UUID.fromString(request.categoryId())));
         }
 
         if (StringUtils.hasText(request.email())) {
@@ -142,9 +142,15 @@ public class BusinessServiceImpl implements BusinessService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Business has not been found"));
     }
 
-    private BusinessCategory findCategory(UUID categoryId) {
-        return businessCategoryRepository.findById(categoryId)
+    private BusinessCategory findSelectableCategory(UUID categoryId) {
+        BusinessCategory category = businessCategoryRepository.findById(categoryId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Business category has not been found"));
+
+        if (category.getParentCategory() == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Business category must be a sub category");
+        }
+
+        return category;
     }
 
     private UUID currentUserId() {
