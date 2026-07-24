@@ -1,0 +1,38 @@
+spring:
+
+  scalar:
+    url: ${SERVER_URL:localhost://8080}/v3/api-docs
+    path: /docs
+    enabled: true
+
+  application:
+    name: ite-sb-api
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${ISSUER_URI}
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+
+
+  datasource:
+    driver-class-name: org.postgresql.Driver
+    url: jdbc:postgresql://${PGHOST:localhost}:${PGPORT:5432}/${PGDATABASE:ipos_db}
+    username: ${DB_USER}
+    password: ${DB_PASS}
+
+keycloak:
+  admin:
+    server-url: ${KEYCLOAK_URL}
+    client-id: ${KEYCLOAK_CLIENT_ID}
+    client-secret: ${KEYCLOAK_CLIENT_SECRET}
+    realm: master
+    target-realm: ${TARGET_REALM}
+    send-verification-email: false

@@ -1,14 +1,16 @@
-spring:
-  application:
-    name: ite-sb-api
-  jpa:
-    hibernate:
-      ddl-auto: update
+#spring:
+#  application:
+#    name: ite-sb-api
+#  jpa:
+#    hibernate:
+#      ddl-auto: update
+#
+#  datasource:
+#    driver-class-name: org.postgresql.Driver
+#    url: ${DB_URL}
+#    username: ${DB_USER}
+#    password: ${DB_PASS}
 
-  datasource:
-    driver-class-name: org.postgresql.Driver
-    url: ${DB_URL}
-    username: ${DB_USER}
-    password: ${DB_PASS}
+spring:
   profiles:
     active: dev
