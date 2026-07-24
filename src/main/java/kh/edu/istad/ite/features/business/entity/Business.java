@@ -93,13 +93,26 @@ public class Business extends BasedAuditingEntity {
     )
     private BusinessCategory businessCategory;
 
-    @Column(name = "base_currency", nullable = false, length = 10)
-    private String baseCurrency = "USD";
-
-    @Column(name = "display_currency", length = 10)
-    private String displayCurrency = "KHR";
+    @OneToMany(mappedBy = "business", cascade = CascadeType.ALL, orphanRemoval = true)
+    @OrderBy("code ASC")
+    private List<BusinessCurrency> currencies = new ArrayList<>();
 
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "social_links", columnDefinition = "jsonb")
     private List<Map<String, String>> socialLinks = new ArrayList<>();
+
+    @Column(
+            name = "base_currency",
+            nullable = false,
+            length = 10,
+            columnDefinition = "varchar(10) default 'USD'"
+    )
+    private String baseCurrency = "USD";
+
+    @Column(
+            name = "display_currency",
+            length = 10,
+            columnDefinition = "varchar(10) default 'USD'"
+    )
+    private String displayCurrency = "USD";
 }

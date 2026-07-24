@@ -1,11 +1,12 @@
 package kh.edu.istad.ite.features.catalog.dto;
 
+import java.math.BigDecimal;
 import java.util.UUID;
 
-public record UnitResponse(
+public record ProductVariantResponse(
         UUID id,
-        String name,
         String slug,
-        String note
+        String name,
+        BigDecimal price
 ) {
 }

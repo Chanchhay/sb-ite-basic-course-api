@@ -1,16 +1,20 @@
 package kh.edu.istad.ite.features.business.service;
 
-import kh.edu.istad.ite.config.security.SecurityUtils;
 import kh.edu.istad.ite.features.business.dto.BusinessResponse;
 import kh.edu.istad.ite.features.business.dto.CreateBusinessRequest;
 import kh.edu.istad.ite.features.business.dto.SocialLinkRequest;
 import kh.edu.istad.ite.features.business.dto.UpdateBusinessRequest;
 import kh.edu.istad.ite.features.business.entity.Business;
 import kh.edu.istad.ite.features.business.entity.BusinessCategory;
+import kh.edu.istad.ite.features.business.entity.BusinessCurrency;
 import kh.edu.istad.ite.features.business.mapper.BusinessMapper;
 import kh.edu.istad.ite.features.business.repository.BusinessCategoryRepository;
 import kh.edu.istad.ite.features.business.repository.BusinessRepository;
 import kh.edu.istad.ite.shared.enums.BusinessOwnerStatus;
+import kh.edu.istad.ite.shared.helper.AuthHelper;
+import kh.edu.istad.ite.shared.helper.BusinessHelper;
+import kh.edu.istad.ite.shared.helper.SlugHelper;
+import kh.edu.istad.ite.shared.helper.TextHelper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -18,10 +22,9 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import org.springframework.web.server.ResponseStatusException;
 
-import java.text.Normalizer;
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 
@@ -29,32 +32,40 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class BusinessServiceImpl implements BusinessService {
 
+    private static final int SLUG_MAX_LENGTH = 63;
+    private static final String SLUG_FALLBACK = "business";
+
     private final BusinessRepository businessRepository;
     private final BusinessCategoryRepository businessCategoryRepository;
     private final BusinessMapper businessMapper;
+    private final BusinessHelper businessHelper;
 
     @Override
     @Transactional
     public BusinessResponse createBusiness(CreateBusinessRequest request) {
-        UUID keycloakUserId = currentUserId();
+        UUID keycloakUserId = AuthHelper.currentUserId();
         if (businessRepository.existsByKeycloakUserId(keycloakUserId)) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Business already exists for current user");
         }
 
+        String name = TextHelper.trimRequired(request.name(), "name cannot be empty");
         BusinessCategory category = findSelectableCategory(UUID.fromString(request.categoryId()));
 
         Business business = new Business();
         business.setKeycloakUserId(keycloakUserId);
-        business.setDisplayName(request.name().trim());
-        business.setSlug(generateUniqueSlug(request.name(), null));
-        business.setBusinessEmail(request.email().trim());
-        business.setAddress(request.address().trim());
+        business.setDisplayName(name);
+        business.setSlug(generateUniqueSlug(name, null));
+        business.setBusinessEmail(TextHelper.trimRequired(request.email(), "email cannot be empty"));
+        business.setAddress(TextHelper.trimRequired(request.address(), "address cannot be empty"));
         business.setBusinessCategory(category);
         business.setProvisionedAt(LocalDateTime.now());
         business.setStatus(BusinessOwnerStatus.ACTIVE);
         business.setIsEnabled(true);
         business.setIsListing(false);
         business.setIsClosed(false);
+        business.setBaseCurrency("USD");
+        business.setDisplayCurrency("USD");
+        business.getCurrencies().add(createDefaultCurrency(business));
 
         return businessMapper.toResponse(businessRepository.save(business));
     }
@@ -62,7 +73,7 @@ public class BusinessServiceImpl implements BusinessService {
     @Override
     @Transactional(readOnly = true)
     public BusinessResponse getMyBusiness() {
-        UUID keycloakUserId = currentUserId();
+        UUID keycloakUserId = AuthHelper.currentUserId();
         Business business = businessRepository.findByKeycloakUserId(keycloakUserId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Business has not been found"));
         return businessMapper.toResponse(business);
@@ -71,13 +82,13 @@ public class BusinessServiceImpl implements BusinessService {
     @Override
     @Transactional(readOnly = true)
     public BusinessResponse getBusiness(UUID businessId) {
-        return businessMapper.toResponse(findOwnedBusiness(businessId));
+        return businessMapper.toResponse(businessHelper.findOwnedBusinessOrNotFound(businessId));
     }
 
     @Override
     @Transactional
     public BusinessResponse updateBusiness(UUID businessId, UpdateBusinessRequest request) {
-        Business business = findOwnedBusiness(businessId);
+        Business business = businessHelper.findOwnedBusinessOrNotFound(businessId);
 
         if (StringUtils.hasText(request.name())) {
             String trimmedName = request.name().trim();
@@ -98,25 +109,25 @@ public class BusinessServiceImpl implements BusinessService {
             business.setAddress(request.address().trim());
         }
         if (request.logo() != null) {
-            business.setLogo(trimToNull(request.logo()));
+            business.setLogo(TextHelper.trimToNull(request.logo()));
         }
         if (request.thumbnail() != null) {
-            business.setThumbnail(trimToNull(request.thumbnail()));
+            business.setThumbnail(TextHelper.trimToNull(request.thumbnail()));
         }
         if (request.about() != null) {
-            business.setAbout(trimToNull(request.about()));
+            business.setAbout(TextHelper.trimToNull(request.about()));
         }
         if (request.phoneNumber() != null) {
-            business.setPhoneNumber(trimToNull(request.phoneNumber()));
+            business.setPhoneNumber(TextHelper.trimToNull(request.phoneNumber()));
         }
         if (request.googleMap() != null) {
-            business.setGoogleMap(trimToNull(request.googleMap()));
+            business.setGoogleMap(TextHelper.trimToNull(request.googleMap()));
         }
         if (request.cityOrProvince() != null) {
-            business.setCityOrProvince(trimToNull(request.cityOrProvince()));
+            business.setCityOrProvince(TextHelper.trimToNull(request.cityOrProvince()));
         }
         if (request.website() != null) {
-            business.setWebsite(trimToNull(request.website()));
+            business.setWebsite(TextHelper.trimToNull(request.website()));
         }
         if (request.socialLinks() != null) {
             business.setSocialLinks(toSocialLinkMaps(request.socialLinks()));
@@ -128,18 +139,12 @@ public class BusinessServiceImpl implements BusinessService {
     @Override
     @Transactional
     public BusinessResponse deleteBusiness(UUID businessId) {
-        Business business = findOwnedBusiness(businessId);
+        Business business = businessHelper.findOwnedBusinessOrNotFound(businessId);
         business.setStatus(BusinessOwnerStatus.DELETED);
         business.setIsEnabled(false);
         business.setIsListing(false);
 
         return businessMapper.toResponse(businessRepository.save(business));
-    }
-
-    private Business findOwnedBusiness(UUID businessId) {
-        UUID keycloakUserId = currentUserId();
-        return businessRepository.findByIdAndKeycloakUserId(businessId, keycloakUserId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Business has not been found"));
     }
 
     private BusinessCategory findSelectableCategory(UUID categoryId) {
@@ -153,23 +158,24 @@ public class BusinessServiceImpl implements BusinessService {
         return category;
     }
 
-    private UUID currentUserId() {
-        return UUID.fromString(SecurityUtils.extractUserId());
+    private BusinessCurrency createDefaultCurrency(Business business) {
+        BusinessCurrency currency = new BusinessCurrency();
+        currency.setBusiness(business);
+        currency.setCode("USD");
+        currency.setName("United States Dollar");
+        currency.setExchangeRate(BigDecimal.ONE.setScale(8));
+        currency.setSymbol("$");
+        currency.setDecimalPlaces((short) 2);
+        return currency;
     }
 
     private String generateUniqueSlug(String name, UUID excludedBusinessId) {
-        String baseSlug = toSlugBase(name);
-        String candidate = baseSlug;
-        int suffix = 1;
-
-        while (slugExists(candidate, excludedBusinessId)) {
-            String suffixText = "-" + suffix;
-            int baseMaxLength = 63 - suffixText.length();
-            candidate = baseSlug.substring(0, Math.min(baseSlug.length(), baseMaxLength)).replaceAll("-$", "") + suffixText;
-            suffix++;
-        }
-
-        return candidate;
+        return SlugHelper.generateUniqueSlug(
+                name,
+                SLUG_FALLBACK,
+                SLUG_MAX_LENGTH,
+                slug -> slugExists(slug, excludedBusinessId)
+        );
     }
 
     private boolean slugExists(String slug, UUID excludedBusinessId) {
@@ -180,33 +186,11 @@ public class BusinessServiceImpl implements BusinessService {
         return businessRepository.existsBySlugAndIdNot(slug, excludedBusinessId);
     }
 
-    private String toSlugBase(String value) {
-        String normalized = Normalizer.normalize(value, Normalizer.Form.NFD)
-                .replaceAll("\\p{M}", "")
-                .toLowerCase(Locale.ROOT)
-                .replaceAll("[^a-z0-9]+", "-")
-                .replaceAll("(^-|-$)", "");
-
-        if (!StringUtils.hasText(normalized)) {
-            return "business";
-        }
-
-        return normalized.length() > 63 ? normalized.substring(0, 63).replaceAll("-$", "") : normalized;
-    }
-
-    private String trimToNull(String value) {
-        if (!StringUtils.hasText(value)) {
-            return null;
-        }
-
-        return value.trim();
-    }
-
     private List<Map<String, String>> toSocialLinkMaps(List<SocialLinkRequest> socialLinks) {
         return socialLinks.stream()
                 .map(socialLink -> Map.of(
-                        "platform", socialLink.platform().trim(),
-                        "url", socialLink.url().trim()
+                        "platform", TextHelper.trimRequired(socialLink.platform(), "platform cannot be empty"),
+                        "url", TextHelper.trimRequired(socialLink.url(), "url cannot be empty")
                 ))
                 .toList();
     }
