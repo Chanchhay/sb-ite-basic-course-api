@@ -6,6 +6,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import kh.edu.istad.ite.config.audit.BasedAuditingEntity;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -27,7 +28,7 @@ public class Unit {
     @Column(nullable = false, length = 50)
     private String name;
 
-    @Column(nullable = false, length = 250)
+    @Column(nullable = false, unique = true, length = 250)
     private String slug;
 
     @Column(length = 255)

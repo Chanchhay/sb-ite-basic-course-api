@@ -45,6 +45,7 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.GET, "/api/v1/units", "/api/v1/units/**").permitAll()
                 .requestMatchers("/api/v1/units", "/api/v1/units/**").hasRole("SUPER_ADMIN")
                 .requestMatchers("/api/v1/businesses", "/api/v1/businesses/**").hasRole("BUSINESS")
+                .requestMatchers("/api/v1/admin/**").hasRole("SUPER_ADMIN")
                 .anyRequest().authenticated());
 
         return http.build();

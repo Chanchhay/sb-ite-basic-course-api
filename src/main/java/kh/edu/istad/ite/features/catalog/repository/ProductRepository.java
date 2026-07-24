@@ -9,6 +9,7 @@ import java.util.UUID;
 
 public interface ProductRepository extends JpaRepository<Product, UUID> {
 
+    boolean existsByUnit_Id(UUID unitId);
     List<Product> findAllByBusinessIdOrderByNameAsc(UUID businessId);
 
     Optional<Product> findByIdAndBusinessId(UUID id, UUID businessId);

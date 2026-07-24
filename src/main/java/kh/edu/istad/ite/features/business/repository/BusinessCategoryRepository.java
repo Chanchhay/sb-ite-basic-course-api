@@ -11,4 +11,10 @@ public interface BusinessCategoryRepository extends JpaRepository<BusinessCatego
     List<BusinessCategory> findByParentCategoryIsNullOrderByNameAsc();
 
     List<BusinessCategory> findByParentCategoryIsNotNullOrderByNameAsc();
+
+    boolean existsBySlug(String slug);
+
+    boolean existsBySlugAndIdNot(String slug, UUID id);
+
+    long countByParentCategory_Id(UUID parentCategoryId);
 }

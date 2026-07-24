@@ -8,5 +8,8 @@ import java.util.UUID;
 
 public interface UnitRepository extends JpaRepository<Unit, UUID> {
 
+    boolean existsBySlug(String slug);
+
+    boolean existsBySlugAndIdNot(String slug, UUID id);
     List<Unit> findAllByOrderByNameAsc();
 }
