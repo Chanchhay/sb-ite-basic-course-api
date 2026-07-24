@@ -4,6 +4,8 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
+import java.util.UUID;
+
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
@@ -25,8 +27,8 @@ import kh.edu.istad.ite.features.order.entity.Order;
 public class StockMovement {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
+    @GeneratedValue(strategy = GenerationType.UUID)
+    private UUID id;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "business_owner_id")
@@ -45,5 +47,5 @@ public class StockMovement {
     private Order order;
 
     @Column(name = "location_id")
-    private Long locationId;
+    private UUID locationId;
 }
