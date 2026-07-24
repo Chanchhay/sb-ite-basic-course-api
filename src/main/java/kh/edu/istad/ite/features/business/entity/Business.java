@@ -1,18 +1,9 @@
 package kh.edu.istad.ite.features.business.entity;
 
+import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
-
-import jakarta.persistence.Entity;
-import jakarta.persistence.FetchType;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
-import jakarta.persistence.JoinColumn;
-import jakarta.persistence.ManyToOne;
-import jakarta.persistence.Table;
-import kh.edu.istad.ite.features.catalog.entity.Category;
 
 @Entity
 @Getter
@@ -25,7 +16,26 @@ public class Business {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @Column(
+            name = "keycloak_user_id",
+            nullable = false,
+            unique = true,
+            length = 100
+    )
+    private String keycloakUserId;
+
+    @Column(nullable = false, unique = true, length = 63)
+    private String slug;
+
+    @Column(name = "display_name", nullable = false, length = 200)
+    private String displayName;
+
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "category_id")
-    private Category category;
+    @JoinColumn(
+            name = "category_id",
+            foreignKey = @ForeignKey(
+                    name = "fk_businesses_business_category"
+            )
+    )
+    private BusinessCategory businessCategory;
 }
