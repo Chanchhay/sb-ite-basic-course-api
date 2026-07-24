@@ -1,10 +1,13 @@
 package kh.edu.istad.ite.features.business.mapper;
 
 import kh.edu.istad.ite.features.business.dto.BusinessCategoryResponse;
+import kh.edu.istad.ite.features.business.dto.BusinessCurrencyConfigurationResponse;
+import kh.edu.istad.ite.features.business.dto.BusinessCurrencyResponse;
 import kh.edu.istad.ite.features.business.dto.BusinessResponse;
 import kh.edu.istad.ite.features.business.dto.BusinessSubCategoryResponse;
 import kh.edu.istad.ite.features.business.entity.Business;
 import kh.edu.istad.ite.features.business.entity.BusinessCategory;
+import kh.edu.istad.ite.features.business.entity.BusinessCurrency;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -36,6 +39,40 @@ public class BusinessMapper {
                 business.getBaseCurrency(),
                 business.getDisplayCurrency(),
                 business.getSocialLinks()
+        );
+    }
+
+    public BusinessCurrencyResponse toCurrencyResponse(
+            BusinessCurrency currency,
+            String baseCurrency,
+            String displayCurrency
+    ) {
+        return new BusinessCurrencyResponse(
+                currency.getId(),
+                currency.getCode(),
+                currency.getName(),
+                currency.getExchangeRate(),
+                currency.getSymbol(),
+                currency.getDecimalPlaces(),
+                currency.getCode().equalsIgnoreCase(baseCurrency),
+                currency.getCode().equalsIgnoreCase(displayCurrency)
+        );
+    }
+
+    public BusinessCurrencyConfigurationResponse toCurrencyConfigurationResponse(
+            Business business,
+            List<BusinessCurrency> currencies
+    ) {
+        return new BusinessCurrencyConfigurationResponse(
+                business.getBaseCurrency(),
+                business.getDisplayCurrency(),
+                currencies.stream()
+                        .map(currency -> toCurrencyResponse(
+                                currency,
+                                business.getBaseCurrency(),
+                                business.getDisplayCurrency()
+                        ))
+                        .toList()
         );
     }
 

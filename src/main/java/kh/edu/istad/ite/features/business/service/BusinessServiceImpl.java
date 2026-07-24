@@ -7,6 +7,7 @@ import kh.edu.istad.ite.features.business.dto.SocialLinkRequest;
 import kh.edu.istad.ite.features.business.dto.UpdateBusinessRequest;
 import kh.edu.istad.ite.features.business.entity.Business;
 import kh.edu.istad.ite.features.business.entity.BusinessCategory;
+import kh.edu.istad.ite.features.business.entity.BusinessCurrency;
 import kh.edu.istad.ite.features.business.mapper.BusinessMapper;
 import kh.edu.istad.ite.features.business.repository.BusinessCategoryRepository;
 import kh.edu.istad.ite.features.business.repository.BusinessRepository;
@@ -18,6 +19,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.math.BigDecimal;
 import java.text.Normalizer;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -55,6 +57,9 @@ public class BusinessServiceImpl implements BusinessService {
         business.setIsEnabled(true);
         business.setIsListing(false);
         business.setIsClosed(false);
+        business.setBaseCurrency("USD");
+        business.setDisplayCurrency("USD");
+        business.getCurrencies().add(createDefaultCurrency(business));
 
         return businessMapper.toResponse(businessRepository.save(business));
     }
@@ -155,6 +160,17 @@ public class BusinessServiceImpl implements BusinessService {
 
     private UUID currentUserId() {
         return UUID.fromString(SecurityUtils.extractUserId());
+    }
+
+    private BusinessCurrency createDefaultCurrency(Business business) {
+        BusinessCurrency currency = new BusinessCurrency();
+        currency.setBusiness(business);
+        currency.setCode("USD");
+        currency.setName("United States Dollar");
+        currency.setExchangeRate(BigDecimal.ONE.setScale(8));
+        currency.setSymbol("$");
+        currency.setDecimalPlaces((short) 2);
+        return currency;
     }
 
     private String generateUniqueSlug(String name, UUID excludedBusinessId) {
