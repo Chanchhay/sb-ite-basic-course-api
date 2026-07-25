@@ -49,7 +49,7 @@ public abstract class UserProfileMapper {
         }
     }
 
-    public UserProfileResponse toUserProfileResponse(UserRepresentation userRepresentation, UserProfile userProfile) {
+    public UserProfileResponse toUserProfileResponse(UserRepresentation userRepresentation, UserProfile userProfile, String role) {
         return UserProfileResponse.builder()
                 .userId(userRepresentation.getId())
                 .username(userRepresentation.getUsername())
@@ -58,6 +58,7 @@ public abstract class UserProfileMapper {
                 .lastName(userRepresentation.getLastName())
                 .phoneNumber(firstAttribute(userRepresentation, PHONE_NUMBER_ATTRIBUTE, userProfile.getPhoneNumber()))
                 .gender(userProfile.getGender())
+                .role(role)
                 .address(userProfile.getAddress())
                 .profilePicture(userProfile.getProfilePicture())
                 .build();

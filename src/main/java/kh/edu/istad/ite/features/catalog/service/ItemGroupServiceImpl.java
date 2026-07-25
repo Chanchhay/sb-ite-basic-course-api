@@ -64,6 +64,10 @@ public class ItemGroupServiceImpl implements ItemGroupService {
         itemGroup.setSlug(generateUniqueSlug(request.name(), businessId));
         itemGroup.setNote(TextHelper.trimToNull(request.note()));
 
+        if (itemGroupRepository.existsByBusinessIdAndNameIgnoreCase(businessId, itemGroup.getName())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Item group with this name already exists");
+        }
+
         try {
             return itemGroupMapper.toSubItemGroupResponse(itemGroupRepository.saveAndFlush(itemGroup));
         } catch (DataIntegrityViolationException e) {
@@ -103,6 +107,9 @@ public class ItemGroupServiceImpl implements ItemGroupService {
         if (request.name() != null) {
             String name = TextHelper.trimRequired(request.name(), "Item group name cannot be empty");
             if (!name.equals(itemGroup.getName())) {
+                if (itemGroupRepository.existsByBusinessIdAndNameIgnoreCaseAndIdNot(businessId, name, itemGroupId)) {
+                    throw new ResponseStatusException(HttpStatus.CONFLICT, "Item group with this name already exists");
+                }
                 itemGroup.setName(name);
                 itemGroup.setSlug(generateUniqueSlug(name, businessId, itemGroupId));
             }

@@ -10,6 +10,7 @@ public record UserProfileResponse(
         String lastName,
         String phoneNumber,
         String gender,
+        String role,
         String address,
         String profilePicture
 ) {

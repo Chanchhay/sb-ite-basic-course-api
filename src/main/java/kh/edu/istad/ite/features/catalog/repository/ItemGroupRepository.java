@@ -19,5 +19,9 @@ public interface ItemGroupRepository extends JpaRepository<ItemGroup, UUID> {
 
     boolean existsByBusinessIdAndSlugIgnoreCaseAndIdNot(UUID businessId, String slug, UUID id);
 
+    boolean existsByBusinessIdAndNameIgnoreCase(UUID businessId, String name);
+
+    boolean existsByBusinessIdAndNameIgnoreCaseAndIdNot(UUID businessId, String name, UUID id);
+
     boolean existsByBusinessIdAndParentId(UUID businessId, UUID parentId);
 }

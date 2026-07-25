@@ -11,17 +11,26 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.keycloak.admin.client.Keycloak;
 import org.keycloak.admin.client.resource.UserResource;
+import org.keycloak.representations.idm.RoleRepresentation;
 import org.keycloak.representations.idm.UserRepresentation;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.util.List;
 import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
 @Slf4j
 public class UserProfileServiceImpl implements UserProfileService {
+    private static final List<String> APP_ROLE_PRIORITY = List.of(
+            "SUPER_ADMIN",
+            "BUSINESS",
+            "CUSTOMER",
+            "GLOBAL_USER",
+            "USER"
+    );
 
     private final Keycloak keycloak;
     private final KeycloakAdminClientProps props;
@@ -58,7 +67,8 @@ public class UserProfileServiceImpl implements UserProfileService {
 
         return userProfileMapper.toUserProfileResponse(
                 userRepresentation,
-                userProfile
+                userProfile,
+                resolveRole(userResource)
         );
     }
 
@@ -68,16 +78,30 @@ public class UserProfileServiceImpl implements UserProfileService {
         // 1. Profile from Keycloak by userId
         String userId = SecurityUtils.extractUserId();
         UUID userUuid = UUID.fromString(userId);
-        UserRepresentation keycloakUser = keycloak.realm(props.getTargetRealm())
+        UserResource userResource = keycloak.realm(props.getTargetRealm())
                 .users()
-                .get(userId)
-                .toRepresentation();
+                .get(userId);
+        UserRepresentation keycloakUser = userResource.toRepresentation();
 
         // 2. Profile from Database by userId
         UserProfile userProfile = userProfileRepository.findById(userUuid)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User profile has not been found"));
 
-        return userProfileMapper.toUserProfileResponse(keycloakUser, userProfile);
+        return userProfileMapper.toUserProfileResponse(keycloakUser, userProfile, resolveRole(userResource));
+    }
+
+    private String resolveRole(UserResource userResource) {
+        List<String> roleNames = userResource.roles()
+                .realmLevel()
+                .listEffective()
+                .stream()
+                .map(RoleRepresentation::getName)
+                .toList();
+
+        return APP_ROLE_PRIORITY.stream()
+                .filter(roleNames::contains)
+                .findFirst()
+                .orElse(null);
     }
 
 }

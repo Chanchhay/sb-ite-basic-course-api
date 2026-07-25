@@ -24,10 +24,16 @@ import java.util.UUID;
 @NoArgsConstructor
 @Table(
         name = "item_groups",
-        uniqueConstraints = @UniqueConstraint(
-                name = "uk_item_groups_business_slug",
-                columnNames = {"business_owner_id", "slug"}
-        )
+        uniqueConstraints = {
+                @UniqueConstraint(
+                        name = "uk_item_groups_business_slug",
+                        columnNames = {"business_owner_id", "slug"}
+                ),
+                @UniqueConstraint(
+                        name = "uk_item_groups_business_name",
+                        columnNames = {"business_owner_id", "name"}
+                )
+        }
 )
 public class ItemGroup extends BasedAuditingEntity {
 
