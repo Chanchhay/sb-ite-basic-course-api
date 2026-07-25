@@ -1,12 +1,15 @@
 package kh.edu.istad.ite.features.admin.service.impl;
 
 import kh.edu.istad.ite.features.admin.dto.request.UnitUpsertRequest;
+import kh.edu.istad.ite.features.admin.service.AdminAuditLogService;
 import kh.edu.istad.ite.features.admin.service.AdminUnitService;
 import kh.edu.istad.ite.features.catalog.dto.UnitResponse;
 import kh.edu.istad.ite.features.catalog.entity.Unit;
 import kh.edu.istad.ite.features.catalog.mapper.UnitMapper;
 import kh.edu.istad.ite.features.catalog.repository.ProductRepository;
 import kh.edu.istad.ite.features.catalog.repository.UnitRepository;
+import kh.edu.istad.ite.shared.enums.AdminActionType;
+import kh.edu.istad.ite.shared.enums.AuditTargetType;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -27,6 +30,7 @@ public class AdminUnitServiceImpl implements AdminUnitService {
     private final UnitRepository unitRepository;
     private final ProductRepository productRepository;
     private final UnitMapper unitMapper;
+    private final AdminAuditLogService adminAuditLogService;
 
     @Override
     @Transactional
@@ -38,13 +42,24 @@ public class AdminUnitServiceImpl implements AdminUnitService {
         unit.setNote(StringUtils.hasText(request.note()) ? request.note().trim() : null);
         unit.setSlug(generateUniqueSlug(trimmedName, null));
 
-        return unitMapper.toResponse(unitRepository.save(unit));
+        Unit saved = unitRepository.save(unit);
+
+        adminAuditLogService.record(
+                AdminActionType.UNIT_CREATED,
+                AuditTargetType.UNIT,
+                saved.getId(),
+                saved.getName(),
+                null
+        );
+
+        return unitMapper.toResponse(saved);
     }
 
     @Override
     @Transactional
     public UnitResponse updateUnit(UUID unitId, UnitUpsertRequest request) {
         Unit unit = findUnit(unitId);
+        String previousName = unit.getName();
 
         String trimmedName = request.name().trim();
         if (!trimmedName.equals(unit.getName())) {
@@ -54,7 +69,19 @@ public class AdminUnitServiceImpl implements AdminUnitService {
 
         unit.setNote(StringUtils.hasText(request.note()) ? request.note().trim() : null);
 
-        return unitMapper.toResponse(unitRepository.save(unit));
+        Unit saved = unitRepository.save(unit);
+
+        adminAuditLogService.recordStateChange(
+                AdminActionType.UNIT_UPDATED,
+                AuditTargetType.UNIT,
+                saved.getId(),
+                saved.getName(),
+                previousName,
+                saved.getName(),
+                null
+        );
+
+        return unitMapper.toResponse(saved);
     }
 
     @Override
@@ -72,7 +99,16 @@ public class AdminUnitServiceImpl implements AdminUnitService {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Cannot delete a unit that is still assigned to products");
         }
 
+        String deletedName = unit.getName();
         unitRepository.delete(unit);
+
+        adminAuditLogService.record(
+                AdminActionType.UNIT_DELETED,
+                AuditTargetType.UNIT,
+                unitId,
+                deletedName,
+                null
+        );
     }
 
     private Unit findUnit(UUID unitId) {

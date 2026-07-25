@@ -1,6 +1,7 @@
 package kh.edu.istad.ite.features.admin.service.impl;
 
 import kh.edu.istad.ite.features.admin.dto.request.BusinessCategoryUpsertRequest;
+import kh.edu.istad.ite.features.admin.service.AdminAuditLogService;
 import kh.edu.istad.ite.features.admin.service.AdminBusinessCategoryService;
 import kh.edu.istad.ite.features.business.dto.BusinessCategoryResponse;
 import kh.edu.istad.ite.features.business.dto.BusinessSubCategoryResponse;
@@ -8,6 +9,8 @@ import kh.edu.istad.ite.features.business.entity.BusinessCategory;
 import kh.edu.istad.ite.features.business.mapper.BusinessMapper;
 import kh.edu.istad.ite.features.business.repository.BusinessCategoryRepository;
 import kh.edu.istad.ite.features.business.repository.BusinessRepository;
+import kh.edu.istad.ite.shared.enums.AdminActionType;
+import kh.edu.istad.ite.shared.enums.AuditTargetType;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -29,6 +32,7 @@ public class AdminBusinessCategoryServiceImpl implements AdminBusinessCategorySe
     private final BusinessCategoryRepository businessCategoryRepository;
     private final BusinessRepository businessRepository;
     private final BusinessMapper businessMapper;
+    private final AdminAuditLogService adminAuditLogService;
 
     @Override
     @Transactional(readOnly = true)
@@ -56,13 +60,24 @@ public class AdminBusinessCategoryServiceImpl implements AdminBusinessCategorySe
         category.setParentCategory(resolveParent(request.parentId()));
         category.setSlug(generateUniqueSlug(request.name(), null));
 
-        return toSubCategoryResponse(businessCategoryRepository.save(category));
+        BusinessCategory saved = businessCategoryRepository.save(category);
+
+        adminAuditLogService.record(
+                AdminActionType.BUSINESS_CATEGORY_CREATED,
+                AuditTargetType.BUSINESS_CATEGORY,
+                saved.getId(),
+                saved.getName(),
+                null
+        );
+
+        return toSubCategoryResponse(saved);
     }
 
     @Override
     @Transactional
     public BusinessSubCategoryResponse updateCategory(UUID categoryId, BusinessCategoryUpsertRequest request) {
         BusinessCategory category = findCategory(categoryId);
+        String previousName = category.getName();
 
         String trimmedName = request.name().trim();
         if (!trimmedName.equals(category.getName())) {
@@ -78,7 +93,19 @@ public class AdminBusinessCategoryServiceImpl implements AdminBusinessCategorySe
         }
         category.setParentCategory(newParent);
 
-        return toSubCategoryResponse(businessCategoryRepository.save(category));
+        BusinessCategory saved = businessCategoryRepository.save(category);
+
+        adminAuditLogService.recordStateChange(
+                AdminActionType.BUSINESS_CATEGORY_UPDATED,
+                AuditTargetType.BUSINESS_CATEGORY,
+                saved.getId(),
+                saved.getName(),
+                previousName,
+                saved.getName(),
+                null
+        );
+
+        return toSubCategoryResponse(saved);
     }
 
     @Override
@@ -94,7 +121,16 @@ public class AdminBusinessCategoryServiceImpl implements AdminBusinessCategorySe
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Cannot delete a category that is still assigned to businesses");
         }
 
+        String deletedName = category.getName();
         businessCategoryRepository.delete(category);
+
+        adminAuditLogService.record(
+                AdminActionType.BUSINESS_CATEGORY_DELETED,
+                AuditTargetType.BUSINESS_CATEGORY,
+                categoryId,
+                deletedName,
+                null
+        );
     }
 
     private BusinessCategory resolveParent(UUID parentId) {
