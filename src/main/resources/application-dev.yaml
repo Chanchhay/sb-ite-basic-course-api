@@ -43,3 +43,5 @@ app:
     protocol: https
     path-prefix: /store
     subdomain-enabled: true
+  security:
+    credential-encryption-key: ${CREDENTIAL_ENCRYPTION_KEY:}
