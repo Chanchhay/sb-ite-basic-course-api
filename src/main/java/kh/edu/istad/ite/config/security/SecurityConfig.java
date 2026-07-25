@@ -1,5 +1,7 @@
 package kh.edu.istad.ite.config.security;
 
+import kh.edu.istad.ite.config.props.StorefrontProps;
+import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.convert.converter.Converter;
@@ -14,15 +16,20 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 import java.util.Collection;
+import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
 @Configuration
 @EnableWebSecurity
+@RequiredArgsConstructor
 public class SecurityConfig {
-
+    private final StorefrontProps storefrontProps;
     @Bean
     public SecurityFilterChain configureApiSecurity(HttpSecurity http) {
 
@@ -41,7 +48,7 @@ public class SecurityConfig {
                 .requestMatchers("/scalar/**")
                 .permitAll()
                 .requestMatchers(HttpMethod.POST, "/api/v1/auth/register").permitAll()
-                .requestMatchers(HttpMethod.GET, "/api/v1/public/business-categories").permitAll()
+                .requestMatchers(HttpMethod.GET, "/api/v1/public/**").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/v1/units", "/api/v1/units/**").permitAll()
                 .requestMatchers("/api/v1/units", "/api/v1/units/**").hasRole("SUPER_ADMIN")
                 .requestMatchers("/api/v1/businesses", "/api/v1/businesses/**").hasRole("BUSINESS")
@@ -49,6 +56,32 @@ public class SecurityConfig {
                 .anyRequest().authenticated());
 
         return http.build();
+    }
+
+
+
+    @Bean
+    public CorsConfigurationSource corsConfigurationSource() {
+        String baseDomain = storefrontProps.getBaseDomain();
+        String protocol = storefrontProps.getProtocol();
+
+        CorsConfiguration configuration = new CorsConfiguration();
+        configuration.setAllowedOriginPatterns(List.of(
+                protocol + "://" + baseDomain,
+                protocol + "://*." + baseDomain,
+                "http://localhost:[*]",
+                "http://127.0.0.1:[*]"
+        ));
+        configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
+        configuration.setAllowedHeaders(List.of("*"));
+        configuration.setExposedHeaders(List.of("Location", "Content-Disposition"));
+        configuration.setAllowCredentials(true);
+        configuration.setMaxAge(3600L);
+
+        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        source.registerCorsConfiguration("/api/**", configuration);
+
+        return source;
     }
 
     @Bean
