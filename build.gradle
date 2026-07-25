@@ -23,6 +23,9 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-webmvc'
     implementation 'org.springframework.boot:spring-boot-starter-validation'
 
+    //bakong
+    implementation 'kh.gov.nbc.bakong_khqr:sdk-java:1.0.0.17'
+
     //keycloak admin
     implementation 'org.keycloak:keycloak-admin-client:26.0.10'
 

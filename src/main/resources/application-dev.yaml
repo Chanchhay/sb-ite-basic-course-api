@@ -36,3 +36,12 @@ keycloak:
     realm: master
     target-realm: ${TARGET_REALM}
     send-verification-email: false
+
+app:
+  storefront:
+    base-domain: fluxibiz.store
+    protocol: https
+    path-prefix: /store
+    subdomain-enabled: true
+  security:
+    credential-encryption-key: ${CREDENTIAL_ENCRYPTION_KEY:}
