@@ -1,12 +1,15 @@
 package kh.edu.istad.ite.features.admin.service.impl;
 
 import kh.edu.istad.ite.features.admin.dto.request.BusinessStatusActionRequest;
+import kh.edu.istad.ite.features.admin.service.AdminAuditLogService;
 import kh.edu.istad.ite.features.admin.service.AdminBusinessService;
 import kh.edu.istad.ite.features.admin.specification.BusinessAdminSpecifications;
 import kh.edu.istad.ite.features.business.dto.BusinessResponse;
 import kh.edu.istad.ite.features.business.entity.Business;
 import kh.edu.istad.ite.features.business.mapper.BusinessMapper;
 import kh.edu.istad.ite.features.business.repository.BusinessRepository;
+import kh.edu.istad.ite.shared.enums.AdminActionType;
+import kh.edu.istad.ite.shared.enums.AuditTargetType;
 import kh.edu.istad.ite.shared.enums.BusinessOwnerStatus;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -24,8 +27,14 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class AdminBusinessServiceImpl implements AdminBusinessService {
 
+    private static final String STATE_ENABLED = "ENABLED";
+    private static final String STATE_DISABLED = "DISABLED";
+    private static final String STATE_OPEN = "OPEN";
+    private static final String STATE_CLOSED = "CLOSED";
+
     private final BusinessRepository businessRepository;
     private final BusinessMapper businessMapper;
+    private final AdminAuditLogService adminAuditLogService;
 
     @Override
     @Transactional(readOnly = true)
@@ -51,69 +60,145 @@ public class AdminBusinessServiceImpl implements AdminBusinessService {
     @Transactional
     public BusinessResponse activate(UUID businessId) {
         Business business = findBusiness(businessId);
+        String previousState = statusName(business);
+
         business.setStatus(BusinessOwnerStatus.ACTIVE);
+        Business saved = businessRepository.save(business);
+
+        audit(AdminActionType.BUSINESS_ACTIVATED, saved, previousState,
+                BusinessOwnerStatus.ACTIVE.name(), null);
+
         log.info("Super admin activated business {}", businessId);
-        return businessMapper.toResponse(businessRepository.save(business));
+        return businessMapper.toResponse(saved);
     }
 
     @Override
     @Transactional
     public BusinessResponse suspend(UUID businessId, BusinessStatusActionRequest request) {
         Business business = findBusiness(businessId);
+        String previousState = statusName(business);
+
         business.setStatus(BusinessOwnerStatus.SUSPENDED);
-        log.info("Super admin suspended business {} (reason: {})", businessId,
-                request == null ? null : request.reason());
-        return businessMapper.toResponse(businessRepository.save(business));
+        Business saved = businessRepository.save(business);
+
+        audit(AdminActionType.BUSINESS_SUSPENDED, saved, previousState,
+                BusinessOwnerStatus.SUSPENDED.name(), reasonOf(request));
+
+        log.info("Super admin suspended business {} (reason: {})", businessId, reasonOf(request));
+        return businessMapper.toResponse(saved);
     }
 
     @Override
     @Transactional
     public BusinessResponse enable(UUID businessId) {
         Business business = findBusiness(businessId);
+        String previousState = enabledState(business);
+
         business.setIsEnabled(true);
+        Business saved = businessRepository.save(business);
+
+        audit(AdminActionType.BUSINESS_ENABLED, saved, previousState, STATE_ENABLED, null);
+
         log.info("Super admin enabled business {}", businessId);
-        return businessMapper.toResponse(businessRepository.save(business));
+        return businessMapper.toResponse(saved);
     }
 
     @Override
     @Transactional
     public BusinessResponse disable(UUID businessId, BusinessStatusActionRequest request) {
         Business business = findBusiness(businessId);
+        String previousState = enabledState(business);
+
         business.setIsEnabled(false);
-        log.info("Super admin disabled business {} (reason: {})", businessId,
-                request == null ? null : request.reason());
-        return businessMapper.toResponse(businessRepository.save(business));
+        Business saved = businessRepository.save(business);
+
+        audit(AdminActionType.BUSINESS_DISABLED, saved, previousState, STATE_DISABLED, reasonOf(request));
+
+        log.info("Super admin disabled business {} (reason: {})", businessId, reasonOf(request));
+        return businessMapper.toResponse(saved);
     }
 
     @Override
     @Transactional
     public BusinessResponse close(UUID businessId, BusinessStatusActionRequest request) {
         Business business = findBusiness(businessId);
+        String previousState = closedState(business);
+
         business.setIsClosed(true);
         business.setIsListing(false);
-        log.info("Super admin closed business {} (reason: {})", businessId,
-                request == null ? null : request.reason());
-        return businessMapper.toResponse(businessRepository.save(business));
+        Business saved = businessRepository.save(business);
+
+        audit(AdminActionType.BUSINESS_CLOSED, saved, previousState, STATE_CLOSED, reasonOf(request));
+
+        log.info("Super admin closed business {} (reason: {})", businessId, reasonOf(request));
+        return businessMapper.toResponse(saved);
     }
 
     @Override
     @Transactional
     public BusinessResponse reopen(UUID businessId) {
         Business business = findBusiness(businessId);
+        String previousState = closedState(business);
+
         business.setIsClosed(false);
+        Business saved = businessRepository.save(business);
+
+        audit(AdminActionType.BUSINESS_REOPENED, saved, previousState, STATE_OPEN, null);
+
         log.info("Super admin reopened business {}", businessId);
-        return businessMapper.toResponse(businessRepository.save(business));
+        return businessMapper.toResponse(saved);
     }
 
     @Override
     @Transactional
     public BusinessResponse delete(UUID businessId) {
         Business business = findBusiness(businessId);
+        String previousState = statusName(business);
+
         business.setStatus(BusinessOwnerStatus.DELETED);
         business.setIsEnabled(false);
         business.setIsListing(false);
+        Business saved = businessRepository.save(business);
+
+        audit(AdminActionType.BUSINESS_DELETED, saved, previousState,
+                BusinessOwnerStatus.DELETED.name(), null);
+
         log.info("Super admin deleted business {}", businessId);
-        return businessMapper.toResponse(businessRepository.save(business));
+        return businessMapper.toResponse(saved);
+    }
+
+    private void audit(
+            AdminActionType actionType,
+            Business business,
+            String previousState,
+            String newState,
+            String reason
+    ) {
+        adminAuditLogService.recordStateChange(
+                actionType,
+                AuditTargetType.BUSINESS,
+                business.getId(),
+                business.getDisplayName(),
+                previousState,
+                newState,
+                reason
+        );
+    }
+
+    private String reasonOf(BusinessStatusActionRequest request) {
+        return request == null ? null : request.reason();
+    }
+
+    private String statusName(Business business) {
+        return business.getStatus() == null ? null : business.getStatus().name();
+    }
+
+    private String enabledState(Business business) {
+        return Boolean.TRUE.equals(business.getIsEnabled()) ? STATE_ENABLED : STATE_DISABLED;
+    }
+
+    private String closedState(Business business) {
+        return Boolean.TRUE.equals(business.getIsClosed()) ? STATE_CLOSED : STATE_OPEN;
     }
 
     private Business findBusiness(UUID businessId) {

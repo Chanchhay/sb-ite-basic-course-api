@@ -18,7 +18,7 @@ import java.util.UUID;
 @Setter
 @NoArgsConstructor
 @Table(name = "units")
-public class Unit {
+public class Unit extends BasedAuditingEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
