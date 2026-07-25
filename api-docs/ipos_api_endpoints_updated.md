@@ -9,7 +9,7 @@ It covers:
 - platform business categories;
 - businesses;
 - roles and role assignments;
-- product categories, units, products, and variants;
+- item groups, units, items, and variants;
 - inventory, batches, stock levels, movements, and alerts;
 - customers, channel identities, and memberships;
 - discounts and coupons;
@@ -108,7 +108,7 @@ The system uses:
 
 # 3. Platform Business Categories
 
-`business_categories` classifies businesses. It is separate from product `categories`.
+`business_categories` classifies businesses. It is separate from item `item_groups`.
 
 ## Public endpoints
 
@@ -201,18 +201,18 @@ userId, roleId
 
 ---
 
-# 7. Product Categories
+# 7. Item Groups
 
 | Method | Endpoint | Description |
 |---|---|---|
-| `POST` | `/api/v1/businesses/{businessId}/categories` | Create product category |
-| `GET` | `/api/v1/businesses/{businessId}/categories` | List product categories |
-| `GET` | `/api/v1/businesses/{businessId}/categories/tree` | Get product category tree |
-| `GET` | `/api/v1/businesses/{businessId}/categories/{categoryId}` | Get category |
-| `GET` | `/api/v1/businesses/{businessId}/categories/slug/{slug}` | Find category by slug |
-| `PUT` | `/api/v1/businesses/{businessId}/categories/{categoryId}` | Update category |
-| `PUT` | `/api/v1/businesses/{businessId}/categories/{categoryId}/parent` | Move category under another parent |
-| `PUT` | `/api/v1/businesses/{businessId}/categories/{categoryId}/status` | Change category status |
+| `POST` | `/api/v1/businesses/{businessId}/item-groups` | Create item group |
+| `GET` | `/api/v1/businesses/{businessId}/item-groups` | List item groups |
+| `GET` | `/api/v1/businesses/{businessId}/item-groups/tree` | Get item group tree |
+| `GET` | `/api/v1/businesses/{businessId}/item-groups/{itemGroupId}` | Get item group |
+| `GET` | `/api/v1/businesses/{businessId}/item-groups/slug/{slug}` | Find item group by slug |
+| `PUT` | `/api/v1/businesses/{businessId}/item-groups/{itemGroupId}` | Update item group |
+| `PUT` | `/api/v1/businesses/{businessId}/item-groups/{itemGroupId}/parent` | Move item group under another parent |
+| `PUT` | `/api/v1/businesses/{businessId}/item-groups/{itemGroupId}/status` | Change item group status |
 
 Filters:
 
@@ -244,43 +244,43 @@ Units are shared reference data because the table has no `business_owner_id`.
 
 ---
 
-# 9. Products
+# 9. Items
 
-The latest schema no longer exposes `product_type` or `discount_price`.
+The latest schema no longer exposes `item_type` or `discount_price`.
 
 | Method | Endpoint | Description |
 |---|---|---|
-| `POST` | `/api/v1/businesses/{businessId}/products` | Create product |
-| `GET` | `/api/v1/businesses/{businessId}/products` | Search products |
-| `GET` | `/api/v1/businesses/{businessId}/products/{productId}` | Get product |
-| `GET` | `/api/v1/businesses/{businessId}/products/slug/{slug}` | Find product by slug |
-| `GET` | `/api/v1/businesses/{businessId}/products/sku/{sku}` | Find product by SKU |
-| `GET` | `/api/v1/businesses/{businessId}/products/code/{code}` | Find product by code |
-| `GET` | `/api/v1/businesses/{businessId}/products/barcode/{barcode}` | Find product by barcode |
-| `PUT` | `/api/v1/businesses/{businessId}/products/{productId}` | Update product |
-| `PUT` | `/api/v1/businesses/{businessId}/products/{productId}/availability` | Change product availability |
-| `PUT` | `/api/v1/businesses/{businessId}/products/{productId}/image` | Update product image |
-| `GET` | `/api/v1/public/businesses/{businessId}/products` | List available public products |
-| `GET` | `/api/v1/public/businesses/{businessId}/products/{productId}` | Get public product |
+| `POST` | `/api/v1/businesses/{businessId}/items` | Create item |
+| `GET` | `/api/v1/businesses/{businessId}/items` | Search items |
+| `GET` | `/api/v1/businesses/{businessId}/items/{itemId}` | Get item |
+| `GET` | `/api/v1/businesses/{businessId}/items/slug/{slug}` | Find item by slug |
+| `GET` | `/api/v1/businesses/{businessId}/items/sku/{sku}` | Find item by SKU |
+| `GET` | `/api/v1/businesses/{businessId}/items/code/{code}` | Find item by code |
+| `GET` | `/api/v1/businesses/{businessId}/items/barcode/{barcode}` | Find item by barcode |
+| `PUT` | `/api/v1/businesses/{businessId}/items/{itemId}` | Update item |
+| `PUT` | `/api/v1/businesses/{businessId}/items/{itemId}/availability` | Change item availability |
+| `PUT` | `/api/v1/businesses/{businessId}/items/{itemId}/image` | Update item image |
+| `GET` | `/api/v1/public/businesses/{businessId}/items` | List available public items |
+| `GET` | `/api/v1/public/businesses/{businessId}/items/{itemId}` | Get public item |
 
 Filters:
 
 ```text
-keyword, categoryId, unitId, availability, minPrice, maxPrice
+keyword, itemGroupId, unitId, availability, minPrice, maxPrice
 ```
 
 ---
 
-# 10. Product Variants
+# 10. Item Variants
 
 The latest variant table contains no barcode or status field.
 
 | Method | Endpoint | Description |
 |---|---|---|
-| `POST` | `/api/v1/businesses/{businessId}/products/{productId}/variants` | Create variant |
-| `GET` | `/api/v1/businesses/{businessId}/products/{productId}/variants` | List product variants |
-| `GET` | `/api/v1/businesses/{businessId}/product-variants/{variantId}` | Get variant |
-| `PUT` | `/api/v1/businesses/{businessId}/product-variants/{variantId}` | Update variant |
+| `POST` | `/api/v1/businesses/{businessId}/items/{itemId}/variants` | Create variant |
+| `GET` | `/api/v1/businesses/{businessId}/items/{itemId}/variants` | List item variants |
+| `GET` | `/api/v1/businesses/{businessId}/item-variants/{variantId}` | Get variant |
+| `PUT` | `/api/v1/businesses/{businessId}/item-variants/{variantId}` | Update variant |
 
 ---
 
@@ -297,7 +297,7 @@ The latest variant table contains no barcode or status field.
 Filters:
 
 ```text
-productId, batchNo, status, expiryFrom, expiryTo
+itemId, batchNo, status, expiryFrom, expiryTo
 ```
 
 ---
@@ -310,14 +310,14 @@ Stock quantity must be changed through inventory operations, not through a direc
 |---|---|---|
 | `GET` | `/api/v1/businesses/{businessId}/stock-levels` | List current stock levels |
 | `GET` | `/api/v1/businesses/{businessId}/stock-levels/{stockLevelId}` | Get stock level |
-| `GET` | `/api/v1/businesses/{businessId}/products/{productId}/stock-levels` | Get stock for product |
+| `GET` | `/api/v1/businesses/{businessId}/items/{itemId}/stock-levels` | Get stock for item |
 | `GET` | `/api/v1/businesses/{businessId}/locations/{locationId}/stock-levels` | Get stock at location |
 | `PUT` | `/api/v1/businesses/{businessId}/stock-levels/{stockLevelId}/threshold` | Update low-stock threshold |
 
 Filters:
 
 ```text
-productId, locationId, lowStock, outOfStock
+itemId, locationId, lowStock, outOfStock
 ```
 
 ---
@@ -334,7 +334,7 @@ productId, locationId, lowStock, outOfStock
 Filters:
 
 ```text
-productId, batchId, unitId, from, to
+itemId, batchId, unitId, from, to
 ```
 
 ---
@@ -351,7 +351,7 @@ productId, batchId, unitId, from, to
 Filters:
 
 ```text
-productId, batchId, unitId, from, to
+itemId, batchId, unitId, from, to
 ```
 
 ---
@@ -364,7 +364,7 @@ productId, batchId, unitId, from, to
 |---|---|---|
 | `GET` | `/api/v1/businesses/{businessId}/stock-movements` | Search stock movements |
 | `GET` | `/api/v1/businesses/{businessId}/stock-movements/{movementId}` | Get stock movement |
-| `GET` | `/api/v1/businesses/{businessId}/products/{productId}/stock-movements` | Get movement history for product |
+| `GET` | `/api/v1/businesses/{businessId}/items/{itemId}/stock-movements` | Get movement history for item |
 | `POST` | `/api/v1/businesses/{businessId}/inventory/adjustments` | Create inventory adjustment |
 | `POST` | `/api/v1/businesses/{businessId}/inventory/transfers` | Record transfer-out and transfer-in movements |
 | `POST` | `/api/v1/businesses/{businessId}/inventory/returns` | Record stock return movement |
@@ -372,7 +372,7 @@ productId, batchId, unitId, from, to
 Filters:
 
 ```text
-productId, batchId, locationType, locationId, type, refOrderId, from, to
+itemId, batchId, locationType, locationId, type, refOrderId, from, to
 ```
 
 There are no update or delete endpoints for stock movements.
@@ -392,7 +392,7 @@ There are no update or delete endpoints for stock movements.
 Filters:
 
 ```text
-alertType, status, productId, branchId, batchId
+alertType, status, itemId, branchId, batchId
 ```
 
 ---
@@ -756,7 +756,7 @@ customerId, orderId, status, from, to
 |---|---|---|
 | `GET` | `/api/v1/businesses/{businessId}/dashboard/summary` | Main dashboard summary |
 | `GET` | `/api/v1/businesses/{businessId}/dashboard/sales-chart` | Sales chart |
-| `GET` | `/api/v1/businesses/{businessId}/dashboard/top-products` | Top products |
+| `GET` | `/api/v1/businesses/{businessId}/dashboard/top-items` | Top items |
 | `GET` | `/api/v1/businesses/{businessId}/dashboard/recent-orders` | Recent orders |
 | `GET` | `/api/v1/businesses/{businessId}/dashboard/inventory-alerts` | Alert summary |
 | `GET` | `/api/v1/businesses/{businessId}/dashboard/payment-summary` | Payment summary |
@@ -772,8 +772,8 @@ customerId, orderId, status, from, to
 |---|---|---|
 | `GET` | `/api/v1/businesses/{businessId}/reports/sales/summary` | Sales summary |
 | `GET` | `/api/v1/businesses/{businessId}/reports/sales/daily` | Daily sales |
-| `GET` | `/api/v1/businesses/{businessId}/reports/sales/by-product` | Sales by product |
-| `GET` | `/api/v1/businesses/{businessId}/reports/sales/by-category` | Sales by product category |
+| `GET` | `/api/v1/businesses/{businessId}/reports/sales/by-item` | Sales by item |
+| `GET` | `/api/v1/businesses/{businessId}/reports/sales/by-item group` | Sales by item item group |
 | `GET` | `/api/v1/businesses/{businessId}/reports/sales/by-channel` | Sales by channel |
 | `GET` | `/api/v1/businesses/{businessId}/reports/sales/by-cashier` | Sales by cashier |
 | `GET` | `/api/v1/businesses/{businessId}/reports/profit` | Revenue, cost, and profit |
@@ -810,7 +810,7 @@ Common report filters:
 
 ```text
 from, to, groupBy, channel, customerId, cashierId,
-productId, categoryId, locationId
+itemId, itemGroupId, locationId
 ```
 
 ---
@@ -832,7 +832,7 @@ Supported uses:
 business logo
 business thumbnail
 business category icon
-product image
+item image
 receipt file
 ```
 
@@ -890,12 +890,12 @@ Every relationship must remain inside one business:
 
 ```text
 role.business == userRole.business
-product.category.business == product.business
-variant.product.business == variant.business
-batch.product.business == batch.business
+item.item group.business == item.business
+variant.item.business == variant.business
+batch.item.business == batch.business
 order.customer.business == order.business
 orderItem.order.business == orderItem.business
-orderItem.product.business == orderItem.business
+orderItem.item.business == orderItem.business
 payment.order.business == payment.business
 coupon.discount.business == coupon.business
 receipt.order.business == receipt.business
@@ -908,7 +908,7 @@ sale.order.business == sale.business
 
 These are schema constraints, not additional endpoint requirements.
 
-1. `categories.parent_id` is marked unique, which allows only one child for each parent.
+1. `item_groups.parent_id` is marked unique, which allows only one child for each parent.
 2. `customer_channel_identities` has no `external_id`, so Telegram and Messenger identities cannot be uniquely stored.
 3. `discounts` supports `CATEGORY`, `PRODUCT`, and `MEMBERSHIP` scopes but has no target table or target ID.
 4. `stock_levels.location_id` has no `location_type`, while stock movements do.
@@ -923,11 +923,11 @@ These are schema constraints, not additional endpoint requirements.
 
 # 42. Recommended Implementation Order
 
-1. Business categories
+1. Business item groups
 2. Businesses
 3. Roles and user-role assignments
-4. Product categories and units
-5. Products and product variants
+4. Item item groups and units
+5. Items and item variants
 6. Customers and memberships
 7. Discounts and coupons
 8. Batches and stock levels

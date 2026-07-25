@@ -5,7 +5,7 @@ import jakarta.validation.constraints.Size;
 
 import java.util.UUID;
 
-public record CreateProductCategoryRequest(
+public record CreateItemGroupRequest(
         @NotBlank(message = "name cannot be empty")
         @Size(max = 150, message = "name must be at most 150 characters")
         String name,

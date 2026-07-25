@@ -4,7 +4,7 @@ import jakarta.validation.constraints.Size;
 
 import java.util.UUID;
 
-public record UpdateProductCategoryRequest(
+public record UpdateItemGroupRequest(
         @Size(max = 150, message = "name must be at most 150 characters")
         String name,
 

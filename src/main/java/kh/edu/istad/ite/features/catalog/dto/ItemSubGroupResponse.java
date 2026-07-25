@@ -2,7 +2,7 @@ package kh.edu.istad.ite.features.catalog.dto;
 
 import java.util.UUID;
 
-public record ProductSubCategoryResponse(
+public record ItemSubGroupResponse(
         UUID id,
         String name,
         String slug,

@@ -7,16 +7,16 @@ import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
-import kh.edu.istad.ite.shared.enums.ProductStatus;
-import kh.edu.istad.ite.shared.enums.ProductType;
+import kh.edu.istad.ite.shared.enums.ItemStatus;
+import kh.edu.istad.ite.shared.enums.ItemType;
 
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
-public record CreateProductRequest(
-        UUID categoryId,
+public record CreateItemRequest(
+        UUID itemGroupId,
 
         UUID unitId,
 
@@ -43,15 +43,15 @@ public record CreateProductRequest(
         BigDecimal price,
 
         @NotNull(message = "itemType cannot be null")
-        ProductType itemType,
+        ItemType itemType,
 
         Map<String, Object> attributes,
 
-        List<@Valid ProductVariantRequest> variants,
+        List<@Valid ItemVariantRequest> variants,
 
         @Min(value = 0, message = "lowStockDefault must be at least 0")
         Integer lowStockDefault,
 
-        ProductStatus status
+        ItemStatus status
 ) {
 }

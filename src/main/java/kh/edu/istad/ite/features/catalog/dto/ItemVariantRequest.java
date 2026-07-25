@@ -7,7 +7,7 @@ import jakarta.validation.constraints.Size;
 
 import java.math.BigDecimal;
 
-public record ProductVariantRequest(
+public record ItemVariantRequest(
         @NotBlank(message = "variant name cannot be empty")
         @Size(max = 150, message = "variant name must be at most 150 characters")
         String name,

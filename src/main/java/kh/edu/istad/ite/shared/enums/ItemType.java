@@ -1,6 +1,6 @@
 package kh.edu.istad.ite.shared.enums;
 
-public enum ProductType {
+public enum ItemType {
     DIGITAL,
     SERVICE,
     PHYSICAL

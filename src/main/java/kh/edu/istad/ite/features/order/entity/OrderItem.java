@@ -15,8 +15,8 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import kh.edu.istad.ite.features.business.entity.Business;
-import kh.edu.istad.ite.features.catalog.entity.Product;
-import kh.edu.istad.ite.features.catalog.entity.ProductVariant;
+import kh.edu.istad.ite.features.catalog.entity.Item;
+import kh.edu.istad.ite.features.catalog.entity.ItemVariant;
 
 @Entity
 @Getter
@@ -38,10 +38,10 @@ public class OrderItem {
     private Order order;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "product_id")
-    private Product product;
+    @JoinColumn(name = "item_id")
+    private Item item;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "variant_id")
-    private ProductVariant variant;
+    @JoinColumn(name = "item_variant_id")
+    private ItemVariant itemVariant;
 }

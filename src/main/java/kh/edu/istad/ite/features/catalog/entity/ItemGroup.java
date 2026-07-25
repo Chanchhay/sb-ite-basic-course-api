@@ -23,13 +23,13 @@ import java.util.UUID;
 @Setter
 @NoArgsConstructor
 @Table(
-        name = "categories",
+        name = "item_groups",
         uniqueConstraints = @UniqueConstraint(
-                name = "uk_categories_business_slug",
+                name = "uk_item_groups_business_slug",
                 columnNames = {"business_owner_id", "slug"}
         )
 )
-public class Category extends BasedAuditingEntity {
+public class ItemGroup extends BasedAuditingEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
@@ -42,7 +42,7 @@ public class Category extends BasedAuditingEntity {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "parent_id")
-    private Category parent;
+    private ItemGroup parent;
 
     @Column(nullable = false, length = 150)
     private String name;

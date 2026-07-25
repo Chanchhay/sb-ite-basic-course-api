@@ -17,8 +17,8 @@ import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 import kh.edu.istad.ite.config.audit.BasedAuditingEntity;
 import kh.edu.istad.ite.features.business.entity.Business;
-import kh.edu.istad.ite.shared.enums.ProductStatus;
-import kh.edu.istad.ite.shared.enums.ProductType;
+import kh.edu.istad.ite.shared.enums.ItemStatus;
+import kh.edu.istad.ite.shared.enums.ItemType;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -36,19 +36,19 @@ import java.util.UUID;
 @Setter
 @NoArgsConstructor
 @Table(
-        name = "products",
+        name = "items",
         uniqueConstraints = {
                 @UniqueConstraint(
-                        name = "uk_products_business_slug",
+                        name = "uk_items_business_slug",
                         columnNames = {"business_owner_id", "slug"}
                 ),
                 @UniqueConstraint(
-                        name = "uk_products_business_name",
+                        name = "uk_items_business_name",
                         columnNames = {"business_owner_id", "name"}
                 )
         }
 )
-public class Product extends BasedAuditingEntity {
+public class Item extends BasedAuditingEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
@@ -60,8 +60,8 @@ public class Product extends BasedAuditingEntity {
     private Business business;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "category_id")
-    private Category category;
+    @JoinColumn(name = "item_group_id")
+    private ItemGroup itemGroup;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "unit_id")
@@ -93,15 +93,15 @@ public class Product extends BasedAuditingEntity {
 
     @Enumerated(EnumType.STRING)
     @Column(name = "item_type", nullable = false, length = 20)
-    private ProductType itemType = ProductType.PHYSICAL;
+    private ItemType itemType = ItemType.PHYSICAL;
 
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(columnDefinition = "jsonb")
     private Map<String, Object> attributes;
 
-    @OneToMany(mappedBy = "product", cascade = CascadeType.ALL, orphanRemoval = true)
+    @OneToMany(mappedBy = "item", cascade = CascadeType.ALL, orphanRemoval = true)
     @OrderBy("variantName ASC")
-    private List<ProductVariant> variants = new ArrayList<>();
+    private List<ItemVariant> variants = new ArrayList<>();
 
     @Column(name = "low_stock_default", nullable = false, columnDefinition = "int default 20")
     private Integer lowStockDefault = 20;
@@ -113,5 +113,5 @@ public class Product extends BasedAuditingEntity {
             length = 20,
             columnDefinition = "varchar(20) default 'ACTIVE'"
     )
-    private ProductStatus status = ProductStatus.ACTIVE;
+    private ItemStatus status = ItemStatus.ACTIVE;
 }

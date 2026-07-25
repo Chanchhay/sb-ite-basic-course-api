@@ -1,17 +1,17 @@
 package kh.edu.istad.ite.features.catalog.dto;
 
-import kh.edu.istad.ite.shared.enums.ProductStatus;
-import kh.edu.istad.ite.shared.enums.ProductType;
+import kh.edu.istad.ite.shared.enums.ItemStatus;
+import kh.edu.istad.ite.shared.enums.ItemType;
 
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
-public record ProductResponse(
+public record ItemResponse(
         UUID id,
         UUID businessId,
-        ProductSubCategoryResponse category,
+        ItemSubGroupResponse itemGroup,
         UnitResponse unit,
         String slug,
         String name,
@@ -21,10 +21,10 @@ public record ProductResponse(
         String imageUrl,
         String barcode,
         BigDecimal price,
-        ProductType itemType,
+        ItemType itemType,
         Map<String, Object> attributes,
-        List<ProductVariantResponse> variants,
+        List<ItemVariantResponse> variants,
         Integer lowStockDefault,
-        ProductStatus status
+        ItemStatus status
 ) {
 }

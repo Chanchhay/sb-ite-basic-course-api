@@ -12,7 +12,7 @@ import kh.edu.istad.ite.features.business.entity.Business;
 import kh.edu.istad.ite.features.business.mapper.StorefrontMapper;
 import kh.edu.istad.ite.features.business.repository.BusinessRepository;
 import kh.edu.istad.ite.features.business.specification.PublicStoreSpecifications;
-import kh.edu.istad.ite.features.catalog.repository.ProductRepository;
+import kh.edu.istad.ite.features.catalog.repository.ItemRepository;
 import kh.edu.istad.ite.shared.enums.BusinessOwnerStatus;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -36,7 +36,7 @@ public class StorefrontServiceImpl implements StorefrontService {
     private static final Pattern DNS_LABEL = Pattern.compile("^[a-z0-9]([a-z0-9-]{1,61}[a-z0-9])?$");
 
     private final BusinessRepository businessRepository;
-    private final ProductRepository productRepository;
+    private final ItemRepository itemRepository;
     private final StorefrontMapper storefrontMapper;
     private final StorefrontProps storefrontProps;
 
@@ -146,9 +146,9 @@ public class StorefrontServiceImpl implements StorefrontService {
         ));
 
         requirements.add(new StorefrontRequirement(
-                "HAS_PRODUCT",
-                "At least one product must exist",
-                productRepository.existsByBusiness_Id(business.getId()),
+                "HAS_ITEM",
+                "At least one item must exist",
+                itemRepository.existsByBusiness_Id(business.getId()),
                 true
         ));
 

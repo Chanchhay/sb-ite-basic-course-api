@@ -5,16 +5,16 @@ import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Digits;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Size;
-import kh.edu.istad.ite.shared.enums.ProductStatus;
-import kh.edu.istad.ite.shared.enums.ProductType;
+import kh.edu.istad.ite.shared.enums.ItemStatus;
+import kh.edu.istad.ite.shared.enums.ItemType;
 
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
-public record UpdateProductRequest(
-        UUID categoryId,
+public record UpdateItemRequest(
+        UUID itemGroupId,
 
         UUID unitId,
 
@@ -39,15 +39,15 @@ public record UpdateProductRequest(
         @Digits(integer = 10, fraction = 2, message = "price must have at most 10 integer digits and 2 decimal places")
         BigDecimal price,
 
-        ProductType itemType,
+        ItemType itemType,
 
         Map<String, Object> attributes,
 
-        List<@Valid ProductVariantRequest> variants,
+        List<@Valid ItemVariantRequest> variants,
 
         @Min(value = 0, message = "lowStockDefault must be at least 0")
         Integer lowStockDefault,
 
-        ProductStatus status
+        ItemStatus status
 ) {
 }

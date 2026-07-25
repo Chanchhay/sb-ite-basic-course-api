@@ -6,7 +6,7 @@ import kh.edu.istad.ite.features.admin.service.AdminUnitService;
 import kh.edu.istad.ite.features.catalog.dto.UnitResponse;
 import kh.edu.istad.ite.features.catalog.entity.Unit;
 import kh.edu.istad.ite.features.catalog.mapper.UnitMapper;
-import kh.edu.istad.ite.features.catalog.repository.ProductRepository;
+import kh.edu.istad.ite.features.catalog.repository.ItemRepository;
 import kh.edu.istad.ite.features.catalog.repository.UnitRepository;
 import kh.edu.istad.ite.shared.enums.AdminActionType;
 import kh.edu.istad.ite.shared.enums.AuditTargetType;
@@ -28,7 +28,7 @@ public class AdminUnitServiceImpl implements AdminUnitService {
     private static final int SLUG_MAX_LENGTH = 250;
 
     private final UnitRepository unitRepository;
-    private final ProductRepository productRepository;
+    private final ItemRepository itemRepository;
     private final UnitMapper unitMapper;
     private final AdminAuditLogService adminAuditLogService;
 
@@ -95,8 +95,8 @@ public class AdminUnitServiceImpl implements AdminUnitService {
     public void deleteUnit(UUID unitId) {
         Unit unit = findUnit(unitId);
 
-        if (productRepository.existsByUnit_Id(unitId)) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "Cannot delete a unit that is still assigned to products");
+        if (itemRepository.existsByUnit_Id(unitId)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Cannot delete a unit that is still assigned to items");
         }
 
         String deletedName = unit.getName();

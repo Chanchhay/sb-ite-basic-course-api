@@ -22,8 +22,8 @@ import java.util.UUID;
 @Getter
 @Setter
 @NoArgsConstructor
-@Table(name = "product_variants")
-public class ProductVariant extends BasedAuditingEntity {
+@Table(name = "item_variants")
+public class ItemVariant extends BasedAuditingEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
@@ -35,8 +35,8 @@ public class ProductVariant extends BasedAuditingEntity {
     private Business business;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "product_id", nullable = false)
-    private Product product;
+    @JoinColumn(name = "item_id", nullable = false)
+    private Item item;
 
     @Column(nullable = false, length = 255)
     private String slug;

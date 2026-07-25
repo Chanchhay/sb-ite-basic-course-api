@@ -39,7 +39,7 @@ keycloak:
 
 app:
   storefront:
-    base-domain: fluxibiz.store
+    base-domain: ${BASE_STOREFRONT_DOMAIN}
     protocol: https
     path-prefix: /store
     subdomain-enabled: true
