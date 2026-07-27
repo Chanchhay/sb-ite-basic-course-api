@@ -59,8 +59,7 @@ public class StockEntry extends BasedAuditingEntity {
     private Item product;
 
     @Enumerated(EnumType.STRING)
-    @JdbcTypeCode(SqlTypes.NAMED_ENUM)
-    @Column(name = "entry_type", nullable = false, columnDefinition = "stock_entry_type")
+    @Column(name = "entry_type", nullable = false, length = 40)
     private StockEntryType entryType;
 
     @Column(name = "quantity_change", nullable = false, precision = 18, scale = 3)
