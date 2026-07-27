@@ -44,6 +44,7 @@ public class SecurityConfig {
                 .permitAll()
                 .requestMatchers(HttpMethod.POST, "/api/v1/auth/register").permitAll()
                 .requestMatchers(HttpMethod.POST, "/api/v1/webhooks/telegram/**").permitAll()
+                .requestMatchers("/ws/customer-display/**", "/ws/customer-display-sockjs/**").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/v1/public/**").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/v1/units", "/api/v1/units/**").permitAll()
                 .requestMatchers("/api/v1/units", "/api/v1/units/**").hasRole("SUPER_ADMIN")
