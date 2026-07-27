@@ -1,5 +1,4 @@
 spring:
-
   scalar:
     url: ${SERVER_URL:localhost://8080}/v3/api-docs
     path: /docs

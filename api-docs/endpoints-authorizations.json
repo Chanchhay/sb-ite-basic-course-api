@@ -1,0 +1,1361 @@
+{
+  "allowRemoteResourceManagement": true,
+  "policyEnforcementMode": "ENFORCING",
+  "resources": [
+    {
+      "name": "admin-dashboard",
+      "type": "urn:fluxipos:resources:admin-dashboard",
+      "ownerManagedAccess": false,
+      "displayName": "Admin Dashboard",
+      "attributes": {},
+      "uris": [
+        "/api/v1/admin/dashboard"
+      ],
+      "scopes": [
+        {
+          "name": "admin-dashboard:read"
+        }
+      ]
+    },
+    {
+      "name": "Default Resource",
+      "type": "urn:fluxipos-backend:resources:default",
+      "ownerManagedAccess": false,
+      "attributes": {},
+      "uris": [
+        "/*"
+      ]
+    },
+    {
+      "name": "user-profile",
+      "type": "urn:fluxipos:resources:user-profile",
+      "ownerManagedAccess": false,
+      "displayName": "User Profile",
+      "attributes": {},
+      "uris": [
+        "/api/v1/user-profiles/me"
+      ],
+      "scopes": [
+        {
+          "name": "profile:update"
+        },
+        {
+          "name": "profile:read"
+        }
+      ]
+    },
+    {
+      "name": "business",
+      "type": "urn:fluxipos:resources:business",
+      "ownerManagedAccess": false,
+      "displayName": "Business",
+      "attributes": {},
+      "uris": [
+        "/api/v1/businesses/me",
+        "/api/v1/businesses/*",
+        "/api/v1/businesses/*/delete",
+        "/api/v1/businesses"
+      ],
+      "scopes": [
+        {
+          "name": "business:create"
+        },
+        {
+          "name": "business:update"
+        },
+        {
+          "name": "business:delete"
+        },
+        {
+          "name": "business:read"
+        }
+      ]
+    },
+    {
+      "name": "items",
+      "type": "urn:fluxipos:resources:items",
+      "ownerManagedAccess": false,
+      "displayName": "Items",
+      "attributes": {},
+      "uris": [
+        "/api/v1/businesses/*/items/*",
+        "/api/v1/businesses/*/items"
+      ],
+      "scopes": [
+        {
+          "name": "item:create"
+        },
+        {
+          "name": "item:update"
+        },
+        {
+          "name": "item:delete"
+        },
+        {
+          "name": "item:read"
+        }
+      ]
+    },
+    {
+      "name": "item-groups",
+      "type": "urn:fluxipos:resources:item-groups",
+      "ownerManagedAccess": false,
+      "displayName": "Item Groups",
+      "attributes": {},
+      "uris": [
+        "/api/v1/businesses/*/item-groups",
+        "/api/v1/businesses/*/item-groups/*"
+      ],
+      "scopes": [
+        {
+          "name": "item-group:delete"
+        },
+        {
+          "name": "item-group:update"
+        },
+        {
+          "name": "item-group:read"
+        },
+        {
+          "name": "item-group:create"
+        }
+      ]
+    },
+    {
+      "name": "stock",
+      "type": "urn:fluxipos:resources:stock",
+      "ownerManagedAccess": false,
+      "displayName": "Stock",
+      "attributes": {},
+      "uris": [
+        "/api/v1/businesses/*/stock-entries/*",
+        "/api/v1/businesses/*/items/*/stock-entries",
+        "/api/v1/businesses/*/stock-entries",
+        "/api/v1/businesses/*/items/*/stock"
+      ],
+      "scopes": [
+        {
+          "name": "stock:write"
+        },
+        {
+          "name": "stock:read"
+        }
+      ]
+    },
+    {
+      "name": "orders",
+      "type": "urn:fluxipos:resources:orders",
+      "ownerManagedAccess": false,
+      "displayName": "Orders",
+      "attributes": {},
+      "uris": [
+        "/api/v1/businesses/*/orders/*",
+        "/api/v1/businesses/*/orders/*/payment-status",
+        "/api/v1/businesses/*/orders/*/khqr",
+        "/api/v1/businesses/*/orders/*/pay",
+        "/api/v1/businesses/*/orders/*/cancel",
+        "/api/v1/businesses/*/orders"
+      ],
+      "scopes": [
+        {
+          "name": "order:cancel"
+        },
+        {
+          "name": "order:create"
+        },
+        {
+          "name": "order:pay"
+        },
+        {
+          "name": "order:read"
+        },
+        {
+          "name": "order:generate-khqr"
+        }
+      ]
+    },
+    {
+      "name": "currencies",
+      "type": "urn:fluxipos:resources:currencies",
+      "ownerManagedAccess": false,
+      "displayName": "Currencies",
+      "attributes": {},
+      "uris": [
+        "/api/v1/businesses/*/currencies/*/base",
+        "/api/v1/businesses/*/currencies/*/display",
+        "/api/v1/businesses/*/currencies",
+        "/api/v1/businesses/*/currencies/*"
+      ],
+      "scopes": [
+        {
+          "name": "currency:update"
+        },
+        {
+          "name": "currency:set-display"
+        },
+        {
+          "name": "currency:delete"
+        },
+        {
+          "name": "currency:create"
+        },
+        {
+          "name": "currency:read"
+        },
+        {
+          "name": "currency:set-base"
+        }
+      ]
+    },
+    {
+      "name": "storefront",
+      "type": "urn:fluxipos:resources:storefront",
+      "ownerManagedAccess": false,
+      "displayName": "Storefront",
+      "attributes": {},
+      "uris": [
+        "/api/v1/businesses/storefront/*",
+        "/api/v1/businesses/storefront"
+      ],
+      "scopes": [
+        {
+          "name": "storefront:update"
+        },
+        {
+          "name": "storefront:read"
+        }
+      ]
+    },
+    {
+      "name": "telegram-settings",
+      "type": "urn:fluxipos:resources:telegram-settings",
+      "ownerManagedAccess": false,
+      "displayName": "Telegram Settings",
+      "attributes": {},
+      "uris": [
+        "/api/v1/businesses/social-settings/telegram-bot",
+        "/api/v1/businesses/social-settings/telegram-bot/*"
+      ],
+      "scopes": [
+        {
+          "name": "telegram-setting:update"
+        },
+        {
+          "name": "telegram-setting:read"
+        }
+      ]
+    },
+    {
+      "name": "bakong-settings",
+      "type": "urn:fluxipos:resources:bakong-settings",
+      "ownerManagedAccess": false,
+      "displayName": "Bakong Settings",
+      "attributes": {},
+      "uris": [
+        "/api/v1/businesses/payment-settings/bakong/*",
+        "/api/v1/businesses/payment-settings/bakong"
+      ],
+      "scopes": [
+        {
+          "name": "bakong-setting:update"
+        },
+        {
+          "name": "bakong-setting:preview"
+        },
+        {
+          "name": "bakong-setting:read"
+        }
+      ]
+    },
+    {
+      "name": "shared-units",
+      "type": "urn:fluxipos:resources:shared-units",
+      "ownerManagedAccess": false,
+      "displayName": "Shared Units",
+      "attributes": {},
+      "uris": [
+        "/api/v1/units"
+      ],
+      "scopes": [
+        {
+          "name": "unit:read"
+        }
+      ]
+    },
+    {
+      "name": "business-role-management",
+      "type": "urn:fluxipos:resources:business-role-management",
+      "ownerManagedAccess": false,
+      "displayName": "Business Role Management",
+      "attributes": {},
+      "uris": [
+        "/api/v1/businesses/*/roles",
+        "/api/v1/businesses/*/members",
+        "/api/v1/businesses/*/roles/*",
+        "/api/v1/businesses/*/members/*/roles",
+        "/api/v1/businesses/*/members/*"
+      ],
+      "scopes": [
+        {
+          "name": "member:read"
+        },
+        {
+          "name": "role:update"
+        },
+        {
+          "name": "member:manage"
+        },
+        {
+          "name": "role:read"
+        },
+        {
+          "name": "role:create"
+        },
+        {
+          "name": "role:delete"
+        },
+        {
+          "name": "role:assign"
+        }
+      ]
+    },
+    {
+      "name": "admin-businesses",
+      "type": "urn:fluxipos:resources:admin-businesses",
+      "ownerManagedAccess": false,
+      "displayName": "Admin Businesses",
+      "attributes": {},
+      "uris": [
+        "/api/v1/admin/businesses",
+        "/api/v1/admin/businesses/*"
+      ],
+      "scopes": [
+        {
+          "name": "admin-business:delete"
+        },
+        {
+          "name": "admin-business:manage"
+        },
+        {
+          "name": "admin-business:read"
+        }
+      ]
+    },
+    {
+      "name": "admin-business-categories",
+      "type": "urn:fluxipos:resources:admin-business-categories",
+      "ownerManagedAccess": false,
+      "displayName": "Admin Business Categories",
+      "attributes": {},
+      "uris": [
+        "/api/v1/admin/business-categories/*",
+        "/api/v1/admin/business-categories"
+      ],
+      "scopes": [
+        {
+          "name": "admin-category:create"
+        },
+        {
+          "name": "admin-category:update"
+        },
+        {
+          "name": "admin-category:delete"
+        },
+        {
+          "name": "admin-category:read"
+        }
+      ]
+    },
+    {
+      "name": "admin-units",
+      "type": "urn:fluxipos:resources:admin-units",
+      "ownerManagedAccess": false,
+      "displayName": "Admin Units",
+      "attributes": {},
+      "uris": [
+        "/api/v1/admin/units/*",
+        "/api/v1/admin/units"
+      ],
+      "scopes": [
+        {
+          "name": "admin-unit:delete"
+        },
+        {
+          "name": "admin-unit:read"
+        },
+        {
+          "name": "admin-unit:update"
+        },
+        {
+          "name": "admin-unit:create"
+        }
+      ]
+    },
+    {
+      "name": "admin-audit-logs",
+      "type": "urn:fluxipos:resources:admin-audit-logs",
+      "ownerManagedAccess": false,
+      "displayName": "Admin Audit Logs",
+      "attributes": {},
+      "uris": [
+        "/api/v1/admin/audit-logs",
+        "/api/v1/admin/audit-logs/*"
+      ],
+      "scopes": [
+        {
+          "name": "admin-audit:read"
+        }
+      ]
+    }
+  ],
+  "policies": [
+    {
+      "name": "Default Policy",
+      "description": "A policy that grants access only for users within this realm",
+      "type": "js",
+      "logic": "POSITIVE",
+      "decisionStrategy": "AFFIRMATIVE",
+      "config": {
+        "code": "// by default, grants any permission associated with this policy\n$evaluation.grant();\n"
+      }
+    },
+    {
+      "name": "platform-admin-policy",
+      "description": "Allows users with the PLATFORM_ADMIN client role.",
+      "type": "role",
+      "logic": "POSITIVE",
+      "decisionStrategy": "AFFIRMATIVE",
+      "config": {
+        "fetchRoles": "false",
+        "roles": "[]"
+      }
+    },
+    {
+      "name": "global-user-policy",
+      "description": "Allows users with the GLOBAL_USER client role.",
+      "type": "role",
+      "logic": "POSITIVE",
+      "decisionStrategy": "AFFIRMATIVE",
+      "config": {
+        "fetchRoles": "false",
+        "roles": "[]"
+      }
+    },
+    {
+      "name": "business-owner-policy",
+      "description": "Allows users with the BUSINESS client role.",
+      "type": "role",
+      "logic": "POSITIVE",
+      "decisionStrategy": "AFFIRMATIVE",
+      "config": {
+        "fetchRoles": "false",
+        "roles": "[]"
+      }
+    },
+    {
+      "name": "customer-policy",
+      "description": "Allows users with the CUSTOMER client role.",
+      "type": "role",
+      "logic": "POSITIVE",
+      "decisionStrategy": "AFFIRMATIVE",
+      "config": {
+        "fetchRoles": "false",
+        "roles": "[]"
+      }
+    },
+    {
+      "name": "item-groups::item-group:read",
+      "description": "Scope permission for item-group:read on item-groups.",
+      "type": "scope",
+      "logic": "POSITIVE",
+      "decisionStrategy": "AFFIRMATIVE",
+      "config": {
+        "resources": "[\"item-groups\"]",
+        "scopes": "[\"item-group:read\"]",
+        "applyPolicies": "[\"business-owner-policy\"]"
+      }
+    },
+    {
+      "name": "item-groups::item-group:create",
+      "description": "Scope permission for item-group:create on item-groups.",
+      "type": "scope",
+      "logic": "POSITIVE",
+      "decisionStrategy": "AFFIRMATIVE",
+      "config": {
+        "resources": "[\"item-groups\"]",
+        "scopes": "[\"item-group:create\"]",
+        "applyPolicies": "[\"business-owner-policy\"]"
+      }
+    },
+    {
+      "name": "Default Permission",
+      "description": "A permission that applies to the default resource type",
+      "type": "resource",
+      "logic": "POSITIVE",
+      "decisionStrategy": "UNANIMOUS",
+      "config": {
+        "defaultResourceType": "urn:fluxipos-backend:resources:default",
+        "applyPolicies": "[\"Default Policy\"]"
+      }
+    },
+    {
+      "name": "user-profile::profile:read",
+      "description": "Scope permission for profile:read on user-profile.",
+      "type": "scope",
+      "logic": "POSITIVE",
+      "decisionStrategy": "AFFIRMATIVE",
+      "config": {
+        "resources": "[\"user-profile\"]",
+        "scopes": "[\"profile:read\"]",
+        "applyPolicies": "[\"customer-policy\",\"platform-admin-policy\",\"global-user-policy\",\"business-owner-policy\"]"
+      }
+    },
+    {
+      "name": "user-profile::profile:update",
+      "description": "Scope permission for profile:update on user-profile.",
+      "type": "scope",
+      "logic": "POSITIVE",
+      "decisionStrategy": "AFFIRMATIVE",
+      "config": {
+        "resources": "[\"user-profile\"]",
+        "scopes": "[\"profile:update\"]",
+        "applyPolicies": "[\"customer-policy\",\"platform-admin-policy\",\"global-user-policy\",\"business-owner-policy\"]"
+      }
+    },
+    {
+      "name": "business::business:create",
+      "description": "Scope permission for business:create on business.",
+      "type": "scope",
+      "logic": "POSITIVE",
+      "decisionStrategy": "AFFIRMATIVE",
+      "config": {
+        "resources": "[\"business\"]",
+        "scopes": "[\"business:create\"]",
+        "applyPolicies": "[\"global-user-policy\",\"business-owner-policy\"]"
+      }
+    },
+    {
+      "name": "business::business:read",
+      "description": "Scope permission for business:read on business.",
+      "type": "scope",
+      "logic": "POSITIVE",
+      "decisionStrategy": "AFFIRMATIVE",
+      "config": {
+        "resources": "[\"business\"]",
+        "scopes": "[\"business:read\"]",
+        "applyPolicies": "[\"global-user-policy\",\"business-owner-policy\"]"
+      }
+    },
+    {
+      "name": "business::business:update",
+      "description": "Scope permission for business:update on business.",
+      "type": "scope",
+      "logic": "POSITIVE",
+      "decisionStrategy": "AFFIRMATIVE",
+      "config": {
+        "resources": "[\"business\"]",
+        "scopes": "[\"business:update\"]",
+        "applyPolicies": "[\"business-owner-policy\"]"
+      }
+    },
+    {
+      "name": "business::business:delete",
+      "description": "Scope permission for business:delete on business.",
+      "type": "scope",
+      "logic": "POSITIVE",
+      "decisionStrategy": "AFFIRMATIVE",
+      "config": {
+        "resources": "[\"business\"]",
+        "scopes": "[\"business:delete\"]",
+        "applyPolicies": "[\"business-owner-policy\"]"
+      }
+    },
+    {
+      "name": "items::item:read",
+      "description": "Scope permission for item:read on items.",
+      "type": "scope",
+      "logic": "POSITIVE",
+      "decisionStrategy": "AFFIRMATIVE",
+      "config": {
+        "resources": "[\"items\"]",
+        "scopes": "[\"item:read\"]",
+        "applyPolicies": "[\"business-owner-policy\"]"
+      }
+    },
+    {
+      "name": "items::item:create",
+      "description": "Scope permission for item:create on items.",
+      "type": "scope",
+      "logic": "POSITIVE",
+      "decisionStrategy": "AFFIRMATIVE",
+      "config": {
+        "resources": "[\"items\"]",
+        "scopes": "[\"item:create\"]",
+        "applyPolicies": "[\"business-owner-policy\"]"
+      }
+    },
+    {
+      "name": "items::item:update",
+      "description": "Scope permission for item:update on items.",
+      "type": "scope",
+      "logic": "POSITIVE",
+      "decisionStrategy": "AFFIRMATIVE",
+      "config": {
+        "resources": "[\"items\"]",
+        "scopes": "[\"item:update\"]",
+        "applyPolicies": "[\"business-owner-policy\"]"
+      }
+    },
+    {
+      "name": "items::item:delete",
+      "description": "Scope permission for item:delete on items.",
+      "type": "scope",
+      "logic": "POSITIVE",
+      "decisionStrategy": "AFFIRMATIVE",
+      "config": {
+        "resources": "[\"items\"]",
+        "scopes": "[\"item:delete\"]",
+        "applyPolicies": "[\"business-owner-policy\"]"
+      }
+    },
+    {
+      "name": "item-groups::item-group:update",
+      "description": "Scope permission for item-group:update on item-groups.",
+      "type": "scope",
+      "logic": "POSITIVE",
+      "decisionStrategy": "AFFIRMATIVE",
+      "config": {
+        "resources": "[\"item-groups\"]",
+        "scopes": "[\"item-group:update\"]",
+        "applyPolicies": "[\"business-owner-policy\"]"
+      }
+    },
+    {
+      "name": "item-groups::item-group:delete",
+      "description": "Scope permission for item-group:delete on item-groups.",
+      "type": "scope",
+      "logic": "POSITIVE",
+      "decisionStrategy": "AFFIRMATIVE",
+      "config": {
+        "resources": "[\"item-groups\"]",
+        "scopes": "[\"item-group:delete\"]",
+        "applyPolicies": "[\"business-owner-policy\"]"
+      }
+    },
+    {
+      "name": "stock::stock:read",
+      "description": "Scope permission for stock:read on stock.",
+      "type": "scope",
+      "logic": "POSITIVE",
+      "decisionStrategy": "AFFIRMATIVE",
+      "config": {
+        "resources": "[\"stock\"]",
+        "scopes": "[\"stock:read\"]",
+        "applyPolicies": "[\"business-owner-policy\"]"
+      }
+    },
+    {
+      "name": "stock::stock:write",
+      "description": "Scope permission for stock:write on stock.",
+      "type": "scope",
+      "logic": "POSITIVE",
+      "decisionStrategy": "AFFIRMATIVE",
+      "config": {
+        "resources": "[\"stock\"]",
+        "scopes": "[\"stock:write\"]",
+        "applyPolicies": "[\"business-owner-policy\"]"
+      }
+    },
+    {
+      "name": "orders::order:read",
+      "description": "Scope permission for order:read on orders.",
+      "type": "scope",
+      "logic": "POSITIVE",
+      "decisionStrategy": "AFFIRMATIVE",
+      "config": {
+        "resources": "[\"orders\"]",
+        "scopes": "[\"order:read\"]",
+        "applyPolicies": "[\"business-owner-policy\"]"
+      }
+    },
+    {
+      "name": "orders::order:create",
+      "description": "Scope permission for order:create on orders.",
+      "type": "scope",
+      "logic": "POSITIVE",
+      "decisionStrategy": "AFFIRMATIVE",
+      "config": {
+        "resources": "[\"orders\"]",
+        "scopes": "[\"order:create\"]",
+        "applyPolicies": "[\"business-owner-policy\"]"
+      }
+    },
+    {
+      "name": "orders::order:pay",
+      "description": "Scope permission for order:pay on orders.",
+      "type": "scope",
+      "logic": "POSITIVE",
+      "decisionStrategy": "AFFIRMATIVE",
+      "config": {
+        "resources": "[\"orders\"]",
+        "scopes": "[\"order:pay\"]",
+        "applyPolicies": "[\"business-owner-policy\"]"
+      }
+    },
+    {
+      "name": "orders::order:cancel",
+      "description": "Scope permission for order:cancel on orders.",
+      "type": "scope",
+      "logic": "POSITIVE",
+      "decisionStrategy": "AFFIRMATIVE",
+      "config": {
+        "resources": "[\"orders\"]",
+        "scopes": "[\"order:cancel\"]",
+        "applyPolicies": "[\"business-owner-policy\"]"
+      }
+    },
+    {
+      "name": "orders::order:generate-khqr",
+      "description": "Scope permission for order:generate-khqr on orders.",
+      "type": "scope",
+      "logic": "POSITIVE",
+      "decisionStrategy": "AFFIRMATIVE",
+      "config": {
+        "resources": "[\"orders\"]",
+        "scopes": "[\"order:generate-khqr\"]",
+        "applyPolicies": "[\"business-owner-policy\"]"
+      }
+    },
+    {
+      "name": "currencies::currency:read",
+      "description": "Scope permission for currency:read on currencies.",
+      "type": "scope",
+      "logic": "POSITIVE",
+      "decisionStrategy": "AFFIRMATIVE",
+      "config": {
+        "resources": "[\"currencies\"]",
+        "scopes": "[\"currency:read\"]",
+        "applyPolicies": "[\"business-owner-policy\"]"
+      }
+    },
+    {
+      "name": "currencies::currency:create",
+      "description": "Scope permission for currency:create on currencies.",
+      "type": "scope",
+      "logic": "POSITIVE",
+      "decisionStrategy": "AFFIRMATIVE",
+      "config": {
+        "resources": "[\"currencies\"]",
+        "scopes": "[\"currency:create\"]",
+        "applyPolicies": "[\"business-owner-policy\"]"
+      }
+    },
+    {
+      "name": "currencies::currency:update",
+      "description": "Scope permission for currency:update on currencies.",
+      "type": "scope",
+      "logic": "POSITIVE",
+      "decisionStrategy": "AFFIRMATIVE",
+      "config": {
+        "resources": "[\"currencies\"]",
+        "scopes": "[\"currency:update\"]",
+        "applyPolicies": "[\"business-owner-policy\"]"
+      }
+    },
+    {
+      "name": "currencies::currency:delete",
+      "description": "Scope permission for currency:delete on currencies.",
+      "type": "scope",
+      "logic": "POSITIVE",
+      "decisionStrategy": "AFFIRMATIVE",
+      "config": {
+        "resources": "[\"currencies\"]",
+        "scopes": "[\"currency:delete\"]",
+        "applyPolicies": "[\"business-owner-policy\"]"
+      }
+    },
+    {
+      "name": "currencies::currency:set-base",
+      "description": "Scope permission for currency:set-base on currencies.",
+      "type": "scope",
+      "logic": "POSITIVE",
+      "decisionStrategy": "AFFIRMATIVE",
+      "config": {
+        "resources": "[\"currencies\"]",
+        "scopes": "[\"currency:set-base\"]",
+        "applyPolicies": "[\"business-owner-policy\"]"
+      }
+    },
+    {
+      "name": "currencies::currency:set-display",
+      "description": "Scope permission for currency:set-display on currencies.",
+      "type": "scope",
+      "logic": "POSITIVE",
+      "decisionStrategy": "AFFIRMATIVE",
+      "config": {
+        "resources": "[\"currencies\"]",
+        "scopes": "[\"currency:set-display\"]",
+        "applyPolicies": "[\"business-owner-policy\"]"
+      }
+    },
+    {
+      "name": "storefront::storefront:read",
+      "description": "Scope permission for storefront:read on storefront.",
+      "type": "scope",
+      "logic": "POSITIVE",
+      "decisionStrategy": "AFFIRMATIVE",
+      "config": {
+        "resources": "[\"storefront\"]",
+        "scopes": "[\"storefront:read\"]",
+        "applyPolicies": "[\"business-owner-policy\"]"
+      }
+    },
+    {
+      "name": "storefront::storefront:update",
+      "description": "Scope permission for storefront:update on storefront.",
+      "type": "scope",
+      "logic": "POSITIVE",
+      "decisionStrategy": "AFFIRMATIVE",
+      "config": {
+        "resources": "[\"storefront\"]",
+        "scopes": "[\"storefront:update\"]",
+        "applyPolicies": "[\"business-owner-policy\"]"
+      }
+    },
+    {
+      "name": "telegram-settings::telegram-setting:read",
+      "description": "Scope permission for telegram-setting:read on telegram-settings.",
+      "type": "scope",
+      "logic": "POSITIVE",
+      "decisionStrategy": "AFFIRMATIVE",
+      "config": {
+        "resources": "[\"telegram-settings\"]",
+        "scopes": "[\"telegram-setting:read\"]",
+        "applyPolicies": "[\"business-owner-policy\"]"
+      }
+    },
+    {
+      "name": "telegram-settings::telegram-setting:update",
+      "description": "Scope permission for telegram-setting:update on telegram-settings.",
+      "type": "scope",
+      "logic": "POSITIVE",
+      "decisionStrategy": "AFFIRMATIVE",
+      "config": {
+        "resources": "[\"telegram-settings\"]",
+        "scopes": "[\"telegram-setting:update\"]",
+        "applyPolicies": "[\"business-owner-policy\"]"
+      }
+    },
+    {
+      "name": "bakong-settings::bakong-setting:read",
+      "description": "Scope permission for bakong-setting:read on bakong-settings.",
+      "type": "scope",
+      "logic": "POSITIVE",
+      "decisionStrategy": "AFFIRMATIVE",
+      "config": {
+        "resources": "[\"bakong-settings\"]",
+        "scopes": "[\"bakong-setting:read\"]",
+        "applyPolicies": "[\"business-owner-policy\"]"
+      }
+    },
+    {
+      "name": "bakong-settings::bakong-setting:update",
+      "description": "Scope permission for bakong-setting:update on bakong-settings.",
+      "type": "scope",
+      "logic": "POSITIVE",
+      "decisionStrategy": "AFFIRMATIVE",
+      "config": {
+        "resources": "[\"bakong-settings\"]",
+        "scopes": "[\"bakong-setting:update\"]",
+        "applyPolicies": "[\"business-owner-policy\"]"
+      }
+    },
+    {
+      "name": "bakong-settings::bakong-setting:preview",
+      "description": "Scope permission for bakong-setting:preview on bakong-settings.",
+      "type": "scope",
+      "logic": "POSITIVE",
+      "decisionStrategy": "AFFIRMATIVE",
+      "config": {
+        "resources": "[\"bakong-settings\"]",
+        "scopes": "[\"bakong-setting:preview\"]",
+        "applyPolicies": "[\"business-owner-policy\"]"
+      }
+    },
+    {
+      "name": "shared-units::unit:read",
+      "description": "Scope permission for unit:read on shared-units.",
+      "type": "scope",
+      "logic": "POSITIVE",
+      "decisionStrategy": "AFFIRMATIVE",
+      "config": {
+        "resources": "[\"shared-units\"]",
+        "scopes": "[\"unit:read\"]",
+        "applyPolicies": "[\"customer-policy\",\"platform-admin-policy\",\"global-user-policy\",\"business-owner-policy\"]"
+      }
+    },
+    {
+      "name": "business-role-management::role:read",
+      "description": "Scope permission for role:read on business-role-management.",
+      "type": "scope",
+      "logic": "POSITIVE",
+      "decisionStrategy": "AFFIRMATIVE",
+      "config": {
+        "resources": "[\"business-role-management\"]",
+        "scopes": "[\"role:read\"]",
+        "applyPolicies": "[\"business-owner-policy\"]"
+      }
+    },
+    {
+      "name": "business-role-management::role:create",
+      "description": "Scope permission for role:create on business-role-management.",
+      "type": "scope",
+      "logic": "POSITIVE",
+      "decisionStrategy": "AFFIRMATIVE",
+      "config": {
+        "resources": "[\"business-role-management\"]",
+        "scopes": "[\"role:create\"]",
+        "applyPolicies": "[\"business-owner-policy\"]"
+      }
+    },
+    {
+      "name": "business-role-management::role:update",
+      "description": "Scope permission for role:update on business-role-management.",
+      "type": "scope",
+      "logic": "POSITIVE",
+      "decisionStrategy": "AFFIRMATIVE",
+      "config": {
+        "resources": "[\"business-role-management\"]",
+        "scopes": "[\"role:update\"]",
+        "applyPolicies": "[\"business-owner-policy\"]"
+      }
+    },
+    {
+      "name": "business-role-management::role:delete",
+      "description": "Scope permission for role:delete on business-role-management.",
+      "type": "scope",
+      "logic": "POSITIVE",
+      "decisionStrategy": "AFFIRMATIVE",
+      "config": {
+        "resources": "[\"business-role-management\"]",
+        "scopes": "[\"role:delete\"]",
+        "applyPolicies": "[\"business-owner-policy\"]"
+      }
+    },
+    {
+      "name": "business-role-management::role:assign",
+      "description": "Scope permission for role:assign on business-role-management.",
+      "type": "scope",
+      "logic": "POSITIVE",
+      "decisionStrategy": "AFFIRMATIVE",
+      "config": {
+        "resources": "[\"business-role-management\"]",
+        "scopes": "[\"role:assign\"]",
+        "applyPolicies": "[\"business-owner-policy\"]"
+      }
+    },
+    {
+      "name": "business-role-management::member:read",
+      "description": "Scope permission for member:read on business-role-management.",
+      "type": "scope",
+      "logic": "POSITIVE",
+      "decisionStrategy": "AFFIRMATIVE",
+      "config": {
+        "resources": "[\"business-role-management\"]",
+        "scopes": "[\"member:read\"]",
+        "applyPolicies": "[\"business-owner-policy\"]"
+      }
+    },
+    {
+      "name": "business-role-management::member:manage",
+      "description": "Scope permission for member:manage on business-role-management.",
+      "type": "scope",
+      "logic": "POSITIVE",
+      "decisionStrategy": "AFFIRMATIVE",
+      "config": {
+        "resources": "[\"business-role-management\"]",
+        "scopes": "[\"member:manage\"]",
+        "applyPolicies": "[\"business-owner-policy\"]"
+      }
+    },
+    {
+      "name": "admin-dashboard::admin-dashboard:read",
+      "description": "Scope permission for admin-dashboard:read on admin-dashboard.",
+      "type": "scope",
+      "logic": "POSITIVE",
+      "decisionStrategy": "AFFIRMATIVE",
+      "config": {
+        "resources": "[\"admin-dashboard\"]",
+        "scopes": "[\"admin-dashboard:read\"]",
+        "applyPolicies": "[\"platform-admin-policy\"]"
+      }
+    },
+    {
+      "name": "admin-businesses::admin-business:read",
+      "description": "Scope permission for admin-business:read on admin-businesses.",
+      "type": "scope",
+      "logic": "POSITIVE",
+      "decisionStrategy": "AFFIRMATIVE",
+      "config": {
+        "resources": "[\"admin-businesses\"]",
+        "scopes": "[\"admin-business:read\"]",
+        "applyPolicies": "[\"platform-admin-policy\"]"
+      }
+    },
+    {
+      "name": "admin-businesses::admin-business:manage",
+      "description": "Scope permission for admin-business:manage on admin-businesses.",
+      "type": "scope",
+      "logic": "POSITIVE",
+      "decisionStrategy": "AFFIRMATIVE",
+      "config": {
+        "resources": "[\"admin-businesses\"]",
+        "scopes": "[\"admin-business:manage\"]",
+        "applyPolicies": "[\"platform-admin-policy\"]"
+      }
+    },
+    {
+      "name": "admin-businesses::admin-business:delete",
+      "description": "Scope permission for admin-business:delete on admin-businesses.",
+      "type": "scope",
+      "logic": "POSITIVE",
+      "decisionStrategy": "AFFIRMATIVE",
+      "config": {
+        "resources": "[\"admin-businesses\"]",
+        "scopes": "[\"admin-business:delete\"]",
+        "applyPolicies": "[\"platform-admin-policy\"]"
+      }
+    },
+    {
+      "name": "admin-business-categories::admin-category:read",
+      "description": "Scope permission for admin-category:read on admin-business-categories.",
+      "type": "scope",
+      "logic": "POSITIVE",
+      "decisionStrategy": "AFFIRMATIVE",
+      "config": {
+        "resources": "[\"admin-business-categories\"]",
+        "scopes": "[\"admin-category:read\"]",
+        "applyPolicies": "[\"platform-admin-policy\"]"
+      }
+    },
+    {
+      "name": "admin-business-categories::admin-category:create",
+      "description": "Scope permission for admin-category:create on admin-business-categories.",
+      "type": "scope",
+      "logic": "POSITIVE",
+      "decisionStrategy": "AFFIRMATIVE",
+      "config": {
+        "resources": "[\"admin-business-categories\"]",
+        "scopes": "[\"admin-category:create\"]",
+        "applyPolicies": "[\"platform-admin-policy\"]"
+      }
+    },
+    {
+      "name": "admin-business-categories::admin-category:update",
+      "description": "Scope permission for admin-category:update on admin-business-categories.",
+      "type": "scope",
+      "logic": "POSITIVE",
+      "decisionStrategy": "AFFIRMATIVE",
+      "config": {
+        "resources": "[\"admin-business-categories\"]",
+        "scopes": "[\"admin-category:update\"]",
+        "applyPolicies": "[\"platform-admin-policy\"]"
+      }
+    },
+    {
+      "name": "admin-business-categories::admin-category:delete",
+      "description": "Scope permission for admin-category:delete on admin-business-categories.",
+      "type": "scope",
+      "logic": "POSITIVE",
+      "decisionStrategy": "AFFIRMATIVE",
+      "config": {
+        "resources": "[\"admin-business-categories\"]",
+        "scopes": "[\"admin-category:delete\"]",
+        "applyPolicies": "[\"platform-admin-policy\"]"
+      }
+    },
+    {
+      "name": "admin-units::admin-unit:read",
+      "description": "Scope permission for admin-unit:read on admin-units.",
+      "type": "scope",
+      "logic": "POSITIVE",
+      "decisionStrategy": "AFFIRMATIVE",
+      "config": {
+        "resources": "[\"admin-units\"]",
+        "scopes": "[\"admin-unit:read\"]",
+        "applyPolicies": "[\"platform-admin-policy\"]"
+      }
+    },
+    {
+      "name": "admin-units::admin-unit:create",
+      "description": "Scope permission for admin-unit:create on admin-units.",
+      "type": "scope",
+      "logic": "POSITIVE",
+      "decisionStrategy": "AFFIRMATIVE",
+      "config": {
+        "resources": "[\"admin-units\"]",
+        "scopes": "[\"admin-unit:create\"]",
+        "applyPolicies": "[\"platform-admin-policy\"]"
+      }
+    },
+    {
+      "name": "admin-units::admin-unit:update",
+      "description": "Scope permission for admin-unit:update on admin-units.",
+      "type": "scope",
+      "logic": "POSITIVE",
+      "decisionStrategy": "AFFIRMATIVE",
+      "config": {
+        "resources": "[\"admin-units\"]",
+        "scopes": "[\"admin-unit:update\"]",
+        "applyPolicies": "[\"platform-admin-policy\"]"
+      }
+    },
+    {
+      "name": "admin-units::admin-unit:delete",
+      "description": "Scope permission for admin-unit:delete on admin-units.",
+      "type": "scope",
+      "logic": "POSITIVE",
+      "decisionStrategy": "AFFIRMATIVE",
+      "config": {
+        "resources": "[\"admin-units\"]",
+        "scopes": "[\"admin-unit:delete\"]",
+        "applyPolicies": "[\"platform-admin-policy\"]"
+      }
+    },
+    {
+      "name": "admin-audit-logs::admin-audit:read",
+      "description": "Scope permission for admin-audit:read on admin-audit-logs.",
+      "type": "scope",
+      "logic": "POSITIVE",
+      "decisionStrategy": "AFFIRMATIVE",
+      "config": {
+        "resources": "[\"admin-audit-logs\"]",
+        "scopes": "[\"admin-audit:read\"]",
+        "applyPolicies": "[\"platform-admin-policy\"]"
+      }
+    }
+  ],
+  "scopes": [
+    {
+      "name": "profile:read",
+      "displayName": "profile:read"
+    },
+    {
+      "name": "profile:update",
+      "displayName": "profile:update"
+    },
+    {
+      "name": "business:create",
+      "displayName": "business:create"
+    },
+    {
+      "name": "business:read",
+      "displayName": "business:read"
+    },
+    {
+      "name": "business:update",
+      "displayName": "business:update"
+    },
+    {
+      "name": "business:delete",
+      "displayName": "business:delete"
+    },
+    {
+      "name": "item:read",
+      "displayName": "item:read"
+    },
+    {
+      "name": "item:create",
+      "displayName": "item:create"
+    },
+    {
+      "name": "item:update",
+      "displayName": "item:update"
+    },
+    {
+      "name": "item:delete",
+      "displayName": "item:delete"
+    },
+    {
+      "name": "item-group:read",
+      "displayName": "item-group:read"
+    },
+    {
+      "name": "item-group:create",
+      "displayName": "item-group:create"
+    },
+    {
+      "name": "item-group:update",
+      "displayName": "item-group:update"
+    },
+    {
+      "name": "item-group:delete",
+      "displayName": "item-group:delete"
+    },
+    {
+      "name": "stock:read",
+      "displayName": "stock:read"
+    },
+    {
+      "name": "stock:write",
+      "displayName": "stock:write"
+    },
+    {
+      "name": "order:read",
+      "displayName": "order:read"
+    },
+    {
+      "name": "order:create",
+      "displayName": "order:create"
+    },
+    {
+      "name": "order:pay",
+      "displayName": "order:pay"
+    },
+    {
+      "name": "order:cancel",
+      "displayName": "order:cancel"
+    },
+    {
+      "name": "order:generate-khqr",
+      "displayName": "order:generate-khqr"
+    },
+    {
+      "name": "currency:read",
+      "displayName": "currency:read"
+    },
+    {
+      "name": "currency:create",
+      "displayName": "currency:create"
+    },
+    {
+      "name": "currency:update",
+      "displayName": "currency:update"
+    },
+    {
+      "name": "currency:delete",
+      "displayName": "currency:delete"
+    },
+    {
+      "name": "currency:set-base",
+      "displayName": "currency:set-base"
+    },
+    {
+      "name": "currency:set-display",
+      "displayName": "currency:set-display"
+    },
+    {
+      "name": "storefront:read",
+      "displayName": "storefront:read"
+    },
+    {
+      "name": "storefront:update",
+      "displayName": "storefront:update"
+    },
+    {
+      "name": "telegram-setting:read",
+      "displayName": "telegram-setting:read"
+    },
+    {
+      "name": "telegram-setting:update",
+      "displayName": "telegram-setting:update"
+    },
+    {
+      "name": "bakong-setting:read",
+      "displayName": "bakong-setting:read"
+    },
+    {
+      "name": "bakong-setting:update",
+      "displayName": "bakong-setting:update"
+    },
+    {
+      "name": "bakong-setting:preview",
+      "displayName": "bakong-setting:preview"
+    },
+    {
+      "name": "unit:read",
+      "displayName": "unit:read"
+    },
+    {
+      "name": "role:read",
+      "displayName": "role:read"
+    },
+    {
+      "name": "role:create",
+      "displayName": "role:create"
+    },
+    {
+      "name": "role:update",
+      "displayName": "role:update"
+    },
+    {
+      "name": "role:delete",
+      "displayName": "role:delete"
+    },
+    {
+      "name": "role:assign",
+      "displayName": "role:assign"
+    },
+    {
+      "name": "member:read",
+      "displayName": "member:read"
+    },
+    {
+      "name": "member:manage",
+      "displayName": "member:manage"
+    },
+    {
+      "name": "admin-dashboard:read",
+      "displayName": "admin-dashboard:read"
+    },
+    {
+      "name": "admin-business:read",
+      "displayName": "admin-business:read"
+    },
+    {
+      "name": "admin-business:manage",
+      "displayName": "admin-business:manage"
+    },
+    {
+      "name": "admin-business:delete",
+      "displayName": "admin-business:delete"
+    },
+    {
+      "name": "admin-category:read",
+      "displayName": "admin-category:read"
+    },
+    {
+      "name": "admin-category:create",
+      "displayName": "admin-category:create"
+    },
+    {
+      "name": "admin-category:update",
+      "displayName": "admin-category:update"
+    },
+    {
+      "name": "admin-category:delete",
+      "displayName": "admin-category:delete"
+    },
+    {
+      "name": "admin-unit:read",
+      "displayName": "admin-unit:read"
+    },
+    {
+      "name": "admin-unit:create",
+      "displayName": "admin-unit:create"
+    },
+    {
+      "name": "admin-unit:update",
+      "displayName": "admin-unit:update"
+    },
+    {
+      "name": "admin-unit:delete",
+      "displayName": "admin-unit:delete"
+    },
+    {
+      "name": "admin-audit:read",
+      "displayName": "admin-audit:read"
+    }
+  ],
+  "decisionStrategy": "AFFIRMATIVE"
+}
