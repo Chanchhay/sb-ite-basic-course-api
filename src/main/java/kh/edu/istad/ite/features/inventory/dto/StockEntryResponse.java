@@ -10,7 +10,7 @@ import java.util.UUID;
 public record StockEntryResponse(
         UUID id,
         UUID businessOwnerId,
-        UUID productId,
+        UUID itemId,
         StockEntryType entryType,
         BigDecimal quantityChange,
         BigDecimal quantityBefore,
