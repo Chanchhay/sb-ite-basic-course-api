@@ -9,6 +9,7 @@ public record KhqrResponse(
         BigDecimal amount,
         String currency,
         String billNumber,
-        LocalDateTime expiresAt
+        LocalDateTime expiresAt,
+        String qrImage
 ) {
 }

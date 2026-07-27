@@ -58,32 +58,6 @@ public class SecurityConfig {
         return http.build();
     }
 
-
-
-    @Bean
-    public CorsConfigurationSource corsConfigurationSource() {
-        String baseDomain = storefrontProps.getBaseDomain();
-        String protocol = storefrontProps.getProtocol();
-
-        CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOriginPatterns(List.of(
-                protocol + "://" + baseDomain,
-                protocol + "://*." + baseDomain,
-                "http://localhost:[*]",
-                "http://127.0.0.1:[*]"
-        ));
-        configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
-        configuration.setAllowedHeaders(List.of("*"));
-        configuration.setExposedHeaders(List.of("Location", "Content-Disposition"));
-        configuration.setAllowCredentials(true);
-        configuration.setMaxAge(3600L);
-
-        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
-        source.registerCorsConfiguration("/api/**", configuration);
-
-        return source;
-    }
-
     @Bean
     public JwtAuthenticationConverter jwtAuthenticationConverterForKeycloak() {
         Converter<Jwt, Collection<GrantedAuthority>> jwtGrantedAuthoritiesConverter = jwt -> {

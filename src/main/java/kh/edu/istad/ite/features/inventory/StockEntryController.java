@@ -41,7 +41,7 @@ public class StockEntryController {
     @GetMapping("/stock-entries")
     public List<StockEntryResponse> findAllStockEntries(
             @PathVariable UUID businessId,
-            @RequestParam(required = false) UUID productId,
+            @RequestParam(required = false) UUID itemId,
             @RequestParam(required = false) StockEntryType entryType,
             @RequestParam(required = false) String referenceType,
             @RequestParam(required = false) UUID referenceId,
@@ -50,7 +50,7 @@ public class StockEntryController {
     ) {
         return stockEntryService.findAllStockEntries(
                 businessId,
-                productId,
+                itemId,
                 entryType,
                 referenceType,
                 referenceId,
@@ -72,19 +72,19 @@ public class StockEntryController {
         return stockEntryService.findStockEntryById(businessId, stockEntryId);
     }
 
-    @GetMapping("/items/{productId}/stock-entries")
-    public List<StockEntryResponse> findProductStockEntries(
+    @GetMapping("/items/{itemId}/stock-entries")
+    public List<StockEntryResponse> findItemStockEntries(
             @PathVariable UUID businessId,
-            @PathVariable UUID productId
+            @PathVariable UUID itemId
     ) {
-        return stockEntryService.findProductStockEntries(businessId, productId);
+        return stockEntryService.findProductStockEntries(businessId, itemId);
     }
 
-    @GetMapping("/items/{productId}/stock")
-    public StockSummaryResponse findCurrentStockByProduct(
+    @GetMapping("/items/{itemId}/stock")
+    public StockSummaryResponse findCurrentStockByItem(
             @PathVariable UUID businessId,
-            @PathVariable UUID productId
+            @PathVariable UUID itemId
     ) {
-        return stockEntryService.findCurrentStockByProduct(businessId, productId);
+        return stockEntryService.findCurrentStockByProduct(businessId, itemId);
     }
 }
