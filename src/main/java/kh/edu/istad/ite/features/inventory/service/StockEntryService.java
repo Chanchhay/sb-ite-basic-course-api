@@ -23,7 +23,7 @@ public interface StockEntryService {
 
     List<StockEntryResponse> findAllStockEntries(
             UUID businessId,
-            UUID productId,
+            UUID itemId,
             StockEntryType entryType,
             String referenceType,
             UUID referenceId,
@@ -33,9 +33,9 @@ public interface StockEntryService {
 
     StockEntryResponse findStockEntryById(UUID businessId, UUID stockEntryId);
 
-    List<StockEntryResponse> findProductStockEntries(UUID businessId, UUID productId);
+    List<StockEntryResponse> findItemStockEntries(UUID businessId, UUID itemId);
 
     List<StockSummaryResponse> findCurrentStock(UUID businessId);
 
-    StockSummaryResponse findCurrentStockByProduct(UUID businessId, UUID productId);
+    StockSummaryResponse findCurrentStockByItem(UUID businessId, UUID itemId);
 }

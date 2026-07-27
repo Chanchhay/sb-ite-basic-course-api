@@ -52,11 +52,11 @@ public class StockEntry extends BasedAuditingEntity {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(
-            name = "product_id",
+            name = "item_id",
             nullable = false,
-            foreignKey = @ForeignKey(name = "fk_stock_entries_product")
+            foreignKey = @ForeignKey(name = "fk_stock_entries_item")
     )
-    private Item product;
+    private Item item;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "entry_type", nullable = false, length = 40)

@@ -77,7 +77,7 @@ public class StockEntryController {
             @PathVariable UUID businessId,
             @PathVariable UUID itemId
     ) {
-        return stockEntryService.findProductStockEntries(businessId, itemId);
+        return stockEntryService.findItemStockEntries(businessId, itemId);
     }
 
     @GetMapping("/items/{itemId}/stock")
@@ -85,6 +85,6 @@ public class StockEntryController {
             @PathVariable UUID businessId,
             @PathVariable UUID itemId
     ) {
-        return stockEntryService.findCurrentStockByProduct(businessId, itemId);
+        return stockEntryService.findCurrentStockByItem(businessId, itemId);
     }
 }
