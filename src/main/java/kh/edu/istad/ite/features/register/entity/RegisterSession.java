@@ -1,0 +1,53 @@
+package kh.edu.istad.ite.features.register.entity;
+
+import jakarta.persistence.*;
+import kh.edu.istad.ite.config.audit.BasedAuditingEntity;
+import kh.edu.istad.ite.shared.enums.SessionStatus;
+import lombok.*;
+
+import java.math.BigDecimal;
+import java.time.Instant;
+
+@Entity
+@Table(name = "register_sessions")
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
+public class RegisterSession extends BasedAuditingEntity {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "register_id", nullable = false)
+    private CashRegister register;
+
+    @Column(nullable = false)
+    private String cashierId;
+
+    @Column(nullable = false)
+    private Instant openedAt;
+
+    private Instant closedAt;
+
+    @Column(nullable = false, precision = 12, scale = 2)
+    private BigDecimal openingBalance;
+
+    @Column(precision = 12, scale = 2)
+    private BigDecimal expectedAmount;
+
+    @Column(precision = 12, scale = 2)
+    private BigDecimal actualAmount;
+
+    @Column(precision = 12, scale = 2)
+    private BigDecimal differenceAmount;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    private SessionStatus status = SessionStatus.OPEN;
+
+    private String note;
+}
