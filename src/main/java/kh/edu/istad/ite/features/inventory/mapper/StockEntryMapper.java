@@ -15,7 +15,7 @@ public class StockEntryMapper {
         return new StockEntryResponse(
                 stockEntry.getId(),
                 stockEntry.getBusiness().getId(),
-                stockEntry.getProduct().getId(),
+                stockEntry.getItem().getId(),
                 stockEntry.getEntryType(),
                 stockEntry.getQuantityChange(),
                 stockEntry.getQuantityBefore(),
@@ -33,14 +33,14 @@ public class StockEntryMapper {
 
     public StockSummaryResponse toSummary(StockEntry stockEntry) {
         return new StockSummaryResponse(
-                stockEntry.getProduct().getId(),
+                stockEntry.getItem().getId(),
                 stockEntry.getQuantityAfter(),
                 stockEntry.getId(),
                 stockEntry.getCreatedDate()
         );
     }
 
-    public StockSummaryResponse emptySummary(UUID productId) {
-        return new StockSummaryResponse(productId, BigDecimal.ZERO.setScale(3), null, null);
+    public StockSummaryResponse emptySummary(UUID itemId) {
+        return new StockSummaryResponse(itemId, BigDecimal.ZERO.setScale(3), null, null);
     }
 }

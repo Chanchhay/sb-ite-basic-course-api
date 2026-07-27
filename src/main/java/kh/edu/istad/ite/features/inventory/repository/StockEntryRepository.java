@@ -12,9 +12,9 @@ public interface StockEntryRepository extends JpaRepository<StockEntry, UUID>, J
 
     Optional<StockEntry> findByIdAndBusiness_Id(UUID id, UUID businessId);
 
-    Optional<StockEntry> findFirstByBusiness_IdAndProduct_IdOrderByCreatedDateDescIdDesc(UUID businessId, UUID productId);
+    Optional<StockEntry> findFirstByBusiness_IdAndItem_IdOrderByCreatedDateDescIdDesc(UUID businessId, UUID itemId);
 
-    Optional<StockEntry> findAllByBusiness_IdAndProduct_IdOrderByCreatedDateDescIdDesc(UUID businessId, UUID productId);
+    Optional<StockEntry> findAllByBusiness_IdAndItem_IdOrderByCreatedDateDescIdDesc(UUID businessId, UUID itemId);
 
     List<StockEntry> findAllByBusiness_IdOrderByCreatedDateDescIdDesc(UUID businessId);
 }
