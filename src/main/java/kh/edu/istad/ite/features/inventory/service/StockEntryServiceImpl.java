@@ -81,6 +81,53 @@ public class StockEntryServiceImpl implements StockEntryService {
     }
 
     @Override
+    @Transactional
+    public StockEntry recordSale(
+            Business business,
+            Item item,
+            BigDecimal quantity,
+            UUID orderId,
+            String invoiceNumber
+    ) {
+        Optional<StockEntry> latestEntry = stockEntryRepository
+                .findFirstByBusiness_IdAndProduct_IdOrderByCreatedDateDescIdDesc(business.getId(), item.getId());
+
+        BigDecimal quantityBefore = latestEntry.map(StockEntry::getQuantityAfter).orElse(ZERO_QUANTITY);
+        BigDecimal quantityChange = normalizeQuantity(quantity).negate();
+        BigDecimal quantityAfter = quantityBefore.add(quantityChange).setScale(3, RoundingMode.HALF_UP);
+
+        if (quantityAfter.compareTo(BigDecimal.ZERO) < 0) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "Not enough stock for \"" + item.getName() + "\": " + quantityBefore + " left");
+        }
+
+        StockEntry stockEntry = new StockEntry();
+        stockEntry.setBusiness(business);
+        stockEntry.setProduct(item);
+        stockEntry.setEntryType(StockEntryType.SALE);
+        stockEntry.setQuantityChange(quantityChange);
+        stockEntry.setQuantityBefore(quantityBefore);
+        stockEntry.setQuantityAfter(quantityAfter);
+        stockEntry.setUnitCost(latestEntry.map(StockEntry::getUnitCost).orElse(null));
+        // The reference is what lets a shop trace a movement back to the till.
+        stockEntry.setReferenceType("ORDER");
+        stockEntry.setReferenceId(orderId);
+        stockEntry.setReferenceNumber(invoiceNumber);
+
+        return stockEntryRepository.saveAndFlush(stockEntry);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public BigDecimal findLatestUnitCost(UUID businessId, UUID itemId) {
+        return stockEntryRepository
+                .findAllByBusiness_IdAndProduct_IdOrderByCreatedDateDescIdDesc(businessId, itemId)
+                .map(StockEntry::getUnitCost)
+                .orElse(BigDecimal.ZERO);
+    }
+
+    @Override
     @Transactional(readOnly = true)
     public List<StockEntryResponse> findAllStockEntries(
             UUID businessId,

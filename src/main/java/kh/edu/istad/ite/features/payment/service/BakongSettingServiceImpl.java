@@ -10,6 +10,7 @@ import kh.edu.istad.ite.features.payment.dto.KhqrPreviewRequest;
 import kh.edu.istad.ite.features.payment.dto.KhqrResponse;
 import kh.edu.istad.ite.features.payment.entity.BusinessPaymentSetting;
 import kh.edu.istad.ite.features.payment.khqr.KhqrGenerator;
+import kh.edu.istad.ite.features.payment.khqr.QrImageRenderer;
 import kh.edu.istad.ite.features.payment.repository.BusinessPaymentSettingRepository;
 import kh.edu.istad.ite.shared.enums.KhqrAccountType;
 import lombok.RequiredArgsConstructor;
@@ -34,6 +35,7 @@ public class BakongSettingServiceImpl implements BakongSettingService {
     private final BusinessPaymentSettingRepository settingRepository;
     private final CredentialCipher credentialCipher;
     private final KhqrGenerator khqrGenerator;
+    private final QrImageRenderer qrImageRenderer;
 
     @Override
     @Transactional(readOnly = true)
@@ -72,8 +74,6 @@ public class BakongSettingServiceImpl implements BakongSettingService {
         setting.setMobileNumber(trimToNull(request.mobileNumber()));
         setting.setStoreLabel(trimToNull(request.storeLabel()));
 
-        // An omitted token leaves the stored one untouched, so the owner can
-        // edit merchant details without re-entering the secret every time.
         if (StringUtils.hasText(request.apiToken())) {
             setting.setApiTokenEncrypted(credentialCipher.encrypt(request.apiToken().trim()));
         }
@@ -109,7 +109,7 @@ public class BakongSettingServiceImpl implements BakongSettingService {
         String billNumber = StringUtils.hasText(request.billNumber())
                 ? request.billNumber().trim()
                 : "PREVIEW-" + System.currentTimeMillis();
-        
+
         Instant expiresAt = Instant.now().plusSeconds(QR_VALIDITY_MINUTES * 60L);
 
         KhqrGenerator.Result result = khqrGenerator.generate(
@@ -127,7 +127,8 @@ public class BakongSettingServiceImpl implements BakongSettingService {
                 request.amount(),
                 currency,
                 billNumber,
-                LocalDateTime.ofInstant(expiresAt, ZoneId.systemDefault())
+                LocalDateTime.ofInstant(expiresAt, ZoneId.systemDefault()),
+                qrImageRenderer.toPngDataUri(result.qr())
         );
     }
 

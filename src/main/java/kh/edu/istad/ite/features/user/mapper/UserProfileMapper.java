@@ -4,11 +4,7 @@ import kh.edu.istad.ite.features.user.dto.UpdateUserProfileRequest;
 import kh.edu.istad.ite.features.user.dto.UserProfileResponse;
 import kh.edu.istad.ite.features.user.entity.UserProfile;
 import org.keycloak.representations.idm.UserRepresentation;
-import org.mapstruct.BeanMapping;
-import org.mapstruct.Mapper;
-import org.mapstruct.Mapping;
-import org.mapstruct.MappingTarget;
-import org.mapstruct.NullValuePropertyMappingStrategy;
+import org.mapstruct.*;
 
 import java.util.HashMap;
 import java.util.List;

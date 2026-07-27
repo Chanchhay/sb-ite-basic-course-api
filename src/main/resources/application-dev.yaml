@@ -45,3 +45,7 @@ app:
     subdomain-enabled: true
   security:
     credential-encryption-key: ${CREDENTIAL_ENCRYPTION_KEY:}
+
+  bakong:
+    base-url: https://api-bakong.nbc.gov.kh
+    timeout: 8s
