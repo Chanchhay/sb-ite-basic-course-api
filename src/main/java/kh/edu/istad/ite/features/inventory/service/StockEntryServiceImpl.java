@@ -122,6 +122,7 @@ public class StockEntryServiceImpl implements StockEntryService {
     @Transactional(readOnly = true)
     public BigDecimal findLatestUnitCost(UUID businessId, UUID itemId) {
         return stockEntryRepository
+                .findFirstByBusiness_IdAndItem_IdOrderByCreatedDateDescIdDesc(businessId, itemId)
                 .findAllByBusiness_IdAndItem_IdOrderByCreatedDateDescIdDesc(businessId, itemId)
                 .map(StockEntry::getUnitCost)
                 .orElse(BigDecimal.ZERO);
