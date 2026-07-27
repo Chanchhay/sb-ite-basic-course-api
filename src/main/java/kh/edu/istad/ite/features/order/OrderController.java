@@ -4,6 +4,9 @@ import jakarta.validation.Valid;
 import kh.edu.istad.ite.features.order.dto.*;
 import kh.edu.istad.ite.features.order.service.OrderService;
 import kh.edu.istad.ite.features.payment.dto.KhqrResponse;
+import kh.edu.istad.ite.features.payment.dto.MarkReceiptPrintedRequest;
+import kh.edu.istad.ite.features.payment.dto.ReceiptResponse;
+import kh.edu.istad.ite.features.payment.service.ReceiptService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
@@ -16,6 +19,7 @@ import java.util.UUID;
 public class OrderController {
 
     private final OrderService orderService;
+    private final ReceiptService receiptService;
 
     @ResponseStatus(HttpStatus.CREATED)
     @PostMapping
@@ -57,6 +61,23 @@ public class OrderController {
             @PathVariable UUID orderId
     ) {
         return orderService.checkPaymentStatus(businessId, orderId);
+    }
+
+    @GetMapping("/{orderId}/receipt")
+    public ReceiptResponse findReceipt(
+            @PathVariable UUID businessId,
+            @PathVariable UUID orderId
+    ) {
+        return receiptService.findByOrder(businessId, orderId);
+    }
+
+    @PatchMapping("/{orderId}/receipt/print")
+    public ReceiptResponse markReceiptPrinted(
+            @PathVariable UUID businessId,
+            @PathVariable UUID orderId,
+            @RequestBody(required = false) MarkReceiptPrintedRequest request
+    ) {
+        return receiptService.markPrinted(businessId, orderId, request);
     }
 
     @PatchMapping("/{orderId}/cancel")
