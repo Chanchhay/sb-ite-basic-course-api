@@ -21,7 +21,6 @@ spring:
       hibernate:
         format_sql: true
 
-
   datasource:
     driver-class-name: org.postgresql.Driver
     url: jdbc:postgresql://${PGHOST:localhost}:${PGPORT:1681}/${PGDATABASE:fluxibix}
@@ -45,6 +44,10 @@ app:
     subdomain-enabled: true
   security:
     credential-encryption-key: ${CREDENTIAL_ENCRYPTION_KEY:}
+
+  telegram:
+    api-base-url: https://api.telegram.org
+    webhook-base-url: ${TELEGRAM_WEBHOOK_BASE_URL:}
 
   bakong:
     base-url: https://api-bakong.nbc.gov.kh

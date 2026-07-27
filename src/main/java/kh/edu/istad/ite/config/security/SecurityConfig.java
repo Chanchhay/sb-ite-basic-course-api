@@ -48,6 +48,7 @@ public class SecurityConfig {
                 .requestMatchers("/scalar/**")
                 .permitAll()
                 .requestMatchers(HttpMethod.POST, "/api/v1/auth/register").permitAll()
+                .requestMatchers(HttpMethod.POST, "/api/v1/webhooks/telegram/**").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/v1/public/**").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/v1/units", "/api/v1/units/**").permitAll()
                 .requestMatchers("/api/v1/units", "/api/v1/units/**").hasRole("SUPER_ADMIN")

@@ -6,16 +6,15 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.Configuration;
 
-import java.time.Duration;
-
 @Configuration
-@ConfigurationProperties(prefix = "app.bakong")
+@ConfigurationProperties(prefix = "app.telegram")
 @Getter
 @Setter
-public class BakongProps {
+public class TelegramProps {
 
-    @Value("${app.bakong.base-url}")
-    private String baseUrl;
+    @Value("${app.telegram.api-base-url}")
+    private String apiBaseUrl = "https://api.telegram.org";
 
-    private Duration timeout = Duration.ofSeconds(8);
+    @Value("${app.telegram.webhook-base-url}")
+    private String webhookBaseUrl;
 }
