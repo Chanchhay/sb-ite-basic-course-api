@@ -24,9 +24,12 @@ import kh.edu.istad.ite.features.payment.khqr.KhqrGenerator;
 import kh.edu.istad.ite.features.payment.khqr.QrImageRenderer;
 import kh.edu.istad.ite.features.payment.repository.BusinessPaymentSettingRepository;
 import kh.edu.istad.ite.features.payment.repository.PaymentQrCodeRepository;
+import kh.edu.istad.ite.features.payment.service.ReceiptService;
+import kh.edu.istad.ite.shared.enums.OrderChannel;
 import kh.edu.istad.ite.shared.enums.OrderStatus;
 import kh.edu.istad.ite.shared.enums.PaymentMethodType;
 import kh.edu.istad.ite.shared.enums.QrStatus;
+import kh.edu.istad.ite.shared.enums.ReceiptType;
 import kh.edu.istad.ite.shared.helper.AuthHelper;
 import kh.edu.istad.ite.shared.helper.BusinessHelper;
 import lombok.RequiredArgsConstructor;
@@ -65,6 +68,7 @@ public class OrderServiceImpl implements OrderService {
     private final OrderMapper orderMapper;
     private final SaleRepository saleRepository;
     private final StockEntryService stockEntryService;
+    private final ReceiptService receiptService;
 
     @Override
     @Transactional
@@ -329,7 +333,11 @@ public class OrderServiceImpl implements OrderService {
 
         Sale saved = saleRepository.save(sale);
 
-        // Cash settles the order, so any QR still waiting on it is void.
+        ReceiptType receiptType = OrderChannel.POS.equals(order.getChannel())
+                ? ReceiptType.PHYSICAL
+                : ReceiptType.DIGITAL;
+        receiptService.createForOrder(business, order, receiptType);
+
         if (PaymentMethodType.CASH.equals(paymentMethod)) {
             paymentQrCodeRepository.findByOrderIdOrderByCreatedAtDesc(order.getId())
                     .forEach(qr -> {
