@@ -47,7 +47,6 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
@@ -73,6 +72,7 @@ public class OrderServiceImpl implements OrderService {
     private final SaleRepository saleRepository;
     private final StockEntryService stockEntryService;
     private final ReceiptService receiptService;
+    private final OrderModifierResolver orderModifierResolver;
 
     @Override
     @Transactional
@@ -436,20 +436,15 @@ public class OrderServiceImpl implements OrderService {
                     HttpStatus.CONFLICT, "Item has no price: " + item.getName());
         }
 
-        // Snapshot the chosen modifiers and price them per unit, then per line.
-        List<SelectedModifier> selectedModifiers = new ArrayList<>();
+        // Resolve the chosen modifiers against the catalog (prices come from the
+        // catalog, not the client) and enforce each group's selection rules.
+        List<SelectedModifier> selectedModifiers =
+                orderModifierResolver.resolve(businessId, item.getId(), request.modifiers());
+
         BigDecimal modifierPerUnit = BigDecimal.ZERO;
-
-        if (request.modifiers() != null) {
-            for (ModifierSelectionRequest modifier : request.modifiers()) {
-                int modifierQty = modifier.quantity() == null ? 1 : modifier.quantity();
-                BigDecimal modifierPrice = modifier.unitPrice() == null ? BigDecimal.ZERO : modifier.unitPrice();
-
-                selectedModifiers.add(new SelectedModifier(
-                        modifier.groupName(), modifier.name(), modifierPrice, modifierQty));
-
-                modifierPerUnit = modifierPerUnit.add(modifierPrice.multiply(BigDecimal.valueOf(modifierQty)));
-            }
+        for (SelectedModifier modifier : selectedModifiers) {
+            modifierPerUnit = modifierPerUnit.add(
+                    modifier.unitPrice().multiply(BigDecimal.valueOf(modifier.quantity())));
         }
 
         BigDecimal quantity = BigDecimal.valueOf(request.quantity());
