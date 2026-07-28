@@ -167,6 +167,15 @@ public class ItemServiceImpl implements ItemService {
         itemRepository.flush();
     }
 
+    @Override
+    public ItemResponse findItemByBarcode(UUID businessId, String barcode) {
+        businessHelper.findOwnedBusiness(businessId);
+        Item item = itemRepository.findByBusinessIdAndBarcode(businessId, barcode.trim())
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND, "Item not found with barcode: " + barcode));
+        return itemMapper.toResponse(item);
+    }
+
     private Item findItem(UUID itemId, UUID businessId) {
         return itemRepository.findByIdAndBusinessId(itemId, businessId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Item has not been found"));

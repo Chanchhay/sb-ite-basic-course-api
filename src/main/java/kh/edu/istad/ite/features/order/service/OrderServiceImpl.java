@@ -26,6 +26,7 @@ import kh.edu.istad.ite.features.payment.repository.BusinessPaymentSettingReposi
 import kh.edu.istad.ite.features.payment.repository.PaymentQrCodeRepository;
 import kh.edu.istad.ite.features.payment.service.ReceiptService;
 import kh.edu.istad.ite.shared.enums.OrderChannel;
+import kh.edu.istad.ite.shared.enums.BusinessFeature;
 import kh.edu.istad.ite.shared.enums.OrderStatus;
 import kh.edu.istad.ite.shared.enums.PaymentMethodType;
 import kh.edu.istad.ite.shared.enums.QrStatus;
@@ -126,6 +127,8 @@ public class OrderServiceImpl implements OrderService {
     @Transactional
     public KhqrResponse generateKhqr(UUID businessId, UUID orderId) {
         Business business = businessHelper.findAccessibleBusiness(businessId);
+        businessHelper.requireFeature(businessId, BusinessFeature.KHQR_PAYMENT);
+
         Order order = findOrder(businessId, orderId);
 
         if (!OrderStatus.PENDING.equals(order.getStatus())) {

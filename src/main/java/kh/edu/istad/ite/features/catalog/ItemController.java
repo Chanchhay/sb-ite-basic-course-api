@@ -66,4 +66,13 @@ public class ItemController {
     ) {
         itemService.deleteItem(businessId, itemId);
     }
+
+    @ResponseStatus(HttpStatus.OK)
+    @GetMapping("/barcode/{barcode}")
+    public ItemResponse findItemByBarcode(
+            @PathVariable UUID businessId,
+            @PathVariable String barcode
+    ) {
+        return itemService.findItemByBarcode(businessId, barcode);
+    }
 }

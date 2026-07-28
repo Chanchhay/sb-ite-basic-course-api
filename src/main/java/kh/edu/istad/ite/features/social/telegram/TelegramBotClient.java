@@ -88,11 +88,14 @@ public class TelegramBotClient {
     }
 
     public void sendMessage(String botToken, Long chatId, String text) {
+        sendMessage(botToken, chatId, text, null);
+    }
+
+    // keyboard: rows of buttons, e.g. List.of(List.of(catalogBtn, cartBtn), List.of(profileBtn))
+    // Pass null/empty for a plain text message with no buttons.
+    public void sendMessage(String botToken, Long chatId, String text, List<List<InlineKeyboardButton>> keyboard) {
         try {
-            Map<String, Object> requestBody = Map.of(
-                    "chat_id", chatId,
-                    "text", text
-            );
+            Map<String, Object> requestBody = buildBody(chatId, text, keyboard);
 
             restClient.post()
                     .uri("/bot{token}/sendMessage", botToken)
@@ -103,5 +106,63 @@ public class TelegramBotClient {
         } catch (RestClientException exception) {
             log.warn("Telegram sendMessage failed for chat {}: {}", chatId, exception.getMessage());
         }
+    }
+
+    // Stops the spinner Telegram shows on the tapped button; optional toast text.
+    public void answerCallbackQuery(String botToken, String callbackQueryId, String toastText) {
+        try {
+            Map<String, Object> requestBody = toastText == null
+                    ? Map.of("callback_query_id", callbackQueryId)
+                    : Map.of("callback_query_id", callbackQueryId, "text", toastText);
+
+            restClient.post()
+                    .uri("/bot{token}/answerCallbackQuery", botToken)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(requestBody)
+                    .retrieve()
+                    .toBodilessEntity();
+        } catch (RestClientException exception) {
+            log.warn("Telegram answerCallbackQuery failed: {}", exception.getMessage());
+        }
+    }
+
+    // Sends a photo by URL with a caption and optional inline keyboard - used for product detail cards.
+    // Telegram captions are capped at 1024 chars; callers should keep detail text under that.
+    public void sendPhoto(String botToken, Long chatId, String photoUrl, String caption, List<List<InlineKeyboardButton>> keyboard) {
+        try {
+            Map<String, Object> requestBody = keyboard == null || keyboard.isEmpty()
+                    ? Map.of("chat_id", chatId, "photo", photoUrl, "caption", caption)
+                    : Map.of("chat_id", chatId, "photo", photoUrl, "caption", caption,
+                    "reply_markup", Map.of("inline_keyboard", toButtonMaps(keyboard)));
+
+            restClient.post()
+                    .uri("/bot{token}/sendPhoto", botToken)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(requestBody)
+                    .retrieve()
+                    .toBodilessEntity();
+        } catch (RestClientException exception) {
+            log.warn("Telegram sendPhoto failed for chat {}: {}", chatId, exception.getMessage());
+        }
+    }
+
+    private Map<String, Object> buildBody(Long chatId, String text, List<List<InlineKeyboardButton>> keyboard) {
+        if (keyboard == null || keyboard.isEmpty()) {
+            return Map.of("chat_id", chatId, "text", text);
+        }
+
+        return Map.of(
+                "chat_id", chatId,
+                "text", text,
+                "reply_markup", Map.of("inline_keyboard", toButtonMaps(keyboard))
+        );
+    }
+
+    private List<List<Map<String, String>>> toButtonMaps(List<List<InlineKeyboardButton>> keyboard) {
+        return keyboard.stream()
+                .map(row -> row.stream()
+                        .map(button -> Map.of("text", button.label(), "callback_data", button.callbackData()))
+                        .toList())
+                .toList();
     }
 }
