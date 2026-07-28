@@ -20,6 +20,8 @@ import kh.edu.istad.ite.features.admin.dto.PlatformRoleResponse;
 import kh.edu.istad.ite.features.business.dto.BusinessRolePatchRequest;
 import kh.edu.istad.ite.features.business.dto.BusinessRoleRequest;
 import kh.edu.istad.ite.features.business.dto.BusinessRoleResponse;
+import kh.edu.istad.ite.features.business.mapper.RoleMapper;
+import kh.edu.istad.ite.features.business.repository.BusinessRepository;
 import kh.edu.istad.ite.shared.enums.PermissionCode;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -31,6 +33,8 @@ public class KeycloakRoleAdapter {
 
     private final Keycloak keycloak;
     private final KeycloakAdminClientProps props;
+    private final BusinessRepository businessRepository;
+    private final RoleMapper roleMapper;
 
     private String getPrefix(UUID businessId) {
         return "biz_" + businessId + "_";
@@ -53,6 +57,12 @@ public class KeycloakRoleAdapter {
     }
 
     // --- Core Role Operations (Unified) ---
+
+    private List<String> internalGetRolePermissions(RoleResource roleResource) {
+        Set<RoleRepresentation> composites = roleResource.getRoleComposites();
+        if (composites == null) return List.of();
+        return composites.stream().map(RoleRepresentation::getName).toList();
+    }
 
     private void internalUpdateRole(String roleSlug, String expectedPrefix, String newName, List<String> permissions, boolean isPlatform) {
         if (!roleSlug.startsWith(expectedPrefix)) {
@@ -131,15 +141,8 @@ public class KeycloakRoleAdapter {
                 .filter(r -> r.getName().startsWith(prefix))
                 .map(r -> {
                     RoleResource roleResource = rolesResource.get(r.getName());
-                    List<String> permissions = roleResource.getRoleComposites().stream()
-                            .map(RoleRepresentation::getName)
-                            .toList();
-
-                    return BusinessRoleResponse.builder()
-                            .id(r.getId())
-                            .name(r.getDescription() != null ? r.getDescription() : r.getName())
-                            .permissions(permissions)
-                            .build();
+                    List<String> perms = internalGetRolePermissions(roleResource);
+                    return roleMapper.toBusinessRoleResponse(r, perms);
                 })
                 .toList();
     }
@@ -183,15 +186,8 @@ public class KeycloakRoleAdapter {
                 .filter(r -> r.getName().startsWith(prefix))
                 .map(r -> {
                     RoleResource roleResource = rolesResource.get(r.getName());
-                    List<String> permissions = roleResource.getRoleComposites().stream()
-                            .map(RoleRepresentation::getName)
-                            .toList();
-
-                    return PlatformRoleResponse.builder()
-                            .id(r.getId())
-                            .name(r.getDescription() != null ? r.getDescription() : r.getName())
-                            .permissions(permissions)
-                            .build();
+                    List<String> perms = internalGetRolePermissions(roleResource);
+                    return roleMapper.toPlatformRoleResponse(r, perms);
                 })
                 .toList();
     }

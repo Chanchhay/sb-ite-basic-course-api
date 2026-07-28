@@ -65,7 +65,7 @@ public class UserProfileServiceImpl implements UserProfileService {
     }
 
     @Override
-    public List<UserProfile> findByBusinessIdAndStaffStatus(UUID businessId, RecordStatus status) {
+    public List<UserProfile> findByBusinessIdAndUserStatus(UUID businessId, RecordStatus status) {
         return List.of();
     }
 

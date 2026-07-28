@@ -23,33 +23,33 @@ public class BusinessRoleController {
 
     @GetMapping
     public List<BusinessRoleResponse> getRoles(@PathVariable UUID businessId) {
-        securityValidator.validateBusinessOwnerOrAdmin(businessId);
+        securityValidator.validateBusinessOwner(businessId);
         return roleAdapter.getBusinessRoles(businessId);
     }
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public void createRole(@PathVariable UUID businessId, @Valid @RequestBody BusinessRoleRequest request) {
-        securityValidator.validateBusinessOwnerOrAdmin(businessId);
+        securityValidator.validateBusinessOwner(businessId);
         roleAdapter.createBusinessRole(businessId, request);
     }
 
     @PutMapping("/{roleId}")
     public void updateRole(@PathVariable UUID businessId, @PathVariable String roleId, @Valid @RequestBody BusinessRoleRequest request) {
-        securityValidator.validateBusinessOwnerOrAdmin(businessId);
+        securityValidator.validateBusinessOwner(businessId);
         roleAdapter.updateBusinessRole(businessId, roleId, request);
     }
 
     @PatchMapping("/{roleId}")
     public void patchRole(@PathVariable UUID businessId, @PathVariable String roleId, @Valid @RequestBody BusinessRolePatchRequest request) {
-        securityValidator.validateBusinessOwnerOrAdmin(businessId);
+        securityValidator.validateBusinessOwner(businessId);
         roleAdapter.patchBusinessRole(businessId, roleId, request);
     }
 
     @DeleteMapping("/{roleId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void deleteRole(@PathVariable UUID businessId, @PathVariable String roleId) {
-        securityValidator.validateBusinessOwnerOrAdmin(businessId);
+        securityValidator.validateBusinessOwner(businessId);
         roleAdapter.deleteBusinessRole(businessId, roleId);
     }
 }
