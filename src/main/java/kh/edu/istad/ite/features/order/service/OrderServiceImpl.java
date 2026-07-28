@@ -12,7 +12,6 @@ import kh.edu.istad.ite.features.order.dto.*;
 import kh.edu.istad.ite.features.order.entity.Order;
 import kh.edu.istad.ite.features.order.entity.OrderItem;
 import kh.edu.istad.ite.features.order.entity.Sale;
-import kh.edu.istad.ite.features.order.entity.SelectedModifier;
 import kh.edu.istad.ite.features.order.mapper.OrderMapper;
 import kh.edu.istad.ite.features.order.repository.OrderRepository;
 import kh.edu.istad.ite.features.order.repository.SaleRepository;
@@ -47,7 +46,6 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
-import java.util.List;
 import java.util.UUID;
 
 @Service
@@ -72,7 +70,6 @@ public class OrderServiceImpl implements OrderService {
     private final SaleRepository saleRepository;
     private final StockEntryService stockEntryService;
     private final ReceiptService receiptService;
-    private final OrderModifierResolver orderModifierResolver;
 
     @Override
     @Transactional
@@ -436,22 +433,6 @@ public class OrderServiceImpl implements OrderService {
                     HttpStatus.CONFLICT, "Item has no price: " + item.getName());
         }
 
-        // Resolve the chosen modifiers against the catalog (prices come from the
-        // catalog, not the client) and enforce each group's selection rules.
-        List<SelectedModifier> selectedModifiers =
-                orderModifierResolver.resolve(businessId, item.getId(), request.modifiers());
-
-        BigDecimal modifierPerUnit = BigDecimal.ZERO;
-        for (SelectedModifier modifier : selectedModifiers) {
-            modifierPerUnit = modifierPerUnit.add(
-                    modifier.unitPrice().multiply(BigDecimal.valueOf(modifier.quantity())));
-        }
-
-        BigDecimal quantity = BigDecimal.valueOf(request.quantity());
-        BigDecimal modifierTotal = modifierPerUnit.multiply(quantity);
-        // lineTotal = (base unit price + modifiers per unit) * quantity = unitPrice*qty + modifierTotal
-        BigDecimal lineTotal = unitPrice.add(modifierPerUnit).multiply(quantity);
-
         OrderItem orderItem = new OrderItem();
         orderItem.setItem(item);
         orderItem.setVariant(variant);
@@ -460,9 +441,7 @@ public class OrderServiceImpl implements OrderService {
         orderItem.setUnitPrice(unitPrice);
         orderItem.setUnitCost(BigDecimal.ZERO);
         orderItem.setDiscountAmount(BigDecimal.ZERO);
-        orderItem.setSelectedModifiers(selectedModifiers);
-        orderItem.setModifierTotal(modifierTotal);
-        orderItem.setLineTotal(lineTotal);
+        orderItem.setLineTotal(unitPrice.multiply(BigDecimal.valueOf(request.quantity())));
 
         return orderItem;
     }

@@ -7,12 +7,8 @@ import kh.edu.istad.ite.features.catalog.entity.ItemVariant;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
-import org.hibernate.annotations.JdbcTypeCode;
-import org.hibernate.type.SqlTypes;
 
 import java.math.BigDecimal;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.UUID;
 
 @Entity
@@ -56,13 +52,6 @@ public class OrderItem {
 
     @Column(name = "discount_amount", nullable = false, precision = 12, scale = 2)
     private BigDecimal discountAmount = BigDecimal.ZERO;
-
-    @JdbcTypeCode(SqlTypes.JSON)
-    @Column(name = "selected_modifiers", columnDefinition = "jsonb")
-    private List<SelectedModifier> selectedModifiers = new ArrayList<>();
-
-    @Column(name = "modifier_total", nullable = false, precision = 12, scale = 2)
-    private BigDecimal modifierTotal = BigDecimal.ZERO;
 
     @Column(name = "line_total", nullable = false, precision = 14, scale = 2)
     private BigDecimal lineTotal = BigDecimal.ZERO;
