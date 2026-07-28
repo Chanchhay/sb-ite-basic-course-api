@@ -13,6 +13,8 @@ import kh.edu.istad.ite.features.payment.khqr.KhqrGenerator;
 import kh.edu.istad.ite.features.payment.khqr.QrImageRenderer;
 import kh.edu.istad.ite.features.payment.repository.BusinessPaymentSettingRepository;
 import kh.edu.istad.ite.shared.enums.KhqrAccountType;
+import kh.edu.istad.ite.shared.enums.BusinessFeature;
+import kh.edu.istad.ite.shared.helper.BusinessHelper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -35,6 +37,7 @@ public class BakongSettingServiceImpl implements BakongSettingService {
     private final BusinessPaymentSettingRepository settingRepository;
     private final CredentialCipher credentialCipher;
     private final KhqrGenerator khqrGenerator;
+    private final BusinessHelper businessHelper;
     private final QrImageRenderer qrImageRenderer;
 
     @Override
@@ -101,6 +104,7 @@ public class BakongSettingServiceImpl implements BakongSettingService {
     @Transactional(readOnly = true)
     public KhqrResponse preview(KhqrPreviewRequest request) {
         BusinessPaymentSetting setting = findMySetting();
+        businessHelper.requireFeature(setting.getBusiness().getId(), BusinessFeature.KHQR_PAYMENT);
 
         String currency = StringUtils.hasText(request.currency())
                 ? request.currency().trim().toUpperCase()

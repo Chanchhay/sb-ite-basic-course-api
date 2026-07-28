@@ -2,6 +2,7 @@ package kh.edu.istad.ite.features.admin.service.impl;
 
 import kh.edu.istad.ite.config.props.StorefrontProps;
 import kh.edu.istad.ite.features.admin.dto.response.BusinessChannelResponse;
+import kh.edu.istad.ite.features.admin.repository.PlatformFeatureFlagRepository;
 import kh.edu.istad.ite.features.admin.service.AdminChannelService;
 import kh.edu.istad.ite.features.business.entity.Business;
 import kh.edu.istad.ite.features.business.repository.BusinessRepository;
@@ -9,6 +10,7 @@ import kh.edu.istad.ite.features.payment.entity.BusinessPaymentSetting;
 import kh.edu.istad.ite.features.payment.repository.BusinessPaymentSettingRepository;
 import kh.edu.istad.ite.features.social.entity.BusinessTelegramBot;
 import kh.edu.istad.ite.features.social.repository.BusinessTelegramBotRepository;
+import kh.edu.istad.ite.shared.enums.BusinessFeature;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -27,13 +29,12 @@ public class AdminChannelServiceImpl implements AdminChannelService {
     private final BusinessRepository businessRepository;
     private final BusinessTelegramBotRepository telegramBotRepository;
     private final BusinessPaymentSettingRepository paymentSettingRepository;
+    private final PlatformFeatureFlagRepository platformFeatureFlagRepository;
     private final StorefrontProps storefrontProps;
 
     @Override
     @Transactional(readOnly = true)
     public List<BusinessChannelResponse> findAllChannels() {
-        // Two lookups rather than one per shop, so the page stays flat as the
-        // platform grows instead of firing a query per row.
         Map<UUID, BusinessTelegramBot> botsByBusiness = telegramBotRepository.findAll().stream()
                 .collect(Collectors.toMap(bot -> bot.getBusiness().getId(), Function.identity(), (a, b) -> a));
 
@@ -41,21 +42,40 @@ public class AdminChannelServiceImpl implements AdminChannelService {
                 .collect(Collectors.toMap(
                         setting -> setting.getBusiness().getId(), Function.identity(), (a, b) -> a));
 
+        boolean storefrontOffPlatformWide = isDisabledPlatformWide(BusinessFeature.STOREFRONT);
+        boolean telegramOffPlatformWide = isDisabledPlatformWide(BusinessFeature.TELEGRAM_BOT);
+        boolean bakongOffPlatformWide = isDisabledPlatformWide(BusinessFeature.KHQR_PAYMENT);
+
         return businessRepository.findAll().stream()
                 .map(business -> toResponse(
                         business,
                         botsByBusiness.get(business.getId()),
-                        settingsByBusiness.get(business.getId())))
+                        settingsByBusiness.get(business.getId()),
+                        storefrontOffPlatformWide,
+                        telegramOffPlatformWide,
+                        bakongOffPlatformWide))
                 .toList();
     }
 
     private BusinessChannelResponse toResponse(
             Business business,
             BusinessTelegramBot bot,
-            BusinessPaymentSetting setting
+            BusinessPaymentSetting setting,
+            boolean storefrontOffPlatformWide,
+            boolean telegramOffPlatformWide,
+            boolean bakongOffPlatformWide
     ) {
         boolean published = Boolean.TRUE.equals(business.getIsListing())
-                && !Boolean.TRUE.equals(business.getIsClosed());
+                && !Boolean.TRUE.equals(business.getIsClosed())
+                && !storefrontOffPlatformWide;
+
+        boolean telegramActive = bot != null
+                && Boolean.TRUE.equals(bot.getIsActive())
+                && !telegramOffPlatformWide;
+
+        boolean bakongActive = setting != null
+                && Boolean.TRUE.equals(setting.getIsActive())
+                && !bakongOffPlatformWide;
 
         return new BusinessChannelResponse(
                 business.getId(),
@@ -67,14 +87,17 @@ public class AdminChannelServiceImpl implements AdminChannelService {
                 bot != null,
                 bot == null ? null : bot.getBotUsername(),
                 bot == null ? null : bot.getTelegramBotId(),
-                bot != null && Boolean.TRUE.equals(bot.getIsActive()),
+                telegramActive,
                 setting != null,
-                setting != null && Boolean.TRUE.equals(setting.getIsActive()),
+                bakongActive,
                 business.getProvisionedAt()
         );
     }
 
-    /** Same shape the shop itself sees, so a support call refers to one address. */
+    private boolean isDisabledPlatformWide(BusinessFeature feature) {
+        return platformFeatureFlagRepository.existsByFeatureAndEnabledFalse(feature);
+    }
+
     private String buildStorefrontUrl(String slug) {
         if (!StringUtils.hasText(slug)) {
             return null;

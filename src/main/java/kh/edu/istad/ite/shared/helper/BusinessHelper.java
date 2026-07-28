@@ -1,8 +1,11 @@
 package kh.edu.istad.ite.shared.helper;
 
+import kh.edu.istad.ite.features.admin.repository.PlatformFeatureFlagRepository;
 import kh.edu.istad.ite.features.business.entity.Business;
+import kh.edu.istad.ite.features.business.repository.BusinessFeatureFlagRepository;
 import kh.edu.istad.ite.features.business.repository.BusinessRepository;
 import kh.edu.istad.ite.features.user.repository.UserProfileRepository;
+import kh.edu.istad.ite.shared.enums.BusinessFeature;
 import kh.edu.istad.ite.shared.enums.RecordStatus;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -17,6 +20,8 @@ public class BusinessHelper {
 
     private final BusinessRepository businessRepository;
     private final UserProfileRepository userProfileRepository;
+    private final BusinessFeatureFlagRepository featureFlagRepository;
+    private final PlatformFeatureFlagRepository platformFeatureFlagRepository;
 
     public Business findOwnedBusiness(UUID businessId) {
         UUID keycloakUserId = AuthHelper.currentUserId();
@@ -51,6 +56,35 @@ public class BusinessHelper {
     public Business findOwnedBusinessOrNotFound(UUID businessId) {
         return businessRepository.findByIdAndKeycloakUserId(businessId, AuthHelper.currentUserId())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Business has not been found"));
+    }
+
+    public void requireFeature(UUID businessId, BusinessFeature feature) {
+        if (isDisabledPlatformWide(feature)) {
+            throw new ResponseStatusException(
+                    HttpStatus.FORBIDDEN,
+                    feature.getLabel() + " has been switched off platform-wide");
+        }
+
+        boolean disabled = featureFlagRepository
+                .existsByBusinessIdAndFeatureAndEnabledFalse(businessId, feature);
+
+        if (disabled) {
+            throw new ResponseStatusException(
+                    HttpStatus.FORBIDDEN,
+                    feature.getLabel() + " has been disabled for this business by the platform");
+        }
+    }
+
+    public boolean isFeatureEnabled(UUID businessId, BusinessFeature feature) {
+        if (isDisabledPlatformWide(feature)) {
+            return false;
+        }
+
+        return !featureFlagRepository.existsByBusinessIdAndFeatureAndEnabledFalse(businessId, feature);
+    }
+
+    private boolean isDisabledPlatformWide(BusinessFeature feature) {
+        return platformFeatureFlagRepository.existsByFeatureAndEnabledFalse(feature);
     }
 
     private Business findBusiness(UUID businessId) {

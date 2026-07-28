@@ -6,5 +6,7 @@ public enum AuditTargetType {
     UNIT,
     REALM_ROLE,
     PLATFORM_USER,
-    BUSINESS_ROLE
+    BUSINESS_ROLE,
+    BUSINESS_FEATURE,
+    PLATFORM_FEATURE
 }

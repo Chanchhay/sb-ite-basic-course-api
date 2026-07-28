@@ -11,8 +11,10 @@ import kh.edu.istad.ite.features.business.dto.StorefrontStatusResponse.Storefron
 import kh.edu.istad.ite.features.business.entity.Business;
 import kh.edu.istad.ite.features.business.mapper.StorefrontMapper;
 import kh.edu.istad.ite.features.business.repository.BusinessRepository;
+import kh.edu.istad.ite.shared.helper.BusinessHelper;
 import kh.edu.istad.ite.features.business.specification.PublicStoreSpecifications;
 import kh.edu.istad.ite.features.catalog.repository.ItemRepository;
+import kh.edu.istad.ite.shared.enums.BusinessFeature;
 import kh.edu.istad.ite.shared.enums.BusinessOwnerStatus;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -36,6 +38,7 @@ public class StorefrontServiceImpl implements StorefrontService {
     private static final Pattern DNS_LABEL = Pattern.compile("^[a-z0-9]([a-z0-9-]{1,61}[a-z0-9])?$");
 
     private final BusinessRepository businessRepository;
+    private final BusinessHelper businessHelper;
     private final ItemRepository itemRepository;
     private final StorefrontMapper storefrontMapper;
     private final StorefrontProps storefrontProps;
@@ -50,6 +53,10 @@ public class StorefrontServiceImpl implements StorefrontService {
     @Transactional
     public StorefrontStatusResponse enableStorefront() {
         Business business = findMyBusiness();
+
+        // The platform can withhold the storefront entirely; the owner's own
+        // checklist below only governs whether they are ready for it.
+        businessHelper.requireFeature(business.getId(), BusinessFeature.STOREFRONT);
 
         List<StorefrontRequirement> requirements = evaluateRequirements(business);
         List<String> unmet = requirements.stream()

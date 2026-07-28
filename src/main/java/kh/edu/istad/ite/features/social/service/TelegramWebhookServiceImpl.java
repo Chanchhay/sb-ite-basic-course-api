@@ -8,6 +8,8 @@ import kh.edu.istad.ite.features.social.repository.BusinessTelegramBotRepository
 import kh.edu.istad.ite.features.social.telegram.TelegramBotClient;
 import kh.edu.istad.ite.features.social.telegram.TelegramUpdate;
 import kh.edu.istad.ite.shared.enums.ChannelType;
+import kh.edu.istad.ite.shared.enums.BusinessFeature;
+import kh.edu.istad.ite.shared.helper.BusinessHelper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -28,6 +30,7 @@ public class TelegramWebhookServiceImpl implements TelegramWebhookService {
     private final BotSessionRepository botSessionRepository;
     private final CredentialCipher credentialCipher;
     private final TelegramBotClient telegramBotClient;
+    private final BusinessHelper businessHelper;
 
     @Override
     @Transactional
@@ -39,10 +42,14 @@ public class TelegramWebhookServiceImpl implements TelegramWebhookService {
             return;
         }
 
-        // Defense in depth: the path segment alone is guessable-ish (random but still a URL),
-        // so we also require Telegram's own secret_token header to match it.
         if (secretTokenHeader == null || !secretTokenHeader.equals(setting.getWebhookSecret())) {
             log.warn("Rejected Telegram webhook call: secret_token header mismatch for business {}",
+                    setting.getBusiness().getId());
+            return;
+        }
+
+        if (!businessHelper.isFeatureEnabled(setting.getBusiness().getId(), BusinessFeature.TELEGRAM_BOT)) {
+            log.info("Ignoring Telegram update: the platform disabled the bot for business {}",
                     setting.getBusiness().getId());
             return;
         }
@@ -53,7 +60,6 @@ public class TelegramWebhookServiceImpl implements TelegramWebhookService {
         }
 
         if (update == null || update.message() == null || update.message().chat() == null) {
-            // Non-message updates (e.g. edited_message, callback_query) - nothing to reply to yet.
             return;
         }
 
@@ -85,8 +91,7 @@ public class TelegramWebhookServiceImpl implements TelegramWebhookService {
                 });
     }
 
-    // MVP command handling - a real menu/cart/checkout flow driven by BotSession.state
-    // and BotSession.context is a follow-up feature on top of this foundation.
+
     private String buildReply(String text, BusinessTelegramBot setting) {
         if ("/start".equalsIgnoreCase(text)) {
             return StringUtils.hasText(setting.getWelcomeMessage())
