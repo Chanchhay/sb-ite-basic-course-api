@@ -16,10 +16,7 @@ public class BusinessSecurityValidator {
     private final BusinessRepository businessRepository;
     private final CurrentAuthorizationContext currentAuthorizationContext;
 
-    public void validateBusinessOwnerOrAdmin(UUID businessId) {
-        if (currentAuthorizationContext.hasRealmRole("SUPER_ADMIN")) {
-            return;
-        }
+    public void validateBusinessOwner(UUID businessId) {
 
         Business business = businessRepository.findById(businessId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Business not found"));
