@@ -1,5 +1,6 @@
 package kh.edu.istad.ite.features.social.telegram;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import kh.edu.istad.ite.config.props.TelegramProps;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.ParameterizedTypeReference;
@@ -18,6 +19,7 @@ import java.util.Map;
 public class TelegramBotClient {
 
     private final RestClient restClient;
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     public TelegramBotClient(TelegramProps props) {
         this.restClient = RestClient.builder()
@@ -126,8 +128,6 @@ public class TelegramBotClient {
         }
     }
 
-    // Sends a photo by URL with a caption and optional inline keyboard - used for product detail cards.
-    // Telegram captions are capped at 1024 chars; callers should keep detail text under that.
     public void sendPhoto(String botToken, Long chatId, String photoUrl, String caption, List<List<InlineKeyboardButton>> keyboard) {
         try {
             Map<String, Object> requestBody = keyboard == null || keyboard.isEmpty()
@@ -143,6 +143,27 @@ public class TelegramBotClient {
                     .toBodilessEntity();
         } catch (RestClientException exception) {
             log.warn("Telegram sendPhoto failed for chat {}: {}", chatId, exception.getMessage());
+        }
+    }
+
+    public void deleteMessage(String botToken, Long chatId, Integer messageId) {
+        if (chatId == null || messageId == null) {
+            return;
+        }
+        try {
+            Map<String, Object> requestBody = Map.of(
+                    "chat_id", chatId,
+                    "message_id", messageId
+            );
+
+            restClient.post()
+                    .uri("/bot{token}/deleteMessage", botToken)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(requestBody)
+                    .retrieve()
+                    .toBodilessEntity();
+        } catch (RestClientException exception) {
+            log.warn("Telegram deleteMessage failed for chat {} message {}: {}", chatId, messageId, exception.getMessage());
         }
     }
 
