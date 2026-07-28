@@ -1,6 +1,9 @@
 package kh.edu.istad.ite.features.catalog.repository;
 
 import kh.edu.istad.ite.features.catalog.entity.Item;
+import kh.edu.istad.ite.shared.enums.ItemStatus;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.List;
@@ -27,4 +30,10 @@ public interface ItemRepository extends JpaRepository<Item, UUID> {
     boolean existsByBusiness_Id(UUID businessId);
 
     Optional<Item> findByBusinessIdAndBarcode(UUID businessId, String barcode);
+
+    Page<Item> findByBusinessIdAndStatusAndItemGroup_IdOrderByNameAsc(
+            UUID businessId, ItemStatus status, UUID itemGroupId, Pageable pageable);
+
+    Page<Item> findByBusinessIdAndStatusOrderByNameAsc(
+            UUID businessId, ItemStatus status, Pageable pageable);
 }
