@@ -1,10 +1,6 @@
 package kh.edu.istad.ite.features.discount.dto;
 
-import jakarta.validation.constraints.DecimalMin;
-import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Positive;
-import jakarta.validation.constraints.Size;
+import jakarta.validation.constraints.*;
 import kh.edu.istad.ite.shared.enums.DiscountRuleType;
 import kh.edu.istad.ite.shared.enums.DiscountScope;
 import kh.edu.istad.ite.shared.enums.DiscountType;
@@ -18,6 +14,7 @@ public record CreateDiscountRequest(
         @Size(max = 150, message = "name must be at most 150 characters")
         String name,
 
+        @Size( max = 2000 )
         String description,
 
         @NotNull(message = "type is required")
@@ -27,24 +24,30 @@ public record CreateDiscountRequest(
         DiscountRuleType ruleType,
 
         @Positive(message = "buyQuantity must be greater than 0")
+        @Max(10000)
         Integer buyQuantity,
 
         @Positive(message = "getQuantity must be greater than 0")
+        @Max(10000)
         Integer getQuantity,
 
         @Positive(message = "minQuantity must be greater than 0")
+        @Max(10000)
         Integer minQuantity,
 
         @DecimalMin(value = "0.0", inclusive = false, message = "value must be greater than 0")
+        @Digits(integer = 10, fraction = 2)
         BigDecimal value,
 
         @NotNull(message = "scope is required")
         DiscountScope scope,
 
         @DecimalMin(value = "0.0", message = "minOrderAmount cannot be negative")
+        @Digits(integer = 10, fraction = 2)
         BigDecimal minOrderAmount,
 
         @DecimalMin(value = "0.0", message = "maxDiscountAmount cannot be negative")
+        @Digits(integer = 10, fraction = 2)
         BigDecimal maxDiscountAmount,
 
         Boolean requiresCoupon,

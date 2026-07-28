@@ -32,8 +32,8 @@ public class DiscountMapper {
                 discount.getStatus(),
                 discount.getBranchId(),
                 discount.getCreatedBy(),
-                discount.getCreatedAt(),
-                discount.getUpdatedAt()
+                discount.getCreatedDate(),
+                discount.getLastModifiedDate()
         );
     }
 }

@@ -2,7 +2,6 @@ package kh.edu.istad.ite.features.discount.entity;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
-import jakarta.persistence.EntityListeners;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
@@ -12,6 +11,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import kh.edu.istad.ite.config.audit.BasedAuditingEntity;
 import kh.edu.istad.ite.features.business.entity.Business;
 import kh.edu.istad.ite.shared.enums.DiscountRuleType;
 import kh.edu.istad.ite.shared.enums.DiscountScope;
@@ -20,10 +20,6 @@ import kh.edu.istad.ite.shared.enums.RecordStatus;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
-import org.springframework.data.annotation.CreatedBy;
-import org.springframework.data.annotation.CreatedDate;
-import org.springframework.data.annotation.LastModifiedDate;
-import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -36,6 +32,11 @@ import java.util.UUID;
  * max_discount_amount, requires_coupon, starts_at, ends_at, status,
  * branch_id, created_by, created_at, updated_at, deleted_at.
  *
+ * created_by / created_at / updated_at come from BasedAuditingEntity, same
+ * as every other entity in this codebase (Business, Item, Order, ...).
+ * deleted_at stays here since Discount is currently the only entity with
+ * soft delete.
+ *
  * Note: every other entity in this codebase uses UUID primary/foreign keys
  * (Business.id, UserProfile.userId, etc.), so id / business_owner_id /
  * branch_id are kept as UUID here for consistency instead of bigint.
@@ -44,9 +45,8 @@ import java.util.UUID;
 @Getter
 @Setter
 @NoArgsConstructor
-@EntityListeners(AuditingEntityListener.class)
 @Table(name = "discounts")
-public class Discount {
+public class Discount extends BasedAuditingEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
@@ -113,18 +113,6 @@ public class Discount {
 
     @Column(name = "branch_id")
     private UUID branchId;
-
-    @CreatedBy
-    @Column(name = "created_by", updatable = false, length = 150)
-    private String createdBy;
-
-    @CreatedDate
-    @Column(name = "created_at", nullable = false, updatable = false)
-    private LocalDateTime createdAt;
-
-    @LastModifiedDate
-    @Column(name = "updated_at")
-    private LocalDateTime updatedAt;
 
     @Column(name = "deleted_at")
     private LocalDateTime deletedAt;
