@@ -25,4 +25,6 @@ public interface ItemRepository extends JpaRepository<Item, UUID> {
     boolean existsByBusinessIdAndItemGroupId(UUID businessId, UUID itemGroupId);
 
     boolean existsByBusiness_Id(UUID businessId);
+
+    Optional<Item> findByBusinessIdAndBarcode(UUID businessId, String barcode);
 }

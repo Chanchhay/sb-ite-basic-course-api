@@ -18,4 +18,6 @@ public interface ItemService {
     ItemResponse updateItem(UUID businessId, UUID itemId, UpdateItemRequest request);
 
     void deleteItem(UUID businessId, UUID itemId);
+
+    ItemResponse findItemByBarcode(UUID businessId, String barcode);
 }

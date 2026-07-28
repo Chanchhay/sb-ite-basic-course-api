@@ -12,6 +12,7 @@ import kh.edu.istad.ite.features.order.dto.*;
 import kh.edu.istad.ite.features.order.entity.Order;
 import kh.edu.istad.ite.features.order.entity.OrderItem;
 import kh.edu.istad.ite.features.order.entity.Sale;
+import kh.edu.istad.ite.features.order.entity.SelectedModifier;
 import kh.edu.istad.ite.features.order.mapper.OrderMapper;
 import kh.edu.istad.ite.features.order.repository.OrderRepository;
 import kh.edu.istad.ite.features.order.repository.SaleRepository;
@@ -46,6 +47,8 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 
 @Service
@@ -433,6 +436,27 @@ public class OrderServiceImpl implements OrderService {
                     HttpStatus.CONFLICT, "Item has no price: " + item.getName());
         }
 
+        // Snapshot the chosen modifiers and price them per unit, then per line.
+        List<SelectedModifier> selectedModifiers = new ArrayList<>();
+        BigDecimal modifierPerUnit = BigDecimal.ZERO;
+
+        if (request.modifiers() != null) {
+            for (ModifierSelectionRequest modifier : request.modifiers()) {
+                int modifierQty = modifier.quantity() == null ? 1 : modifier.quantity();
+                BigDecimal modifierPrice = modifier.unitPrice() == null ? BigDecimal.ZERO : modifier.unitPrice();
+
+                selectedModifiers.add(new SelectedModifier(
+                        modifier.groupName(), modifier.name(), modifierPrice, modifierQty));
+
+                modifierPerUnit = modifierPerUnit.add(modifierPrice.multiply(BigDecimal.valueOf(modifierQty)));
+            }
+        }
+
+        BigDecimal quantity = BigDecimal.valueOf(request.quantity());
+        BigDecimal modifierTotal = modifierPerUnit.multiply(quantity);
+        // lineTotal = (base unit price + modifiers per unit) * quantity = unitPrice*qty + modifierTotal
+        BigDecimal lineTotal = unitPrice.add(modifierPerUnit).multiply(quantity);
+
         OrderItem orderItem = new OrderItem();
         orderItem.setItem(item);
         orderItem.setVariant(variant);
@@ -441,7 +465,9 @@ public class OrderServiceImpl implements OrderService {
         orderItem.setUnitPrice(unitPrice);
         orderItem.setUnitCost(BigDecimal.ZERO);
         orderItem.setDiscountAmount(BigDecimal.ZERO);
-        orderItem.setLineTotal(unitPrice.multiply(BigDecimal.valueOf(request.quantity())));
+        orderItem.setSelectedModifiers(selectedModifiers);
+        orderItem.setModifierTotal(modifierTotal);
+        orderItem.setLineTotal(lineTotal);
 
         return orderItem;
     }
