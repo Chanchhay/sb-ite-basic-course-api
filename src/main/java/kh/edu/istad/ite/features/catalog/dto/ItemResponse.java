@@ -18,7 +18,7 @@ public record ItemResponse(
         String sku,
         String code,
         String description,
-        String imageUrl,
+        List<ItemImageResponse> images,
         String barcode,
         BigDecimal price,
         ItemType itemType,

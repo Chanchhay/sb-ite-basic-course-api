@@ -7,6 +7,7 @@ import kh.edu.istad.ite.features.cart.entity.Cart;
 import kh.edu.istad.ite.features.cart.entity.CartItem;
 import kh.edu.istad.ite.features.cart.repository.CartRepository;
 import kh.edu.istad.ite.features.catalog.entity.Item;
+import kh.edu.istad.ite.features.catalog.entity.ItemVariant;
 import kh.edu.istad.ite.features.customer.entity.Customer;
 import kh.edu.istad.ite.features.customer.repository.CustomerRepository;
 import kh.edu.istad.ite.features.inventory.service.StockEntryService;
@@ -24,6 +25,7 @@ import kh.edu.istad.ite.features.payment.khqr.QrImageRenderer;
 import kh.edu.istad.ite.features.payment.repository.BusinessPaymentSettingRepository;
 import kh.edu.istad.ite.features.payment.repository.PaymentQrCodeRepository;
 import kh.edu.istad.ite.features.payment.service.ReceiptService;
+import kh.edu.istad.ite.features.social.telegram.TelegramUIHelper;
 import kh.edu.istad.ite.shared.enums.BusinessFeature;
 import kh.edu.istad.ite.shared.enums.CartStatus;
 import kh.edu.istad.ite.shared.enums.OrderChannel;
@@ -71,6 +73,8 @@ public class TelegramCheckoutServiceImpl implements TelegramCheckoutService {
     private final CredentialCipher credentialCipher;
     private final StockEntryService stockEntryService;
     private final ReceiptService receiptService;
+    private final TelegramStockHelper stockHelper;
+    private final TelegramUIHelper uiHelper;
 
     @Override
     @Transactional
@@ -91,6 +95,17 @@ public class TelegramCheckoutServiceImpl implements TelegramCheckoutService {
                         "⚠️ កន្ត្រកទំនិញរបស់អ្នកទទេ។ សូមជ្រើសរើសទំនិញជាមុនសិន។"));
 
         BusinessPaymentSetting setting = requireActiveBakongSetting(businessId);
+
+        // Never let a customer pay for something we can't actually fulfil: check stock
+        // BEFORE a KHQR is generated, not after Bakong confirms the money moved.
+        for (CartItem cartItem : cart.getItems()) {
+            int quantity = cartItem.getQuantity() == null ? 1 : cartItem.getQuantity();
+            if (!stockHelper.hasEnoughStock(businessId, cartItem.getItem(), quantity)) {
+                throw new TelegramCheckoutException(
+                        "⚠️ ស្តុកមិនគ្រប់គ្រាន់សម្រាប់ \"" + cartItem.getItem().getName()
+                                + "\" ទេ។ សូមកែសម្រួលកន្ត្រកទំនិញរបស់អ្នកមុននឹងទូទាត់ប្រាក់។");
+            }
+        }
 
         // 1. Build a real PENDING order from the cart.
         Order order = new Order();
@@ -197,11 +212,11 @@ public class TelegramCheckoutServiceImpl implements TelegramCheckoutService {
                 .orElseThrow(() -> new TelegramCheckoutException("⚠️ រកមិនឃើញការបញ្ជាទិញនេះទេ។"));
 
         if (OrderStatus.PAID.equals(order.getStatus())) {
-            return new VerifyResult(true, false, "ការបញ្ជាទិញនេះបានទូទាត់រួចហើយ។", order.getInvoiceNumber());
+            return new VerifyResult(true, false, "ការបញ្ជាទិញនេះបានទូទាត់រួចហើយ។", order.getInvoiceNumber(), null);
         }
 
         if (OrderStatus.CANCELLED.equals(order.getStatus())) {
-            return new VerifyResult(false, false, "ការបញ្ជាទិញនេះត្រូវបានលុបចោល។", order.getInvoiceNumber());
+            return new VerifyResult(false, false, "ការបញ្ជាទិញនេះត្រូវបានលុបចោល។", order.getInvoiceNumber(), null);
         }
 
         PaymentQrCode qrCode = paymentQrCodeRepository.findByOrderIdOrderByCreatedAtDesc(orderId)
@@ -216,7 +231,7 @@ public class TelegramCheckoutServiceImpl implements TelegramCheckoutService {
             paymentQrCodeRepository.save(qrCode);
             return new VerifyResult(false, true,
                     "⏰ កូដ KHQR បានផុតកំណត់ហើយ។ សូមចុច គិតលុយ ដើម្បីបង្កើតកូដថ្មី។",
-                    order.getInvoiceNumber());
+                    order.getInvoiceNumber(), null);
         }
 
         BusinessPaymentSetting setting = requireActiveBakongSetting(businessId);
@@ -235,7 +250,7 @@ public class TelegramCheckoutServiceImpl implements TelegramCheckoutService {
         if (!result.paid()) {
             return new VerifyResult(false, false,
                     "❌ ប្រព័ន្ធ Bakong មិនទាន់ឃើញការទូទាត់ទេ។",
-                    order.getInvoiceNumber());
+                    order.getInvoiceNumber(), null);
         }
 
         qrCode.setStatus(QrStatus.PAID);
@@ -244,10 +259,15 @@ public class TelegramCheckoutServiceImpl implements TelegramCheckoutService {
         settle(business, order);
         closeCart(order);
 
+        // Rendered while the order/items are still attached to this transaction's
+        // persistence context, so the poller can just send the text as-is without
+        // risking a LazyInitializationException outside this method.
+        String receiptText = uiHelper.renderReceipt(order, business);
+
         log.info("Telegram order {} ({}) confirmed paid by Bakong, hash {}",
                 order.getId(), order.getInvoiceNumber(), result.hash());
 
-        return new VerifyResult(true, false, "ការទូទាត់ត្រូវបានបញ្ជាក់ដោយ Bakong។", order.getInvoiceNumber());
+        return new VerifyResult(true, false, "ការទូទាត់ត្រូវបានបញ្ជាក់ដោយ Bakong។", order.getInvoiceNumber(), receiptText);
     }
 
     @Override
@@ -342,10 +362,11 @@ public class TelegramCheckoutServiceImpl implements TelegramCheckoutService {
 
     private OrderItem toOrderItem(CartItem cartItem) {
         Item item = cartItem.getItem();
+        ItemVariant variant = cartItem.getVariant();
 
         BigDecimal unitPrice = cartItem.getPriceSnapshot() != null
                 ? cartItem.getPriceSnapshot()
-                : item.getPrice();
+                : (variant != null && variant.getPrice() != null ? variant.getPrice() : item.getPrice());
 
         if (unitPrice == null) {
             throw new TelegramCheckoutException(
@@ -356,8 +377,8 @@ public class TelegramCheckoutServiceImpl implements TelegramCheckoutService {
 
         OrderItem orderItem = new OrderItem();
         orderItem.setItem(item);
-        orderItem.setVariant(null);
-        orderItem.setItemName(item.getName());
+        orderItem.setVariant(variant);
+        orderItem.setItemName(variant != null ? item.getName() + " (" + variant.getVariantName() + ")" : item.getName());
         orderItem.setQuantity(quantity);
         orderItem.setUnitPrice(unitPrice);
         orderItem.setUnitCost(BigDecimal.ZERO);

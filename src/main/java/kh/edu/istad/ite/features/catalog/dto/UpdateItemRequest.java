@@ -29,9 +29,6 @@ public record UpdateItemRequest(
 
         String description,
 
-        @Size(max = 255, message = "imageUrl must be at most 255 characters")
-        String imageUrl,
-
         @Size(max = 100, message = "barcode must be at most 100 characters")
         String barcode,
 

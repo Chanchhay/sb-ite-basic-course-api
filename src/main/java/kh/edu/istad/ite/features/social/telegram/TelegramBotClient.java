@@ -6,6 +6,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.util.LinkedMultiValueMap;
@@ -15,9 +16,13 @@ import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.net.http.HttpClient;
+import java.time.Duration;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 @Component
 @Slf4j
@@ -32,9 +37,22 @@ public class TelegramBotClient {
     private final RestClient restClient;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
+
+    private final ExecutorService fireAndForget =
+            Executors.newVirtualThreadPerTaskExecutor();
+
     public TelegramBotClient(TelegramProps props) {
+
+        JdkClientHttpRequestFactory requestFactory = new JdkClientHttpRequestFactory(
+                HttpClient.newBuilder()
+                        .version(HttpClient.Version.HTTP_2)
+                        .connectTimeout(Duration.ofSeconds(3))
+                        .build());
+        requestFactory.setReadTimeout(Duration.ofSeconds(10));
+
         this.restClient = RestClient.builder()
                 .baseUrl(props.getApiBaseUrl())
+                .requestFactory(requestFactory)
                 .build();
     }
 
@@ -156,7 +174,6 @@ public class TelegramBotClient {
         }
     }
 
-    // Stops the spinner Telegram shows on the tapped button; optional toast text.
     public void answerCallbackQuery(String botToken, String callbackQueryId, String toastText) {
         try {
             Map<String, Object> requestBody = new HashMap<>();
@@ -277,6 +294,16 @@ public class TelegramBotClient {
     }
 
 
+    public void answerCallbackQueryAsync(String botToken, String callbackQueryId, String toastText) {
+        fireAndForget.execute(() -> answerCallbackQuery(botToken, callbackQueryId, toastText));
+    }
+
+
+    public void deleteMessageAsync(String botToken, Long chatId, Integer messageId) {
+        fireAndForget.execute(() -> deleteMessage(botToken, chatId, messageId));
+    }
+
+
     private Map<String, Object> buildReplyMarkup(List<List<InlineKeyboardButton>> keyboard) {
         if (keyboard == null || keyboard.isEmpty()) {
             return null;
@@ -285,14 +312,10 @@ public class TelegramBotClient {
         List<List<Map<String, String>>> rows = keyboard.stream()
                 .filter(row -> row != null && !row.isEmpty())
                 .map(row -> row.stream()
-                        // Map.of throws NPE on null values, which used to escape the
-                        // RestClientException catch and kill the whole update silently.
                         .filter(button -> button != null
                                 && button.label() != null
-                                && button.callbackData() != null)
-                        .map(button -> Map.of(
-                                "text", button.label(),
-                                "callback_data", truncateCallbackData(button.callbackData())))
+                                && (button.isLink() || button.callbackData() != null))
+                        .map(this::toButtonMap)
                         .toList())
                 .filter(row -> !row.isEmpty())
                 .toList();
@@ -304,7 +327,12 @@ public class TelegramBotClient {
         return Map.of("inline_keyboard", rows);
     }
 
-    /** Telegram rejects callback_data longer than 64 bytes. */
+    private Map<String, String> toButtonMap(InlineKeyboardButton button) {
+        return button.isLink()
+                ? Map.of("text", button.label(), "url", button.url())
+                : Map.of("text", button.label(), "callback_data", truncateCallbackData(button.callbackData()));
+    }
+
     private String truncateCallbackData(String data) {
         return data.length() <= 64 ? data : data.substring(0, 64);
     }

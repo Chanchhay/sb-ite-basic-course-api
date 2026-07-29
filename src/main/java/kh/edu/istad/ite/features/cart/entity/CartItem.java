@@ -3,6 +3,7 @@ package kh.edu.istad.ite.features.cart.entity;
 import jakarta.persistence.*;
 import kh.edu.istad.ite.config.audit.BasedAuditingEntity;
 import kh.edu.istad.ite.features.catalog.entity.Item;
+import kh.edu.istad.ite.features.catalog.entity.ItemVariant;
 import lombok.*;
 
 import java.math.BigDecimal;
@@ -28,6 +29,10 @@ public class CartItem extends BasedAuditingEntity {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "item_id", nullable = false)
     private Item item;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "variant_id")
+    private ItemVariant variant;
 
     @Column(nullable = false)
     private Integer quantity;

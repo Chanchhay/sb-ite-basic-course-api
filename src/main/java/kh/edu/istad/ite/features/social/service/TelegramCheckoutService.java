@@ -31,7 +31,8 @@ public interface TelegramCheckoutService {
             boolean paid,
             boolean expired,
             String message,
-            String invoiceNumber
+            String invoiceNumber,
+            String receiptText
     ) {
     }
 }

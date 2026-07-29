@@ -82,8 +82,9 @@ public class Item extends BasedAuditingEntity {
     @Column(columnDefinition = "text")
     private String description;
 
-    @Column(name = "image_url", length = 255)
-    private String imageUrl;
+    @OneToMany(mappedBy = "item", cascade = CascadeType.ALL, orphanRemoval = true)
+    @OrderBy("position ASC")
+    private List<ItemImage> images = new ArrayList<>();
 
     @Column(length = 100)
     private String barcode;

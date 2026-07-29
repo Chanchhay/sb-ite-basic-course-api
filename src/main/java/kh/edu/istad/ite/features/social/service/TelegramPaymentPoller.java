@@ -22,11 +22,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
-/**
- * Watches every outstanding Telegram KHQR and confirms it against Bakong without
- * the customer having to tap anything. When Bakong reports the transfer, the order
- * settles and the confirmation is pushed straight into the chat.
- */
+
 @Component
 @Slf4j
 @RequiredArgsConstructor
@@ -63,7 +59,6 @@ public class TelegramPaymentPoller {
             try {
                 process(qrCode);
             } catch (Exception exception) {
-                // One bad order must never stop the loop for everybody else.
                 log.warn("Polling failed for QR {}: {}", qrCode.getId(), exception.getMessage());
             }
         }
@@ -83,13 +78,13 @@ public class TelegramPaymentPoller {
         }
 
         if (result.paid()) {
-            notifyPaid(businessId, order, result.invoiceNumber());
+            notifyPaid(businessId, order, result.invoiceNumber(), result.receiptText());
         } else if (result.expired()) {
             notifyExpired(businessId, order);
         }
     }
 
-    private void notifyPaid(UUID businessId, Order order, String invoiceNumber) {
+    private void notifyPaid(UUID businessId, Order order, String invoiceNumber, String receiptText) {
         send(businessId, order,
                 "🎉 *ការទូទាត់ជោគជ័យ!*\n"
                         + "━━━━━━━━━━━━━━━━━━━━\n"
@@ -98,6 +93,11 @@ public class TelegramPaymentPoller {
                         + "អរគុណសម្រាប់ការបញ្ជាទិញ! ហាងកំពុងរៀបចំទំនិញជូនអ្នក។",
                 List.of(List.of(new InlineKeyboardButton("🛍️ ទិញទំនិញបន្ត", "menu:catalog")),
                         List.of(new InlineKeyboardButton("⬅️ ម៉ឺនុយដើម", "menu:main"))));
+
+        // The actual receipt, as its own message so it stays easy to screenshot/forward.
+        if (receiptText != null) {
+            send(businessId, order, receiptText, null);
+        }
 
         log.info("Auto-confirmed Telegram order {} ({})", order.getId(), invoiceNumber);
     }

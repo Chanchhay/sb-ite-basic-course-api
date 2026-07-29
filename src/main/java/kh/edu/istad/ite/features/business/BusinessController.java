@@ -8,6 +8,7 @@ import kh.edu.istad.ite.features.business.service.BusinessService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.UUID;
 
@@ -45,5 +46,31 @@ public class BusinessController {
     @PutMapping("/{businessId}/delete")
     public BusinessResponse deleteBusiness(@PathVariable UUID businessId) {
         return businessService.deleteBusiness(businessId);
+    }
+
+    @PostMapping(value = "/{businessId}/logo", consumes = "multipart/form-data")
+    public BusinessResponse uploadLogo(
+            @PathVariable UUID businessId,
+            @RequestParam("file") MultipartFile file
+    ) {
+        return businessService.uploadLogo(businessId, file);
+    }
+
+    @DeleteMapping("/{businessId}/logo")
+    public BusinessResponse deleteLogo(@PathVariable UUID businessId) {
+        return businessService.deleteLogo(businessId);
+    }
+
+    @PostMapping(value = "/{businessId}/thumbnail", consumes = "multipart/form-data")
+    public BusinessResponse uploadThumbnail(
+            @PathVariable UUID businessId,
+            @RequestParam("file") MultipartFile file
+    ) {
+        return businessService.uploadThumbnail(businessId, file);
+    }
+
+    @DeleteMapping("/{businessId}/thumbnail")
+    public BusinessResponse deleteThumbnail(@PathVariable UUID businessId) {
+        return businessService.deleteThumbnail(businessId);
     }
 }

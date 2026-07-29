@@ -1,44 +1,45 @@
 package kh.edu.istad.ite.features.social.telegram;
 
+import kh.edu.istad.ite.features.business.entity.Business;
 import kh.edu.istad.ite.features.cart.entity.Cart;
 import kh.edu.istad.ite.features.cart.entity.CartItem;
 import kh.edu.istad.ite.features.catalog.entity.Item;
+import kh.edu.istad.ite.features.order.entity.Order;
+import kh.edu.istad.ite.features.order.entity.OrderItem;
 import kh.edu.istad.ite.features.social.entity.BusinessTelegramBot;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.Optional;
 
 @Component
 public class TelegramUIHelper {
 
     private static final String DIVIDER = "━━━━━━━━━━━━━━━━━━━━";
 
-    /**
-     * បង្កើត Header ស្អាតមានបន្ទាត់បែងចែកខាងក្រោម
-     */
     public String header(String emoji, String title) {
         return emoji + " *" + title.toUpperCase() + "*\n" + DIVIDER + "\n";
     }
 
-    /**
-     * បង្កើតបន្ទាត់បែងចែកធម្មតា
-     */
+
     public String divider() {
         return "\n" + DIVIDER + "\n";
     }
 
-    /**
-     * Format តម្លៃលុយឲ្យលោតក្នុងប្រអប់ Monospace Code ឧទាហរណ៍៖ `$15.00` ឬ `15,000 KHR`
-     */
+
     public String formatPrice(BigDecimal price, BusinessTelegramBot setting) {
+        return formatPrice(price, setting.getBusiness());
+    }
+
+    public String formatPrice(BigDecimal price, Business business) {
         if (price == null) {
             return "`—`";
         }
-        String currency = setting.getBusiness().getDisplayCurrency() != null
-                ? setting.getBusiness().getDisplayCurrency()
-                : setting.getBusiness().getBaseCurrency();
+        String currency = business.getDisplayCurrency() != null
+                ? business.getDisplayCurrency()
+                : business.getBaseCurrency();
 
         String formattedNumber = price.setScale(2, RoundingMode.HALF_UP).toString();
         if ("USD".equalsIgnoreCase(currency) || "$".equals(currency)) {
@@ -48,10 +49,8 @@ public class TelegramUIHelper {
         }
     }
 
-    /**
-     * Format កាតបង្ហាញព័ត៌មានផលិតផល (Product Detail UX)
-     */
-    public String renderProductDetail(Item item, BusinessTelegramBot setting) {
+
+    public String renderProductDetail(Item item, BusinessTelegramBot setting, Optional<BigDecimal> availableQuantity) {
         StringBuilder sb = new StringBuilder();
         sb.append(header("🏷️", item.getName()));
         sb.append("💵 តម្លៃទំនិញ ៖  ").append(formatPrice(item.getPrice(), setting)).append("\n");
@@ -60,7 +59,7 @@ public class TelegramUIHelper {
             sb.append("🗂️ ប្រភេទ    ៖  `").append(item.getItemGroup().getName()).append("`\n");
         }
 
-        sb.append("📦 ស្ថានភាព   ៖  🟢 `In Stock`\n");
+        sb.append("📦 ស្ថានភាព   ៖  ").append(stockBadge(availableQuantity)).append("\n");
 
         if (StringUtils.hasText(item.getDescription())) {
             sb.append("\n📝 *ការពិពណ៌នា៖*\n");
@@ -72,9 +71,52 @@ public class TelegramUIHelper {
         return sb.toString();
     }
 
-    /**
-     * Format កន្ត្រកទំនិញបែប Digital Receipt UX
-     */
+
+    private String stockBadge(Optional<BigDecimal> availableQuantity) {
+        if (availableQuantity.isEmpty()) {
+            return "🟢 `មានទំនិញ`";
+        }
+
+        BigDecimal quantity = availableQuantity.get();
+        if (quantity.compareTo(BigDecimal.ZERO) <= 0) {
+            return "🔴 `អស់ស្តុក (Out of Stock)`";
+        }
+        if (quantity.compareTo(BigDecimal.valueOf(5)) <= 0) {
+            return "🟡 `នៅសល់តិច — " + quantity.stripTrailingZeros().toPlainString() + " ទំនិញ`";
+        }
+        return "🟢 `មានទំនិញ`";
+    }
+
+
+    public String renderReceipt(Order order, Business business) {
+        StringBuilder sb = new StringBuilder();
+        sb.append(header("🧾", "វិក្កយបត្រ (RECEIPT)"));
+        sb.append("🏪 ហាង        ៖ *").append(business.getDisplayName()).append("*\n");
+        sb.append("🔢 លេខវិក្កយបត្រ ៖ `").append(order.getInvoiceNumber()).append("`\n");
+        sb.append(divider());
+        sb.append("📦 *បញ្ជីមុខទំនិញ៖*\n");
+
+        int index = 1;
+        for (OrderItem line : order.getItems()) {
+            sb.append("*").append(index++).append(".* ").append(line.getItemName()).append("\n");
+            sb.append(" └ ").append(line.getQuantity()).append(" x ")
+                    .append(formatPrice(line.getUnitPrice(), business))
+                    .append(" = ").append(formatPrice(line.getLineTotal(), business)).append("\n");
+        }
+
+        sb.append(divider());
+        sb.append("💵 សរុបរង ៖ ").append(formatPrice(order.getSubtotal(), business)).append("\n");
+        if (order.getDiscountAmount() != null && order.getDiscountAmount().signum() > 0) {
+            sb.append("🏷️ បញ្ចុះតម្លៃ ៖ ").append(formatPrice(order.getDiscountAmount(), business)).append("\n");
+        }
+        sb.append("💳 *សរុបទាំងអស់ ៖* ").append(formatPrice(order.getTotal(), business)).append("\n");
+        sb.append(DIVIDER).append("\n");
+        sb.append("✅ _អរគុណសម្រាប់ការទិញទំនិញ!_");
+
+        return sb.toString();
+    }
+
+
     public String renderCartReceipt(Cart cart, BusinessTelegramBot setting, String customerName) {
         StringBuilder sb = new StringBuilder();
         sb.append(header("🛒", "កន្ត្រកទំនិញរបស់អ្នក (YOUR CART)"));
@@ -86,7 +128,10 @@ public class TelegramUIHelper {
         int index = 1;
         for (CartItem ci : cart.getItems()) {
             Item item = ci.getItem();
-            sb.append("*").append(index++).append(".* ").append(item.getName()).append("\n");
+            String label = ci.getVariant() != null
+                    ? item.getName() + " (" + ci.getVariant().getVariantName() + ")"
+                    : item.getName();
+            sb.append("*").append(index++).append(".* ").append(label).append("\n");
             sb.append(" └ ").append(ci.getQuantity()).append(" x ")
                     .append(formatPrice(ci.getPriceSnapshot(), setting))
                     .append(" = ").append(formatPrice(ci.getSubtotal(), setting)).append("\n");
@@ -101,9 +146,7 @@ public class TelegramUIHelper {
         return sb.toString();
     }
 
-    /**
-     * Format សារស្វាគមន៍ Main Menu
-     */
+
     public String renderWelcomeMessage(BusinessTelegramBot setting, String customerName) {
         StringBuilder sb = new StringBuilder();
         String storeName = setting.getBusiness().getDisplayName();

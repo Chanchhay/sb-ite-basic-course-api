@@ -9,15 +9,17 @@ import kh.edu.istad.ite.features.cart.repository.CartItemRepository;
 import kh.edu.istad.ite.features.cart.repository.CartRepository;
 import kh.edu.istad.ite.features.catalog.entity.Item;
 import kh.edu.istad.ite.features.catalog.entity.ItemGroup;
+import kh.edu.istad.ite.features.catalog.entity.ItemImage;
+import kh.edu.istad.ite.features.catalog.entity.ItemVariant;
 import kh.edu.istad.ite.features.catalog.repository.ItemGroupRepository;
 import kh.edu.istad.ite.features.catalog.repository.ItemRepository;
+import kh.edu.istad.ite.features.minio.MinioService;
 import kh.edu.istad.ite.features.customer.entity.Customer;
 import kh.edu.istad.ite.features.customer.entity.CustomerChannelIdentity;
 import kh.edu.istad.ite.features.customer.entity.GlobalCustomer;
 import kh.edu.istad.ite.features.customer.repository.CustomerChannelIdentityRepository;
 import kh.edu.istad.ite.features.customer.repository.CustomerRepository;
 import kh.edu.istad.ite.features.customer.repository.GlobalCustomerRepository;
-
 import kh.edu.istad.ite.features.social.entity.BotSession;
 import kh.edu.istad.ite.features.social.entity.BusinessTelegramBot;
 import kh.edu.istad.ite.features.social.repository.BotSessionRepository;
@@ -28,9 +30,9 @@ import kh.edu.istad.ite.features.social.telegram.TelegramCallbackQuery;
 import kh.edu.istad.ite.features.social.telegram.TelegramKeyboards;
 import kh.edu.istad.ite.features.social.telegram.TelegramUIHelper;
 import kh.edu.istad.ite.features.social.telegram.TelegramUpdate;
-import kh.edu.istad.ite.shared.enums.ChannelType;
 import kh.edu.istad.ite.shared.enums.BusinessFeature;
 import kh.edu.istad.ite.shared.enums.CartStatus;
+import kh.edu.istad.ite.shared.enums.ChannelType;
 import kh.edu.istad.ite.shared.enums.ItemStatus;
 import kh.edu.istad.ite.shared.helper.BusinessHelper;
 import lombok.RequiredArgsConstructor;
@@ -38,14 +40,14 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
-import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Comparator;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -64,14 +66,13 @@ public class TelegramWebhookServiceImpl implements TelegramWebhookService {
     private static final String STATE_REGISTER_EMAIL    = "REGISTER_EMAIL";
     private static final String STATE_REGISTER_PHONE    = "REGISTER_PHONE";
 
-    // 🔥 STRICT REAL LOGIN STATES
     private static final String STATE_LOGIN_EMAIL       = "LOGIN_EMAIL";
     private static final String STATE_LOGIN_PASSWORD    = "LOGIN_PASSWORD";
 
     private static final String STATE_SEARCH_AWAITING_KEYWORD = "SEARCH_AWAITING_KEYWORD";
 
     private static final Set<String> REQUIRES_REGISTRATION = Set.of(
-            "menu:cart", "menu:checkout", "menu:orders", "menu:profile", "menu:location", "menu:history");
+            "menu:cart", "menu:checkout", "menu:orders", "menu:profile", "menu:history");
 
     private static final Pattern PHONE_PATTERN = Pattern.compile("^\\+?[0-9 ]{8,30}$");
 
@@ -92,10 +93,11 @@ public class TelegramWebhookServiceImpl implements TelegramWebhookService {
     private final BusinessHelper businessHelper;
     private final TelegramUIHelper uiHelper;
     private final AuthService authService;
+    private final TelegramStockHelper stockHelper;
     private final KeycloakBotAuthService keycloakAuthService;
     private final TelegramCheckoutService telegramCheckoutService;
-
-//    private final BusinessPaymentSettingRepository businessPaymentSettingRepository;
+    private final TelegramCustomerScreenService screenService;
+    private final MinioService minioService;
 
     @Override
     public void handleUpdate(String webhookSecret, String secretTokenHeader, TelegramUpdate update) {
@@ -140,7 +142,8 @@ public class TelegramWebhookServiceImpl implements TelegramWebhookService {
             attachExistingCustomerIfAny(setting, session);
 
             if (callbackQuery != null) {
-                telegramBotClient.answerCallbackQuery(botToken, callbackQuery.id(), null);
+                // Cosmetic only - never make the customer wait on the spinner.
+                telegramBotClient.answerCallbackQueryAsync(botToken, callbackQuery.id(), null);
                 Integer messageId = null;
                 if (callbackQuery.message() != null) {
                     messageId = callbackQuery.message().messageId();
@@ -154,22 +157,22 @@ public class TelegramWebhookServiceImpl implements TelegramWebhookService {
             session.setUpdatedAt(LocalDateTime.now());
             botSessionRepository.save(session);
         } catch (Exception e) {
-        log.error("Fatal error during Telegram webhook processing: {}", e.getMessage(), e);
+            log.error("Fatal error during Telegram webhook processing: {}", e.getMessage(), e);
 
-        try {
-            Long failedChatId = resolveChatId(update);
-            BusinessTelegramBot failedSetting =
-                    telegramBotRepository.findByWebhookSecret(webhookSecret).orElse(null);
+            try {
+                Long failedChatId = resolveChatId(update);
+                BusinessTelegramBot failedSetting =
+                        telegramBotRepository.findByWebhookSecret(webhookSecret).orElse(null);
 
-            if (failedChatId != null && failedSetting != null) {
-                String token = credentialCipher.decrypt(failedSetting.getBotTokenEncrypted());
-                telegramBotClient.sendMessage(token, failedChatId,
-                        "❌ មានបញ្ហាបច្ចេកទេសបណ្ដោះអាសន្ន។ សូមព្យាយាមម្ដងទៀត ឬវាយ /start ដើម្បីចាប់ផ្ដើមឡើងវិញ។");
+                if (failedChatId != null && failedSetting != null) {
+                    String token = credentialCipher.decrypt(failedSetting.getBotTokenEncrypted());
+                    telegramBotClient.sendMessage(token, failedChatId,
+                            "❌ មានបញ្ហាបច្ចេកទេសបណ្ដោះអាសន្ន។ សូមព្យាយាមម្ដងទៀត ឬវាយ /start ដើម្បីចាប់ផ្ដើមឡើងវិញ។");
+                }
+            } catch (Exception ignored) {
+                log.warn("Could not deliver the failure notice to the customer");
             }
-        } catch (Exception ignored) {
-            log.warn("Could not deliver the failure notice to the customer");
         }
-    }
     }
 
     private Long resolveChatId(TelegramUpdate update) {
@@ -250,13 +253,10 @@ public class TelegramWebhookServiceImpl implements TelegramWebhookService {
     private void handleCallback(String botToken, Long chatId, Integer messageId, String data, BusinessTelegramBot setting, BotSession session) {
         if (data == null) return;
 
-        if (messageId != null) {
-            try {
-                telegramBotClient.deleteMessage(botToken, chatId, messageId);
-            } catch (Exception e) {
-                log.warn("Could not delete message {}: {}", messageId, e.getMessage());
-            }
-        }
+//        if (messageId != null) {
+//            // Runs alongside the DB work and the replacement message instead of queueing in front of them.
+//            telegramBotClient.deleteMessageAsync(botToken, chatId, messageId);
+//        }
 
         if (REQUIRES_REGISTRATION.contains(data) && session.getCustomer() == null) {
             telegramBotClient.sendMessage(botToken, chatId,
@@ -273,6 +273,7 @@ public class TelegramWebhookServiceImpl implements TelegramWebhookService {
         if (data.equals("catpage:next") || data.equals("catpage:prev")) { handleCatalogPaging(botToken, chatId, setting, session, data.equals("catpage:next")); return; }
         if (data.startsWith("item:")) { showItemDetail(botToken, chatId, setting, session, data.substring("item:".length())); return; }
         if (data.equals("itemback")) { showStoredItemsPage(botToken, chatId, setting, session); return; }
+        if (data.startsWith("cart:pickvariant:")) { showVariantPicker(botToken, chatId, setting, data.substring("cart:pickvariant:".length())); return; }
         if (data.startsWith("cart:add:")) { handleAddToCart(botToken, chatId, setting, session, data.substring("cart:add:".length())); return; }
         if (data.startsWith("cart:plus:")) { updateCartItemQty(botToken, chatId, setting, session, data.substring("cart:plus:".length()), 1); return; }
         if (data.startsWith("cart:minus:")) { updateCartItemQty(botToken, chatId, setting, session, data.substring("cart:minus:".length()), -1); return; }
@@ -290,10 +291,20 @@ public class TelegramWebhookServiceImpl implements TelegramWebhookService {
             return;
         }
 
-//        if (data.startsWith("order:paid:")) {
-//            handlePaymentConfirmation(botToken, chatId, setting, data.substring("order:paid:".length()));
-//            return;
-//        }
+        // Order history paging and detail. "order:view:" must be matched before any
+        // shorter "order:" prefix so the routes never shadow each other.
+        if (data.startsWith("orders:page:")) {
+            showActiveOrders(botToken, chatId, setting, session, parsePage(data.substring("orders:page:".length())));
+            return;
+        }
+        if (data.startsWith("history:page:")) {
+            showOrderHistory(botToken, chatId, setting, session, parsePage(data.substring("history:page:".length())));
+            return;
+        }
+        if (data.startsWith("order:view:")) {
+            showOrderDetail(botToken, chatId, setting, session, data.substring("order:view:".length()));
+            return;
+        }
         if (data.startsWith("order:cancel:")) {
             handleOrderCancel(botToken, chatId, setting, data.substring("order:cancel:".length()));
             return;
@@ -307,24 +318,22 @@ public class TelegramWebhookServiceImpl implements TelegramWebhookService {
             case "menu:profile" -> showProfile(botToken, chatId, session);
             case "menu:search" -> startSearch(botToken, chatId, session);
             case "menu:cart" -> showCart(botToken, chatId, setting, session);
-
             case "menu:checkout" -> handleCheckout(botToken, chatId, setting, session);
 
-            case "menu:orders", "menu:history", "menu:location" -> sendComingSoon(botToken, chatId, data);
+            case "menu:orders" -> showActiveOrders(botToken, chatId, setting, session, 0);
+            case "menu:history" -> showOrderHistory(botToken, chatId, setting, session, 0);
+            case "menu:location" -> showLocation(botToken, chatId, setting);
+
             default -> telegramBotClient.sendMessage(botToken, chatId, "សូមអភ័យទោស ខ្ញុំមិនយល់ពាក្យបញ្ជានេះទេ។", TelegramKeyboards.backToMenu());
         }
     }
 
-    private void sendComingSoon(String botToken, Long chatId, String menuKey) {
-        telegramBotClient.sendMessage(botToken, chatId, "🚧 មុខងារនេះកំពុងស្ថិតក្នុងការអភិវឌ្ឍន៍ និងមានក្នុងពេលឆាប់ៗនេះ។", TelegramKeyboards.backToMenu());
-    }
+    // =========================================================================
+    // CHECKOUT
+    // =========================================================================
 
     private void handleCheckout(String botToken, Long chatId, BusinessTelegramBot setting, BotSession session) {
-        if (session.getCustomer() == null) {
-            telegramBotClient.sendMessage(botToken, chatId, "🔐 សូមចូលគណនី ឬចុះឈ្មោះជាមុនសិន។",
-                    List.of(List.of(
-                            new InlineKeyboardButton("📝 ចុះឈ្មោះថ្មី", "auth:register:start"),
-                            new InlineKeyboardButton("🔑 ចូលគណនី", "auth:login:start"))));
+        if (requireLogin(botToken, chatId, session)) {
             return;
         }
 
@@ -358,41 +367,6 @@ public class TelegramWebhookServiceImpl implements TelegramWebhookService {
 
         telegramBotClient.sendPhotoBytes(botToken, chatId, draft.qrPng(),
                 "khqr-" + draft.invoiceNumber() + ".png", caption, keyboard);
-
-    }
-
-    private void handlePaymentConfirmation(String botToken, Long chatId,
-                                           BusinessTelegramBot setting, String orderIdRaw) {
-        UUID orderId;
-        try {
-            orderId = UUID.fromString(orderIdRaw);
-        } catch (IllegalArgumentException e) {
-            telegramBotClient.sendMessage(botToken, chatId, "⚠️ លេខការបញ្ជាទិញមិនត្រឹមត្រូវ។",
-                    TelegramKeyboards.backToMenu());
-            return;
-        }
-
-        TelegramCheckoutService.VerifyResult result;
-        try {
-            result = telegramCheckoutService.verifyAndSettle(setting.getBusiness().getId(), orderId);
-        } catch (TelegramCheckoutException exception) {
-            telegramBotClient.sendMessage(botToken, chatId, exception.getMessage(),
-                    TelegramKeyboards.backToMenu());
-            return;
-        }
-
-        if (!result.paid()) {
-            telegramBotClient.sendMessage(botToken, chatId, result.message(),
-                    List.of(List.of(new InlineKeyboardButton("🔄 ពិនិត្យម្ដងទៀត", "order:paid:" + orderId)),
-                            List.of(new InlineKeyboardButton("⬅️ ម៉ឺនុយដើម", "menu:main"))));
-            return;
-        }
-
-        telegramBotClient.sendMessage(botToken, chatId,
-                uiHelper.header("🎉", "ការទូទាត់ជោគជ័យ!")
-                        + "🧾 លេខវិក្កយបត្រ ៖ `" + result.invoiceNumber() + "`\n"
-                        + "អរគុណសម្រាប់ការបញ្ជាទិញ! ហាងកំពុងរៀបចំទំនិញជូនអ្នក។",
-                TelegramKeyboards.backToMenu());
     }
 
     private void handleOrderCancel(String botToken, Long chatId,
@@ -409,6 +383,91 @@ public class TelegramWebhookServiceImpl implements TelegramWebhookService {
                 List.of(List.of(new InlineKeyboardButton("🛒 មើលកន្ត្រក", "menu:cart")),
                         List.of(new InlineKeyboardButton("⬅️ ម៉ឺនុយដើម", "menu:main"))));
     }
+
+    // =========================================================================
+    // ORDERS / HISTORY / LOCATION
+    // =========================================================================
+
+    private void showActiveOrders(String botToken, Long chatId, BusinessTelegramBot setting,
+                                  BotSession session, int page) {
+        if (requireLogin(botToken, chatId, session)) {
+            return;
+        }
+        TelegramCustomerScreenService.Screen screen =
+                screenService.activeOrders(setting, session.getCustomer().getId(), page);
+        telegramBotClient.sendMessage(botToken, chatId, screen.text(), screen.keyboard());
+    }
+
+    private void showOrderHistory(String botToken, Long chatId, BusinessTelegramBot setting,
+                                  BotSession session, int page) {
+        if (requireLogin(botToken, chatId, session)) {
+            return;
+        }
+        TelegramCustomerScreenService.Screen screen =
+                screenService.orderHistory(setting, session.getCustomer().getId(), page);
+        telegramBotClient.sendMessage(botToken, chatId, screen.text(), screen.keyboard());
+    }
+
+    private void showOrderDetail(String botToken, Long chatId, BusinessTelegramBot setting,
+                                 BotSession session, String raw) {
+        if (requireLogin(botToken, chatId, session)) {
+            return;
+        }
+
+        // ទម្រង់៖ {scope}:{orderId}  ឧ. history:0bd46c15-...
+        String[] parts = raw.split(":", 2);
+        if (parts.length != 2) {
+            telegramBotClient.sendMessage(botToken, chatId, "⚠️ ទិន្នន័យមិនត្រឹមត្រូវ។",
+                    TelegramKeyboards.backToMenu());
+            return;
+        }
+
+        String scope = "orders".equals(parts[0]) ? "orders" : "history";
+
+        UUID orderId;
+        try {
+            orderId = UUID.fromString(parts[1]);
+        } catch (IllegalArgumentException e) {
+            telegramBotClient.sendMessage(botToken, chatId, "⚠️ លេខការបញ្ជាទិញមិនត្រឹមត្រូវ។",
+                    TelegramKeyboards.backToMenu());
+            return;
+        }
+
+        TelegramCustomerScreenService.Screen screen =
+                screenService.orderDetail(setting, session.getCustomer().getId(), orderId, scope);
+        telegramBotClient.sendMessage(botToken, chatId, screen.text(), screen.keyboard());
+    }
+
+    private void showLocation(String botToken, Long chatId, BusinessTelegramBot setting) {
+        TelegramCustomerScreenService.Screen screen = screenService.storeLocation(setting);
+        telegramBotClient.sendMessage(botToken, chatId, screen.text(), screen.keyboard());
+    }
+
+    /** ត្រឡប់ true បើអ្នកប្រើមិនទាន់ចូលគណនី (ហើយបានផ្ញើសារប្រាប់រួច)។ */
+    private boolean requireLogin(String botToken, Long chatId, BotSession session) {
+        if (session.getCustomer() != null) {
+            return false;
+        }
+        telegramBotClient.sendMessage(botToken, chatId,
+                "🔐 សូមចូលគណនី ឬចុះឈ្មោះជាមុនសិន។",
+                List.of(List.of(
+                        new InlineKeyboardButton("📝 ចុះឈ្មោះថ្មី", "auth:register:start"),
+                        new InlineKeyboardButton("🔑 ចូលគណនី", "auth:login:start"))));
+        return true;
+    }
+
+    private int parsePage(String raw) {
+        try {
+            return Math.max(0, Integer.parseInt(raw.trim()));
+        } catch (NumberFormatException e) {
+            return 0;
+        }
+    }
+
+    // =========================================================================
+    // LOGIN
+    // =========================================================================
+
     private void startLogin(String botToken, Long chatId, BotSession session) {
         if (session.getCustomer() != null) {
             telegramBotClient.sendMessage(botToken, chatId, "✅ អ្នកបានចូលគណនីរួចរាល់ហើយ។", TelegramKeyboards.backToMenu());
@@ -467,17 +526,8 @@ public class TelegramWebhookServiceImpl implements TelegramWebhookService {
             globalCustomer.setFullName(userInfo.getFullName());
             globalCustomer = globalCustomerRepository.save(globalCustomer);
 
-            Customer customer = new Customer();
-            customer.setBusiness(setting.getBusiness());
-            customer.setGlobalCustomer(globalCustomer);
-            customer = customerRepository.save(customer);
-
-            CustomerChannelIdentity identity = new CustomerChannelIdentity();
-            identity.setBusiness(setting.getBusiness());
-            identity.setCustomer(customer);
-            identity.setChannel(ChannelType.TELEGRAM);
-            identity.setExternalId(session.getExternalId());
-            customerChannelIdentityRepository.save(identity);
+            Customer customer = findOrCreateCustomer(setting, globalCustomer);
+            linkTelegramIdentity(setting, session, customer);
 
             session.setCustomer(customer);
             session.setState(STATE_IDLE);
@@ -501,7 +551,7 @@ public class TelegramWebhookServiceImpl implements TelegramWebhookService {
     }
 
     // =========================================================================
-    // 🔥 2. REAL REGISTER STEP-BY-STEP
+    // REGISTRATION
     // =========================================================================
 
     private void startRegistration(String botToken, Long chatId, BotSession session) {
@@ -621,17 +671,8 @@ public class TelegramWebhookServiceImpl implements TelegramWebhookService {
                         return globalCustomerRepository.save(created);
                     });
 
-            Customer customer = new Customer();
-            customer.setBusiness(setting.getBusiness());
-            customer.setGlobalCustomer(globalCustomer);
-            customer = customerRepository.save(customer);
-
-            CustomerChannelIdentity identity = new CustomerChannelIdentity();
-            identity.setBusiness(setting.getBusiness());
-            identity.setCustomer(customer);
-            identity.setChannel(ChannelType.TELEGRAM);
-            identity.setExternalId(session.getExternalId());
-            customerChannelIdentityRepository.save(identity);
+            Customer customer = findOrCreateCustomer(setting, globalCustomer);
+            linkTelegramIdentity(setting, session, customer);
 
             session.setCustomer(customer);
             session.setState(STATE_IDLE);
@@ -657,6 +698,36 @@ public class TelegramWebhookServiceImpl implements TelegramWebhookService {
         }
     }
 
+    /**
+     * One Customer per person per shop. Creating a fresh row on every sign-in used
+     * to hand the same person a different cart each time they logged in.
+     */
+    private Customer findOrCreateCustomer(BusinessTelegramBot setting, GlobalCustomer globalCustomer) {
+        return customerRepository
+                .findByBusiness_IdAndGlobalCustomer_Id(setting.getBusiness().getId(), globalCustomer.getId())
+                .orElseGet(() -> {
+                    Customer created = new Customer();
+                    created.setBusiness(setting.getBusiness());
+                    created.setGlobalCustomer(globalCustomer);
+                    return customerRepository.save(created);
+                });
+    }
+
+    /** Same idea for the chat link - reuse it instead of piling up duplicate rows. */
+    private void linkTelegramIdentity(BusinessTelegramBot setting, BotSession session, Customer customer) {
+        customerChannelIdentityRepository
+                .findByBusiness_IdAndChannelAndExternalId(
+                        setting.getBusiness().getId(), ChannelType.TELEGRAM, session.getExternalId())
+                .orElseGet(() -> {
+                    CustomerChannelIdentity created = new CustomerChannelIdentity();
+                    created.setBusiness(setting.getBusiness());
+                    created.setCustomer(customer);
+                    created.setChannel(ChannelType.TELEGRAM);
+                    created.setExternalId(session.getExternalId());
+                    return customerChannelIdentityRepository.save(created);
+                });
+    }
+
     // =========================================================================
     // PROFILE, LOGOUT, CATALOG, CART & OTHERS
     // =========================================================================
@@ -677,6 +748,7 @@ public class TelegramWebhookServiceImpl implements TelegramWebhookService {
                 + "_គណនីត្រូវបានភ្ជាប់យ៉ាងសុវត្ថិភាពជាមួយ Keycloak & DOIFY DB_";
 
         List<List<InlineKeyboardButton>> keyboard = List.of(
+                List.of(new InlineKeyboardButton("🧾 ប្រវត្តិការទិញ", "menu:history")),
                 List.of(new InlineKeyboardButton("🚪 ចាកចេញពីគណនី (Logout)", "auth:logout")),
                 List.of(new InlineKeyboardButton("⬅️ ម៉ឺនុយដើម (Main Menu)", "menu:main"))
         );
@@ -788,13 +860,27 @@ public class TelegramWebhookServiceImpl implements TelegramWebhookService {
         UUID itemId;
         try { itemId = UUID.fromString(itemIdRaw); } catch (Exception e) { showCategories(botToken, chatId, setting, session); return; }
         Item item = itemRepository.findByIdAndBusinessId(itemId, setting.getBusiness().getId()).orElse(null);
-        List<List<InlineKeyboardButton>> keyboard = List.of(
-                List.of(new InlineKeyboardButton("🛒 ថែមចូលកន្ត្រក", "cart:add:" + itemId)),
-                List.of(new InlineKeyboardButton("⬅️ ត្រលប់ក្រោយ", "itemback"))
-        );
         if (item == null) { telegramBotClient.sendMessage(botToken, chatId, "😔 ផលិតផលនេះមិនមានលក់ទៀតទេ។", TelegramKeyboards.backToMenu()); return; }
-        String detailText = uiHelper.renderProductDetail(item, setting);
-        if (StringUtils.hasText(item.getImageUrl())) telegramBotClient.sendPhoto(botToken, chatId, item.getImageUrl(), detailText, keyboard);
+
+        Optional<BigDecimal> availableQuantity =
+                stockHelper.trackedAvailableQuantity(setting.getBusiness().getId(), item);
+        boolean outOfStock = availableQuantity.map(qty -> qty.compareTo(BigDecimal.ZERO) <= 0).orElse(false);
+
+        List<List<InlineKeyboardButton>> keyboard = new ArrayList<>();
+        if (!outOfStock) {
+            if (item.getVariants() != null && !item.getVariants().isEmpty()) {
+                keyboard.add(List.of(new InlineKeyboardButton("🛒 ជ្រើសរើសជម្រើស", "cart:pickvariant:" + itemId)));
+            } else {
+                keyboard.add(List.of(new InlineKeyboardButton("🛒 ថែមចូលកន្ត្រក", "cart:add:" + itemId)));
+            }
+        }
+        keyboard.add(List.of(new InlineKeyboardButton("⬅️ ត្រលប់ក្រោយ", "itemback")));
+
+        String detailText = uiHelper.renderProductDetail(item, setting, availableQuantity);
+        Optional<String> imageUrl = item.getImages().stream()
+                .min(Comparator.comparing(ItemImage::getPosition))
+                .map(image -> minioService.getPublicUrl(image.getImageKey()));
+        if (imageUrl.isPresent()) telegramBotClient.sendPhoto(botToken, chatId, imageUrl.get(), detailText, keyboard);
         else telegramBotClient.sendMessage(botToken, chatId, detailText, keyboard);
     }
 
@@ -823,22 +909,81 @@ public class TelegramWebhookServiceImpl implements TelegramWebhookService {
         telegramBotClient.sendMessage(botToken, chatId, uiHelper.header("🔍", "លទ្ធផលស្វែងរក៖ " + keyword) + "រកឃើញ *" + searchResults.getTotalElements() + "* ផលិតផល៖", keyboard);
     }
 
-
-    protected void handleAddToCart(String botToken, Long chatId, BusinessTelegramBot setting, BotSession session, String itemIdRaw) {
-        if (session.getCustomer() == null) {
-            telegramBotClient.sendMessage(botToken, chatId, "🔐 សូមចូលគណនី ឬចុះឈ្មោះជាមុនសិន។",
-                    List.of(List.of(new InlineKeyboardButton("📝 ចុះឈ្មោះថ្មី", "auth:register:start"), new InlineKeyboardButton("🔑 ចូលគណនី", "auth:login:start"))));
-            return;
-        }
+    private void showVariantPicker(String botToken, Long chatId, BusinessTelegramBot setting, String itemIdRaw) {
         UUID itemId;
         try { itemId = UUID.fromString(itemIdRaw); } catch (Exception e) { return; }
         Item item = itemRepository.findByIdAndBusinessId(itemId, setting.getBusiness().getId()).orElse(null);
+        if (item == null || item.getVariants().isEmpty()) return;
+
+        List<List<InlineKeyboardButton>> keyboard = new ArrayList<>();
+        for (var variant : item.getVariants()) {
+            String price = uiHelper.formatPrice(
+                    variant.getPrice() != null ? variant.getPrice() : item.getPrice(), setting).replace("`", "");
+            String label = "▫️ " + variant.getVariantName() + " — [" + price + "]";
+            keyboard.add(List.of(new InlineKeyboardButton(label, "cart:add:" + itemId + ":" + variant.getId())));
+        }
+        keyboard.add(List.of(new InlineKeyboardButton("⬅️ ត្រលប់ក្រោយ", "item:" + itemId)));
+
+        telegramBotClient.sendMessage(botToken, chatId,
+                uiHelper.header("🎛️", item.getName()) + "👇 សូមជ្រើសរើសជម្រើសខាងក្រោម៖", keyboard);
+    }
+
+    private void handleAddToCart(String botToken, Long chatId, BusinessTelegramBot setting, BotSession session, String data) {
+        if (requireLogin(botToken, chatId, session)) {
+            return;
+        }
+
+        String[] parts = data.split(":", 2);
+        UUID itemId;
+        UUID variantId = null;
+        try {
+            itemId = UUID.fromString(parts[0]);
+            if (parts.length > 1) {
+                variantId = UUID.fromString(parts[1]);
+            }
+        } catch (Exception e) {
+            return;
+        }
+
+        Item item = itemRepository.findByIdAndBusinessId(itemId, setting.getBusiness().getId()).orElse(null);
         if (item == null) return;
+
+        // An item with variants must always be sold as one of its variants — a bare
+        // "cart:add:<itemId>" for such an item routes back to the picker instead of
+        // silently selling at the item's base price.
+        if (!item.getVariants().isEmpty() && variantId == null) {
+            showVariantPicker(botToken, chatId, setting, itemId.toString());
+            return;
+        }
+
+        ItemVariant variant = null;
+        if (variantId != null) {
+            final UUID vid = variantId;
+            variant = item.getVariants().stream()
+                    .filter(candidate -> candidate.getId().equals(vid))
+                    .findFirst()
+                    .orElse(null);
+            if (variant == null) return;
+        }
 
         Cart cart = cartRepository.findActiveCartWithItems(session.getCustomer().getId(), setting.getBusiness().getId(), CartStatus.ACTIVE)
                 .orElseGet(() -> cartRepository.save(Cart.builder().customer(session.getCustomer()).business(setting.getBusiness()).status(CartStatus.ACTIVE).items(new ArrayList<>()).build()));
 
-        Optional<CartItem> existingItemOpt = cartItemRepository.findByCartIdAndItemId(cart.getId(), item.getId());
+        Optional<CartItem> existingItemOpt = variant == null
+                ? cartItemRepository.findByCartIdAndItemIdAndVariantIsNull(cart.getId(), item.getId())
+                : cartItemRepository.findByCartIdAndItemIdAndVariant_Id(cart.getId(), item.getId(), variant.getId());
+        int quantityAlreadyInCart = existingItemOpt.map(CartItem::getQuantity).orElse(0);
+
+        String displayName = variant != null ? item.getName() + " (" + variant.getVariantName() + ")" : item.getName();
+
+        if (!stockHelper.hasEnoughStock(setting.getBusiness().getId(), item, quantityAlreadyInCart + 1)) {
+            telegramBotClient.sendMessage(botToken, chatId,
+                    "❌ ស្តុកមិនគ្រប់គ្រាន់សម្រាប់ *" + displayName + "* ទេ។ សូមកាត់បន្ថយចំនួន ឬជ្រើសរើសទំនិញផ្សេង។",
+                    List.of(List.of(new InlineKeyboardButton("🛍️ ទិញទំនិញបន្ត", "menu:catalog")),
+                            List.of(new InlineKeyboardButton("⬅️ ម៉ឺនុយដើម", "menu:main"))));
+            return;
+        }
+
         if (existingItemOpt.isPresent()) {
             CartItem ci = existingItemOpt.get();
             ci.setQuantity(ci.getQuantity() + 1);
@@ -849,18 +994,17 @@ public class TelegramWebhookServiceImpl implements TelegramWebhookService {
                     .findFirst()
                     .ifPresent(existing -> existing.setQuantity(ci.getQuantity()));
         } else {
-            CartItem newItem = CartItem.builder().cart(cart).item(item).quantity(1).priceSnapshot(item.getPrice()).build();
+            BigDecimal priceSnapshot = variant != null && variant.getPrice() != null ? variant.getPrice() : item.getPrice();
+            CartItem newItem = CartItem.builder().cart(cart).item(item).variant(variant).quantity(1).priceSnapshot(priceSnapshot).build();
             cartItemRepository.save(newItem);
             cart.getItems().add(newItem);
         }
-        telegramBotClient.sendMessage(botToken, chatId, "✅ បានបន្ថែម *" + item.getName() + "* ចូលកន្ត្រកទំនិញ!",
+        telegramBotClient.sendMessage(botToken, chatId, "✅ បានបន្ថែម *" + displayName + "* ចូលកន្ត្រកទំនិញ!",
                 List.of(List.of(new InlineKeyboardButton("🛒 មើលកន្ត្រកទំនិញ (" + cart.getTotalItemsCount() + ")", "menu:cart")), List.of(new InlineKeyboardButton("🛍️ ទិញទំនិញបន្ត", "menu:catalog"))));
     }
 
     private void showCart(String botToken, Long chatId, BusinessTelegramBot setting, BotSession session) {
-        if (session.getCustomer() == null) {
-            telegramBotClient.sendMessage(botToken, chatId, "🔐 សូមចូលគណនី ឬចុះឈ្មោះជាមុនសិន។",
-                    List.of(List.of(new InlineKeyboardButton("📝 ចុះឈ្មោះថ្មី", "auth:register:start"), new InlineKeyboardButton("🔑 ចូលគណនី", "auth:login:start"))));
+        if (requireLogin(botToken, chatId, session)) {
             return;
         }
         Optional<Cart> cartOpt = cartRepository.findActiveCartWithItems(session.getCustomer().getId(), setting.getBusiness().getId(), CartStatus.ACTIVE);
@@ -881,20 +1025,27 @@ public class TelegramWebhookServiceImpl implements TelegramWebhookService {
         telegramBotClient.sendMessage(botToken, chatId, uiHelper.renderCartReceipt(cart, setting, session.getCustomer().getGlobalCustomer().getFullName()), keyboard);
     }
 
-    protected void updateCartItemQty(String botToken, Long chatId, BusinessTelegramBot setting, BotSession session, String cartItemIdRaw, int delta) {
+    private void updateCartItemQty(String botToken, Long chatId, BusinessTelegramBot setting, BotSession session, String cartItemIdRaw, int delta) {
         try {
             Optional<CartItem> itemOpt = cartItemRepository.findById(UUID.fromString(cartItemIdRaw));
             if (itemOpt.isPresent()) {
                 CartItem item = itemOpt.get();
                 int newQty = item.getQuantity() + delta;
-                if (newQty <= 0) cartItemRepository.delete(item);
-                else { item.setQuantity(newQty); cartItemRepository.save(item); }
+                if (newQty <= 0) {
+                    cartItemRepository.delete(item);
+                } else if (delta > 0 && !stockHelper.hasEnoughStock(setting.getBusiness().getId(), item.getItem(), newQty)) {
+                    telegramBotClient.sendMessage(botToken, chatId,
+                            "❌ ស្តុកមិនគ្រប់គ្រាន់សម្រាប់ *" + item.getItem().getName() + "* ទេ។");
+                } else {
+                    item.setQuantity(newQty);
+                    cartItemRepository.save(item);
+                }
             }
         } catch (Exception e) { log.error("Error updating qty: {}", e.getMessage()); }
         showCart(botToken, chatId, setting, session);
     }
 
-    protected void removeCartItem(String botToken, Long chatId, BusinessTelegramBot setting, BotSession session, String cartItemIdRaw) {
+    private void removeCartItem(String botToken, Long chatId, BusinessTelegramBot setting, BotSession session, String cartItemIdRaw) {
         try { cartItemRepository.deleteById(UUID.fromString(cartItemIdRaw)); } catch (Exception e) { log.error("Error removing item: {}", e.getMessage()); }
         showCart(botToken, chatId, setting, session);
     }

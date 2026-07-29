@@ -9,4 +9,5 @@ import java.util.UUID;
 public interface CustomerRepository extends JpaRepository<Customer, UUID> {
 
     Optional<Customer> findByIdAndBusinessId(UUID id, UUID businessId);
+    Optional<Customer> findByBusiness_IdAndGlobalCustomer_Id(UUID businessId, UUID globalCustomerId);
 }

@@ -7,12 +7,14 @@ import kh.edu.istad.ite.features.catalog.dto.ItemVariantRequest;
 import kh.edu.istad.ite.features.catalog.dto.UpdateItemRequest;
 import kh.edu.istad.ite.features.catalog.entity.Item;
 import kh.edu.istad.ite.features.catalog.entity.ItemGroup;
+import kh.edu.istad.ite.features.catalog.entity.ItemImage;
 import kh.edu.istad.ite.features.catalog.entity.ItemVariant;
 import kh.edu.istad.ite.features.catalog.entity.Unit;
 import kh.edu.istad.ite.features.catalog.mapper.ItemMapper;
 import kh.edu.istad.ite.features.catalog.repository.ItemGroupRepository;
 import kh.edu.istad.ite.features.catalog.repository.ItemRepository;
 import kh.edu.istad.ite.features.catalog.repository.UnitRepository;
+import kh.edu.istad.ite.features.minio.MinioService;
 import kh.edu.istad.ite.shared.enums.ItemStatus;
 import kh.edu.istad.ite.shared.helper.BusinessHelper;
 import kh.edu.istad.ite.shared.helper.SlugHelper;
@@ -22,6 +24,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
@@ -40,12 +43,14 @@ public class ItemServiceImpl implements ItemService {
     private static final String SLUG_FALLBACK = "item";
     private static final String VARIANT_SLUG_FALLBACK = "variant";
     private static final int DEFAULT_LOW_STOCK = 20;
+    private static final int MAX_ITEM_IMAGES = 10;
 
     private final BusinessHelper businessHelper;
     private final ItemGroupRepository itemGroupRepository;
     private final UnitRepository unitRepository;
     private final ItemRepository itemRepository;
     private final ItemMapper itemMapper;
+    private final MinioService minioService;
 
     @Override
     @Transactional
@@ -63,7 +68,6 @@ public class ItemServiceImpl implements ItemService {
         item.setSku(TextHelper.trimToNull(request.sku()));
         item.setCode(TextHelper.trimToNull(request.code()));
         item.setDescription(TextHelper.trimToNull(request.description()));
-        item.setImageUrl(TextHelper.trimToNull(request.imageUrl()));
         item.setBarcode(TextHelper.trimToNull(request.barcode()));
         item.setPrice(normalizePrice(request.price()));
         item.setItemType(request.itemType());
@@ -125,9 +129,6 @@ public class ItemServiceImpl implements ItemService {
         if (request.description() != null) {
             item.setDescription(TextHelper.trimToNull(request.description()));
         }
-        if (request.imageUrl() != null) {
-            item.setImageUrl(TextHelper.trimToNull(request.imageUrl()));
-        }
         if (request.barcode() != null) {
             item.setBarcode(TextHelper.trimToNull(request.barcode()));
         }
@@ -159,12 +160,77 @@ public class ItemServiceImpl implements ItemService {
 
     @Override
     @Transactional
-    public void deleteItem(UUID businessId, UUID itemId) {
+    public ItemResponse uploadItemImages(UUID businessId, UUID itemId, List<MultipartFile> files) {
         businessHelper.findOwnedBusiness(businessId);
         Item item = findItem(itemId, businessId);
 
+        if (files == null || files.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "At least one image file is required");
+        }
+        if (item.getImages().size() + files.size() > MAX_ITEM_IMAGES) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "An item can have at most " + MAX_ITEM_IMAGES + " images"
+            );
+        }
+        files.forEach(this::validateImage);
+
+        int nextPosition = item.getImages().stream()
+                .mapToInt(ItemImage::getPosition)
+                .max()
+                .orElse(-1) + 1;
+
+        for (MultipartFile file : files) {
+            ItemImage image = new ItemImage();
+            image.setItem(item);
+            image.setImageKey(minioService.uploadAsset(file));
+            image.setPosition(nextPosition++);
+            item.getImages().add(image);
+        }
+
+        return itemMapper.toResponse(itemRepository.saveAndFlush(item));
+    }
+
+    @Override
+    @Transactional
+    public ItemResponse deleteItemImage(UUID businessId, UUID itemId, UUID imageId) {
+        businessHelper.findOwnedBusiness(businessId);
+        Item item = findItem(itemId, businessId);
+
+        ItemImage image = item.getImages().stream()
+                .filter(img -> img.getId().equals(imageId))
+                .findFirst()
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Image has not been found"));
+
+        item.getImages().remove(image);
+        Item saved = itemRepository.saveAndFlush(item);
+
+        minioService.deleteAsset(image.getImageKey());
+
+        return itemMapper.toResponse(saved);
+    }
+
+    private void validateImage(MultipartFile file) {
+        if (file == null || file.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Image file cannot be empty");
+        }
+        String contentType = file.getContentType();
+        if (contentType == null || !contentType.startsWith("image/")) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Only image files are allowed");
+        }
+    }
+
+    @Override
+    @Transactional
+    public void deleteItem(UUID businessId, UUID itemId) {
+        businessHelper.findOwnedBusiness(businessId);
+        Item item = findItem(itemId, businessId);
+        List<String> imageKeys = item.getImages().stream().map(ItemImage::getImageKey).toList();
+
         itemRepository.delete(item);
         itemRepository.flush();
+
+        imageKeys.forEach(minioService::deleteAsset);
     }
 
     @Override
