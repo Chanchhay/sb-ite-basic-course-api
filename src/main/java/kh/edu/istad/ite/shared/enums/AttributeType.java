@@ -4,5 +4,6 @@ public enum AttributeType {
     TEXT,
     SELECTION,
     TOGGLE,
-    NUMBER
+    NUMBER,
+    COLOR
 }
