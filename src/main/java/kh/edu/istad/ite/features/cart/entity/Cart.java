@@ -18,19 +18,26 @@ import java.util.UUID;
 @AllArgsConstructor
 @Builder
 @Entity
-@Table(name = "carts")
+@Table(
+        name = "carts",
+        indexes = {
+                @Index(name = "idx_carts_customer_business_status",
+                        columnList = "customer_id, business_owner_id, status")
+        }
+)
 public class Cart extends BasedAuditingEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
-    @ManyToOne(fetch = FetchType.LAZY)
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "customer_id", nullable = false)
     private Customer customer;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "business_id", nullable = false)
+
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "business_owner_id", nullable = false)
     private Business business;
 
     @Enumerated(EnumType.STRING)

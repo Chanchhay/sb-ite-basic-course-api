@@ -17,8 +17,7 @@ import kh.edu.istad.ite.features.customer.entity.GlobalCustomer;
 import kh.edu.istad.ite.features.customer.repository.CustomerChannelIdentityRepository;
 import kh.edu.istad.ite.features.customer.repository.CustomerRepository;
 import kh.edu.istad.ite.features.customer.repository.GlobalCustomerRepository;
-import kh.edu.istad.ite.features.payment.entity.BusinessPaymentSetting;
-import kh.edu.istad.ite.features.payment.repository.BusinessPaymentSettingRepository;
+
 import kh.edu.istad.ite.features.social.entity.BotSession;
 import kh.edu.istad.ite.features.social.entity.BusinessTelegramBot;
 import kh.edu.istad.ite.features.social.repository.BotSessionRepository;
@@ -43,8 +42,6 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
-import java.net.URLEncoder;
-import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -61,7 +58,6 @@ public class TelegramWebhookServiceImpl implements TelegramWebhookService {
 
     private static final String STATE_IDLE = "IDLE";
 
-    // 🔥 REGISTRATION STEP-BY-STEP STATES
     private static final String STATE_REGISTER_USERNAME = "REGISTER_USERNAME";
     private static final String STATE_REGISTER_PASSWORD = "REGISTER_PASSWORD";
     private static final String STATE_REGISTER_NAME     = "REGISTER_NAME";
@@ -97,9 +93,9 @@ public class TelegramWebhookServiceImpl implements TelegramWebhookService {
     private final TelegramUIHelper uiHelper;
     private final AuthService authService;
     private final KeycloakBotAuthService keycloakAuthService;
+    private final TelegramCheckoutService telegramCheckoutService;
 
-    // 🔥 Inject Repository សម្រាប់ទាញយកការកំណត់ Bakong របស់ហាង
-    private final BusinessPaymentSettingRepository businessPaymentSettingRepository;
+//    private final BusinessPaymentSettingRepository businessPaymentSettingRepository;
 
     @Override
     public void handleUpdate(String webhookSecret, String secretTokenHeader, TelegramUpdate update) {
@@ -158,8 +154,22 @@ public class TelegramWebhookServiceImpl implements TelegramWebhookService {
             session.setUpdatedAt(LocalDateTime.now());
             botSessionRepository.save(session);
         } catch (Exception e) {
-            log.error("Fatal error during Telegram webhook processing: {}", e.getMessage(), e);
+        log.error("Fatal error during Telegram webhook processing: {}", e.getMessage(), e);
+
+        try {
+            Long failedChatId = resolveChatId(update);
+            BusinessTelegramBot failedSetting =
+                    telegramBotRepository.findByWebhookSecret(webhookSecret).orElse(null);
+
+            if (failedChatId != null && failedSetting != null) {
+                String token = credentialCipher.decrypt(failedSetting.getBotTokenEncrypted());
+                telegramBotClient.sendMessage(token, failedChatId,
+                        "❌ មានបញ្ហាបច្ចេកទេសបណ្ដោះអាសន្ន។ សូមព្យាយាមម្ដងទៀត ឬវាយ /start ដើម្បីចាប់ផ្ដើមឡើងវិញ។");
+            }
+        } catch (Exception ignored) {
+            log.warn("Could not deliver the failure notice to the customer");
         }
+    }
     }
 
     private Long resolveChatId(TelegramUpdate update) {
@@ -280,12 +290,12 @@ public class TelegramWebhookServiceImpl implements TelegramWebhookService {
             return;
         }
 
-        // 🔥 ចាប់យកការបញ្ជាក់ថាបានបង់ប្រាក់រួច (Order Confirmed)
-        if (data.equals("order:paid")) {
-            telegramBotClient.sendMessage(botToken, chatId,
-                    uiHelper.header("🎉", "ការទូទាត់ប្រាក់ជោគជ័យ!") +
-                            "អរគុណសម្រាប់ការបញ្ជាទិញ! ប្រព័ន្ធបានទទួលព័ត៌មាន និងកំពុងរៀបចំទំនិញជូនអ្នក។",
-                    TelegramKeyboards.backToMenu());
+        if (data.startsWith("order:paid:")) {
+            handlePaymentConfirmation(botToken, chatId, setting, data.substring("order:paid:".length()));
+            return;
+        }
+        if (data.startsWith("order:cancel:")) {
+            handleOrderCancel(botToken, chatId, setting, data.substring("order:cancel:".length()));
             return;
         }
 
@@ -298,7 +308,6 @@ public class TelegramWebhookServiceImpl implements TelegramWebhookService {
             case "menu:search" -> startSearch(botToken, chatId, session);
             case "menu:cart" -> showCart(botToken, chatId, setting, session);
 
-            // 🔥 ដក menu:checkout ចេញពី sendComingSoon ហើយភ្ជាប់មក handleCheckout វិញ!
             case "menu:checkout" -> handleCheckout(botToken, chatId, setting, session);
 
             case "menu:orders", "menu:history", "menu:location" -> sendComingSoon(botToken, chatId, data);
@@ -310,134 +319,97 @@ public class TelegramWebhookServiceImpl implements TelegramWebhookService {
         telegramBotClient.sendMessage(botToken, chatId, "🚧 មុខងារនេះកំពុងស្ថិតក្នុងការអភិវឌ្ឍន៍ និងមានក្នុងពេលឆាប់ៗនេះ។", TelegramKeyboards.backToMenu());
     }
 
-    // =========================================================================
-    // 🔥 REAL BAKONG KHQR CHECKOUT & GENERATION WORKFLOW
-    // =========================================================================
-
-    /**
-     * 🔥 HANDLE CHECKOUT: គណនាប្រាក់សរុប និងបង្កើត Bakong KHQR ផ្ញើទៅកាន់ Telegram
-     */
-    @Transactional
-    protected void handleCheckout(String botToken, Long chatId, BusinessTelegramBot setting, BotSession session) {
+    private void handleCheckout(String botToken, Long chatId, BusinessTelegramBot setting, BotSession session) {
         if (session.getCustomer() == null) {
             telegramBotClient.sendMessage(botToken, chatId, "🔐 សូមចូលគណនី ឬចុះឈ្មោះជាមុនសិន។",
-                    List.of(List.of(new InlineKeyboardButton("📝 ចុះឈ្មោះថ្មី", "auth:register:start"), new InlineKeyboardButton("🔑 ចូលគណនី", "auth:login:start"))));
+                    List.of(List.of(
+                            new InlineKeyboardButton("📝 ចុះឈ្មោះថ្មី", "auth:register:start"),
+                            new InlineKeyboardButton("🔑 ចូលគណនី", "auth:login:start"))));
             return;
         }
 
-        Optional<Cart> cartOpt = cartRepository.findActiveCartWithItems(session.getCustomer().getId(), setting.getBusiness().getId(), CartStatus.ACTIVE);
-        if (cartOpt.isEmpty() || cartOpt.get().getItems().isEmpty()) {
-            telegramBotClient.sendMessage(botToken, chatId, "⚠️ កន្ត្រកទំនិញរបស់អ្នកទទេស្អាត! សូមជ្រើសរើសទំនិញជាមុនសិន។",
-                    List.of(List.of(new InlineKeyboardButton("🛍️ មើលបញ្ជីទំនិញ", "menu:catalog"))));
-            return;
-        }
-
-        Cart cart = cartOpt.get();
-        BigDecimal totalAmount = cart.getTotalAmount();
-        String currency = setting.getBusiness().getDisplayCurrency() != null ? setting.getBusiness().getDisplayCurrency() : "USD";
-        String storeName = setting.getBusiness().getDisplayName();
-        String customerName = session.getCustomer().getGlobalCustomer().getFullName();
-
-        // ១. ទាញយកគណនី Bakong របស់ហាង (ពីតារាង BusinessPaymentSetting)[cite: 1]
-        String bakongAccountId = "istad_store@aclb"; // Default Account ID សម្រាប់ Demo/Fallback
+        TelegramCheckoutService.CheckoutDraft draft;
         try {
-            Optional<BusinessPaymentSetting> paymentSetting = businessPaymentSettingRepository.findAll().stream()
-                    .filter(p -> p.getBusiness() != null && p.getBusiness().getId().equals(setting.getBusiness().getId()))
-                    .findFirst();
-            if (paymentSetting.isPresent() && paymentSetting.get().getBakongAccountId() != null) {
-                bakongAccountId = paymentSetting.get().getBakongAccountId();
-            }
-        } catch (Exception e) {
-            log.warn("Could not fetch BusinessPaymentSetting, using fallback Bakong Account: {}", e.getMessage());
+            draft = telegramCheckoutService.createCheckout(
+                    setting.getBusiness().getId(),
+                    session.getCustomer().getId());
+        } catch (TelegramCheckoutException exception) {
+            // សារនេះសរសេរជាភាសាខ្មែររួចហើយ សម្រាប់បង្ហាញដល់អតិថិជនផ្ទាល់។
+            telegramBotClient.sendMessage(botToken, chatId, exception.getMessage(),
+                    List.of(List.of(new InlineKeyboardButton("🛍️ មើលបញ្ជីទំនិញ", "menu:catalog")),
+                            List.of(new InlineKeyboardButton("⬅️ ម៉ឺនុយដើម", "menu:main"))));
+            return;
         }
 
-        // ២. បង្កើតកូដ Bakong KHQR String ពិតៗ (តាមស្តង់ដារ EMVCo / NBC KHQR Format)
-        // (ទម្រង់កូដនេះអាចស្កែនបង់ប្រាក់ពិតៗតាមគ្រប់ App ធនាគារក្នុងស្រុក)
-        String khqrString = generateStandardKhqrString(bakongAccountId, storeName, totalAmount, currency);
+        String caption = uiHelper.header("⚡️", "វិក្កយបត្រទូទាត់ (KHQR)")
+                + "🏪 ហាង ៖ *" + setting.getBusiness().getDisplayName() + "*\n"
+                + "🧾 លេខវិក្កយបត្រ ៖ `" + draft.invoiceNumber() + "`\n"
+                + "📦 ចំនួនមុខទំនិញ ៖ `" + draft.itemCount() + " មុខ`\n"
+                + "💳 *ទឹកប្រាក់ត្រូវបង់ ៖* " + uiHelper.formatPrice(draft.total(), setting) + "\n"
+                + uiHelper.divider()
+                + "1️⃣ ស្កែន QR នេះជាមួយ App ធនាគារណាមួយ\n"
+                + "2️⃣ បង់រួច ចុចប៊ូតុងបញ្ជាក់ខាងក្រោម\n"
+                + "⏰ កូដផុតកំណត់ក្នុងរយៈពេល *5 នាទី*";
 
-        // ៣. បង្កើត Public QR Code Image URL ដើម្បីឲ្យ Telegram អាចលោតរូប QR មកបានភ្លាមៗ
-        String qrImageUrl = "https://api.qrserver.com/v1/create-qr-code/?size=400x400&margin=15&data=" + URLEncoder.encode(khqrString, StandardCharsets.UTF_8);
-
-        // ៤. រៀបចំវិក្កយបត្រ (Invoice Receipt) យ៉ាង Professional
-        StringBuilder caption = new StringBuilder();
-        caption.append(uiHelper.header("⚡️", "វិក្កយបត្រទូទាត់ប្រាក់ (KHQR PAYMENT)"));
-        caption.append("🏪 ហាង ៖ *").append(storeName).append("*\n");
-        caption.append("👤 អតិថិជន ៖ *").append(customerName).append("*\n");
-        caption.append("🏦 គណនី Bakong ៖ `").append(bakongAccountId).append("`\n");
-        caption.append(uiHelper.divider());
-        caption.append("📦 ចំនួនមុខទំនិញ ៖ `").append(cart.getTotalItemsCount()).append(" មុខ`\n");
-        caption.append("💳 *ទឹកប្រាក់ត្រូវបង់ ៖* ").append(uiHelper.formatPrice(totalAmount, setting)).append("\n");
-        caption.append(uiHelper.divider());
-        caption.append("👇 *វិធីទូទាត់ប្រាក់ (How to pay)៖*\n");
-        caption.append("1️⃣ ស្កែនរូប QR Code នេះជាមួយ App ធនាគារ\n");
-        caption.append("2️⃣ ឬ Copy កូដ KHQR ខាងក្រោមនេះ ទៅ Paste ក្នុង App Bakong / KHQR របស់អ្នក៖\n\n");
-        caption.append("`").append(khqrString).append("`"); // លោត Monospace Code ងាយស្រួល Copy
-
-        // ៥. បង្កើតប៊ូតុងបញ្ជាក់ការទូទាត់ និងត្រលប់ក្រោយ
         List<List<InlineKeyboardButton>> keyboard = List.of(
-                List.of(new InlineKeyboardButton("✅ ខ្ញុំបានបង់ប្រាក់រួចរាល់ (I Have Paid)", "order:paid")),
-                List.of(new InlineKeyboardButton("⬅️ ត្រលប់ទៅកន្ត្រកទំនិញ (Back to Cart)", "menu:cart")),
-                List.of(new InlineKeyboardButton("⬅️ ម៉ឺនុយដើម (Main Menu)", "menu:main"))
+                List.of(new InlineKeyboardButton("✅ ខ្ញុំបានបង់ប្រាក់រួច", "order:paid:" + draft.orderId())),
+                List.of(new InlineKeyboardButton("❌ បោះបង់ការបញ្ជាទិញ", "order:cancel:" + draft.orderId())),
+                List.of(new InlineKeyboardButton("⬅️ ម៉ឺនុយដើម", "menu:main"))
         );
 
-        // ៦. ប្តូរស្ថានភាព Cart ទៅជា CHECKED_OUT ដើម្បីបញ្ចប់ការទិញ
-        cart.setStatus(CartStatus.CHECKED_OUT);
-        cartRepository.save(cart);
+        telegramBotClient.sendPhotoBytes(botToken, chatId, draft.qrPng(),
+                "khqr-" + draft.invoiceNumber() + ".png", caption, keyboard);
 
-        // ៧. ផ្ញើរូបភាព QR Code ភ្ជាប់ជាមួយវិក្កយបត្រទៅកាន់ Telegram
-        telegramBotClient.sendPhoto(botToken, chatId, qrImageUrl, caption.toString(), keyboard);
-        log.info("Successfully generated Bakong KHQR for ChatID {} with amount {}", chatId, totalAmount);
     }
 
-    /**
-     * 🔥 NBC KHQR STRING GENERATOR: បង្កើតខ្សែអក្សរ KHQR តាមស្តង់ដារពិតប្រាកដ
-     */
-    private String generateStandardKhqrString(String accountId, String merchantName, BigDecimal amount, String currency) {
-        // ទម្រង់ស្តង់ដារ EMVCo សម្រាប់ Bakong KHQR (សម្រាប់បង់ប្រាក់តាម App ធនាគារក្នុងស្រុក)
-        String currCode = "USD".equalsIgnoreCase(currency) ? "840" : "116"; // 840 = USD, 116 = KHR
-        String formattedAmount = amount.setScale(2, java.math.RoundingMode.HALF_UP).toString();
-
-        StringBuilder qr = new StringBuilder();
-        qr.append("000201"); // Payload Format Indicator
-        qr.append("010212"); // Point of Initiation Method (Dynamic/Static)
-
-        // Merchant Account Information (Bakong ID)
-        String bakongInfo = "00" + String.format("%02d", accountId.length()) + accountId;
-        qr.append("29").append(String.format("%02d", bakongInfo.length())).append(bakongInfo);
-
-        qr.append("52045899"); // Merchant Category Code
-        qr.append("5303").append(currCode); // Transaction Currency
-        qr.append("54").append(String.format("%02d", formattedAmount.length())).append(formattedAmount); // Transaction Amount
-        qr.append("5802KH"); // Country Code (Cambodia)
-
-        String cleanMerchantName = merchantName.length() > 25 ? merchantName.substring(0, 25) : merchantName;
-        qr.append("59").append(String.format("%02d", cleanMerchantName.length())).append(cleanMerchantName); // Merchant Name
-        qr.append("6009PhnomPenh"); // Merchant City
-        qr.append("6304"); // CRC Prefix
-
-        // គណនា CRC16 (Cyclic Redundancy Check) ដើម្បីឲ្យ Bakong App ស្គាល់ថាជាកូដស្របច្បាប់
-        String crc = calculateCRC16(qr.toString());
-        qr.append(crc);
-
-        return qr.toString();
-    }
-
-    private String calculateCRC16(String str) {
-        int crc = 0xFFFF;
-        for (byte b : str.getBytes(StandardCharsets.UTF_8)) {
-            crc ^= (b & 0xFF) << 8;
-            for (int i = 0; i < 8; i++) {
-                if ((crc & 0x8000) != 0) crc = (crc << 1) ^ 0x1021;
-                else crc <<= 1;
-            }
+    private void handlePaymentConfirmation(String botToken, Long chatId,
+                                           BusinessTelegramBot setting, String orderIdRaw) {
+        UUID orderId;
+        try {
+            orderId = UUID.fromString(orderIdRaw);
+        } catch (IllegalArgumentException e) {
+            telegramBotClient.sendMessage(botToken, chatId, "⚠️ លេខការបញ្ជាទិញមិនត្រឹមត្រូវ។",
+                    TelegramKeyboards.backToMenu());
+            return;
         }
-        return String.format("%04X", crc & 0xFFFF);
+
+        TelegramCheckoutService.VerifyResult result;
+        try {
+            result = telegramCheckoutService.verifyAndSettle(setting.getBusiness().getId(), orderId);
+        } catch (TelegramCheckoutException exception) {
+            telegramBotClient.sendMessage(botToken, chatId, exception.getMessage(),
+                    TelegramKeyboards.backToMenu());
+            return;
+        }
+
+        if (!result.paid()) {
+            telegramBotClient.sendMessage(botToken, chatId, result.message(),
+                    List.of(List.of(new InlineKeyboardButton("🔄 ពិនិត្យម្ដងទៀត", "order:paid:" + orderId)),
+                            List.of(new InlineKeyboardButton("⬅️ ម៉ឺនុយដើម", "menu:main"))));
+            return;
+        }
+
+        telegramBotClient.sendMessage(botToken, chatId,
+                uiHelper.header("🎉", "ការទូទាត់ជោគជ័យ!")
+                        + "🧾 លេខវិក្កយបត្រ ៖ `" + result.invoiceNumber() + "`\n"
+                        + "អរគុណសម្រាប់ការបញ្ជាទិញ! ហាងកំពុងរៀបចំទំនិញជូនអ្នក។",
+                TelegramKeyboards.backToMenu());
     }
 
-    // =========================================================================
-    // 🔥 1. REAL STRICT LOGIN FLOW (EMAIL -> PASSWORD -> KEYCLOAK & DB)
-    // =========================================================================
+    private void handleOrderCancel(String botToken, Long chatId,
+                                   BusinessTelegramBot setting, String orderIdRaw) {
+        try {
+            telegramCheckoutService.cancelCheckout(
+                    setting.getBusiness().getId(), UUID.fromString(orderIdRaw));
+        } catch (Exception e) {
+            log.warn("Could not cancel Telegram order {}: {}", orderIdRaw, e.getMessage());
+        }
 
+        telegramBotClient.sendMessage(botToken, chatId,
+                "❌ ការបញ្ជាទិញត្រូវបានបោះបង់។ ទំនិញនៅតែរក្សាទុកក្នុងកន្ត្រករបស់អ្នក។",
+                List.of(List.of(new InlineKeyboardButton("🛒 មើលកន្ត្រក", "menu:cart")),
+                        List.of(new InlineKeyboardButton("⬅️ ម៉ឺនុយដើម", "menu:main"))));
+    }
     private void startLogin(String botToken, Long chatId, BotSession session) {
         if (session.getCustomer() != null) {
             telegramBotClient.sendMessage(botToken, chatId, "✅ អ្នកបានចូលគណនីរួចរាល់ហើយ។", TelegramKeyboards.backToMenu());
@@ -852,7 +824,7 @@ public class TelegramWebhookServiceImpl implements TelegramWebhookService {
         telegramBotClient.sendMessage(botToken, chatId, uiHelper.header("🔍", "លទ្ធផលស្វែងរក៖ " + keyword) + "រកឃើញ *" + searchResults.getTotalElements() + "* ផលិតផល៖", keyboard);
     }
 
-    @Transactional
+
     protected void handleAddToCart(String botToken, Long chatId, BusinessTelegramBot setting, BotSession session, String itemIdRaw) {
         if (session.getCustomer() == null) {
             telegramBotClient.sendMessage(botToken, chatId, "🔐 សូមចូលគណនី ឬចុះឈ្មោះជាមុនសិន។",
@@ -872,6 +844,11 @@ public class TelegramWebhookServiceImpl implements TelegramWebhookService {
             CartItem ci = existingItemOpt.get();
             ci.setQuantity(ci.getQuantity() + 1);
             cartItemRepository.save(ci);
+
+            cart.getItems().stream()
+                    .filter(existing -> existing.getId().equals(ci.getId()))
+                    .findFirst()
+                    .ifPresent(existing -> existing.setQuantity(ci.getQuantity()));
         } else {
             CartItem newItem = CartItem.builder().cart(cart).item(item).quantity(1).priceSnapshot(item.getPrice()).build();
             cartItemRepository.save(newItem);
@@ -905,7 +882,6 @@ public class TelegramWebhookServiceImpl implements TelegramWebhookService {
         telegramBotClient.sendMessage(botToken, chatId, uiHelper.renderCartReceipt(cart, setting, session.getCustomer().getGlobalCustomer().getFullName()), keyboard);
     }
 
-    @Transactional
     protected void updateCartItemQty(String botToken, Long chatId, BusinessTelegramBot setting, BotSession session, String cartItemIdRaw, int delta) {
         try {
             Optional<CartItem> itemOpt = cartItemRepository.findById(UUID.fromString(cartItemIdRaw));
@@ -919,7 +895,6 @@ public class TelegramWebhookServiceImpl implements TelegramWebhookService {
         showCart(botToken, chatId, setting, session);
     }
 
-    @Transactional
     protected void removeCartItem(String botToken, Long chatId, BusinessTelegramBot setting, BotSession session, String cartItemIdRaw) {
         try { cartItemRepository.deleteById(UUID.fromString(cartItemIdRaw)); } catch (Exception e) { log.error("Error removing item: {}", e.getMessage()); }
         showCart(botToken, chatId, setting, session);
