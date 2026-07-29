@@ -290,10 +290,10 @@ public class TelegramWebhookServiceImpl implements TelegramWebhookService {
             return;
         }
 
-        if (data.startsWith("order:paid:")) {
-            handlePaymentConfirmation(botToken, chatId, setting, data.substring("order:paid:".length()));
-            return;
-        }
+//        if (data.startsWith("order:paid:")) {
+//            handlePaymentConfirmation(botToken, chatId, setting, data.substring("order:paid:".length()));
+//            return;
+//        }
         if (data.startsWith("order:cancel:")) {
             handleOrderCancel(botToken, chatId, setting, data.substring("order:cancel:".length()));
             return;
@@ -347,12 +347,11 @@ public class TelegramWebhookServiceImpl implements TelegramWebhookService {
                 + "📦 ចំនួនមុខទំនិញ ៖ `" + draft.itemCount() + " មុខ`\n"
                 + "💳 *ទឹកប្រាក់ត្រូវបង់ ៖* " + uiHelper.formatPrice(draft.total(), setting) + "\n"
                 + uiHelper.divider()
-                + "1️⃣ ស្កែន QR នេះជាមួយ App ធនាគារណាមួយ\n"
-                + "2️⃣ បង់រួច ចុចប៊ូតុងបញ្ជាក់ខាងក្រោម\n"
+                + "📲 សូមស្កែន QR នេះជាមួយ App ធនាគារ\n"
+                + "⚡️ ប្រព័ន្ធនឹងបញ្ជាក់ដោយ*ស្វ័យប្រវត្តិ*ក្នុងរយៈពេលពីរបីវិនាទី\n"
                 + "⏰ កូដផុតកំណត់ក្នុងរយៈពេល *5 នាទី*";
 
         List<List<InlineKeyboardButton>> keyboard = List.of(
-                List.of(new InlineKeyboardButton("✅ ខ្ញុំបានបង់ប្រាក់រួច", "order:paid:" + draft.orderId())),
                 List.of(new InlineKeyboardButton("❌ បោះបង់ការបញ្ជាទិញ", "order:cancel:" + draft.orderId())),
                 List.of(new InlineKeyboardButton("⬅️ ម៉ឺនុយដើម", "menu:main"))
         );

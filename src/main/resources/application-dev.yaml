@@ -47,6 +47,8 @@ app:
   telegram:
     api-base-url: https://api.telegram.org
     webhook-base-url: ${TELEGRAM_WEBHOOK_BASE_URL:}
+    payment-poll-interval-ms: 5000
+    payment-poll-initial-delay-ms: 10000
 
   bakong:
     base-url: https://api-bakong.nbc.gov.kh

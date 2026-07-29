@@ -75,8 +75,7 @@ public class TelegramPaymentPoller {
 
         TelegramCheckoutService.VerifyResult result;
         try {
-            // Expiry, the Bakong call and the settlement all happen inside one
-            // properly proxied transaction over in the checkout service.
+
             result = telegramCheckoutService.verifyAndSettle(businessId, order.getId());
         } catch (TelegramCheckoutException exception) {
             log.debug("Cannot verify Telegram order {} yet: {}", order.getId(), exception.getMessage());
