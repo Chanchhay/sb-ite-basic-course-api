@@ -67,7 +67,7 @@ public class ItemServiceImpl implements ItemService {
         item.setBarcode(TextHelper.trimToNull(request.barcode()));
         item.setPrice(normalizePrice(request.price()));
         item.setItemType(request.itemType());
-        item.setAttributes(request.attributes());
+        item.setAttributes(mapAttributes(request.attributes()));
         replaceVariants(item, business, request.variants());
         item.setLowStockDefault(request.lowStockDefault() == null ? DEFAULT_LOW_STOCK : request.lowStockDefault());
         item.setStatus(request.status() == null ? ItemStatus.ACTIVE : request.status());
@@ -138,7 +138,7 @@ public class ItemServiceImpl implements ItemService {
             item.setItemType(request.itemType());
         }
         if (request.attributes() != null) {
-            item.setAttributes(request.attributes());
+            item.setAttributes(mapAttributes(request.attributes()));
         }
         if (request.variants() != null) {
             replaceVariants(item, item.getBusiness(), request.variants());
@@ -214,6 +214,19 @@ public class ItemServiceImpl implements ItemService {
         }
 
         return price.setScale(2, RoundingMode.HALF_UP);
+    }
+
+    private List<kh.edu.istad.ite.features.catalog.entity.ItemAttribute> mapAttributes(List<kh.edu.istad.ite.features.catalog.dto.ItemAttributeRequest> requests) {
+        if (requests == null) {
+            return null;
+        }
+        return requests.stream().map(req -> {
+            kh.edu.istad.ite.features.catalog.entity.ItemAttribute attr = new kh.edu.istad.ite.features.catalog.entity.ItemAttribute();
+            attr.setName(req.name());
+            attr.setType(req.type());
+            attr.setValues(req.values());
+            return attr;
+        }).toList();
     }
 
     private void replaceVariants(

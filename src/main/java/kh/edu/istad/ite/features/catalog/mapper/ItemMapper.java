@@ -32,12 +32,22 @@ public class ItemMapper {
                 item.getBarcode(),
                 item.getPrice(),
                 item.getItemType(),
-                item.getAttributes(),
+                item.getAttributes() == null ? null : item.getAttributes().stream()
+                        .map(this::toAttributeResponse)
+                        .toList(),
                 item.getVariants().stream()
                         .map(this::toVariantResponse)
                         .toList(),
                 item.getLowStockDefault(),
                 item.getStatus()
+        );
+    }
+
+    private kh.edu.istad.ite.features.catalog.dto.ItemAttributeResponse toAttributeResponse(kh.edu.istad.ite.features.catalog.entity.ItemAttribute attribute) {
+        return new kh.edu.istad.ite.features.catalog.dto.ItemAttributeResponse(
+                attribute.getName(),
+                attribute.getType(),
+                attribute.getValues()
         );
     }
 

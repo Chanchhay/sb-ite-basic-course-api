@@ -45,7 +45,7 @@ public record CreateItemRequest(
         @NotNull(message = "itemType cannot be null")
         ItemType itemType,
 
-        Map<String, Object> attributes,
+        List<@Valid ItemAttributeRequest> attributes,
 
         List<@Valid ItemVariantRequest> variants,
 

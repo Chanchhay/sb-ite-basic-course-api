@@ -22,7 +22,7 @@ public record ItemResponse(
         String barcode,
         BigDecimal price,
         ItemType itemType,
-        Map<String, Object> attributes,
+        List<ItemAttributeResponse> attributes,
         List<ItemVariantResponse> variants,
         Integer lowStockDefault,
         ItemStatus status

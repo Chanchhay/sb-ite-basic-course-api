@@ -41,7 +41,7 @@ public record UpdateItemRequest(
 
         ItemType itemType,
 
-        Map<String, Object> attributes,
+        List<@Valid ItemAttributeRequest> attributes,
 
         List<@Valid ItemVariantRequest> variants,
 

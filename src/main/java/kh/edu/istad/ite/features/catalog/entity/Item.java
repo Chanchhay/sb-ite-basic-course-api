@@ -97,7 +97,7 @@ public class Item extends BasedAuditingEntity {
 
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(columnDefinition = "jsonb")
-    private Map<String, Object> attributes;
+    private List<ItemAttribute> attributes;
 
     @OneToMany(mappedBy = "item", cascade = CascadeType.ALL, orphanRemoval = true)
     @OrderBy("variantName ASC")
