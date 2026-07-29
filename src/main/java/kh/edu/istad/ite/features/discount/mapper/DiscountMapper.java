@@ -1,39 +1,30 @@
 package kh.edu.istad.ite.features.discount.mapper;
 
+import kh.edu.istad.ite.features.discount.dto.CreateDiscountRequest;
 import kh.edu.istad.ite.features.discount.dto.DiscountResponse;
+import kh.edu.istad.ite.features.discount.dto.PatchDiscountRequest;
 import kh.edu.istad.ite.features.discount.entity.Discount;
-import org.springframework.stereotype.Component;
+import org.mapstruct.*;
 
-@Component
-public class DiscountMapper {
+@Mapper(componentModel = "spring")
+public interface DiscountMapper {
 
-    public DiscountResponse toResponse(Discount discount) {
-        if (discount == null) {
-            return null;
-        }
+    @Mapping(target = "businessId", source = "business.id")
+    DiscountResponse toResponse(Discount discount);
 
-        return new DiscountResponse(
-                discount.getId(),
-                discount.getBusiness().getId(),
-                discount.getName(),
-                discount.getDescription(),
-                discount.getType(),
-                discount.getRuleType(),
-                discount.getBuyQuantity(),
-                discount.getGetQuantity(),
-                discount.getMinQuantity(),
-                discount.getValue(),
-                discount.getScope(),
-                discount.getMinOrderAmount(),
-                discount.getMaxDiscountAmount(),
-                discount.getRequiresCoupon(),
-                discount.getStartsAt(),
-                discount.getEndsAt(),
-                discount.getStatus(),
-                discount.getBranchId(),
-                discount.getCreatedBy(),
-                discount.getCreatedDate(),
-                discount.getLastModifiedDate()
-        );
-    }
+    @Mapping(target = "id", ignore = true)
+    @Mapping(target = "business", ignore = true)
+    Discount toEntity(CreateDiscountRequest request);
+
+    @BeanMapping(nullValuePropertyMappingStrategy = NullValuePropertyMappingStrategy.IGNORE)
+    @Mapping(target = "id", ignore = true)
+    @Mapping(target = "business", ignore = true)
+    @Mapping(target = "createdBy", ignore = true)
+    void updateEntityFromRequest(CreateDiscountRequest request, @MappingTarget Discount discount);
+
+    @BeanMapping(nullValuePropertyMappingStrategy = NullValuePropertyMappingStrategy.IGNORE)
+    @Mapping(target = "id", ignore = true)
+    @Mapping(target = "business", ignore = true)
+    @Mapping(target = "createdBy", ignore = true)
+    void patchEntityFromRequest(PatchDiscountRequest request, @MappingTarget Discount discount);
 }

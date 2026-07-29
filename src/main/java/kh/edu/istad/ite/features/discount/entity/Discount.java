@@ -17,6 +17,7 @@ import kh.edu.istad.ite.shared.enums.DiscountRuleType;
 import kh.edu.istad.ite.shared.enums.DiscountScope;
 import kh.edu.istad.ite.shared.enums.DiscountType;
 import kh.edu.istad.ite.shared.enums.RecordStatus;
+import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -45,6 +46,7 @@ import java.util.UUID;
 @Getter
 @Setter
 @NoArgsConstructor
+@AllArgsConstructor
 @Table(name = "discounts")
 public class Discount extends BasedAuditingEntity {
 
@@ -102,6 +104,9 @@ public class Discount extends BasedAuditingEntity {
     @Column(name = "ends_at")
     private LocalDateTime endsAt;
 
+    @Column(name = "selected_day")
+    private String selectedDay;
+
     @Enumerated(EnumType.STRING)
     @Column(
             name = "status",
@@ -110,10 +115,6 @@ public class Discount extends BasedAuditingEntity {
             columnDefinition = "varchar(20) default 'ACTIVE'"
     )
     private RecordStatus status = RecordStatus.ACTIVE;
-
-    @Column(name = "branch_id")
-    private UUID branchId;
-
-    @Column(name = "deleted_at")
-    private LocalDateTime deletedAt;
+    @Column(name = "created_by")
+    private String createdBy;
 }

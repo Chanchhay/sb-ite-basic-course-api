@@ -1,5 +1,6 @@
 package kh.edu.istad.ite.features.discount.dto;
 
+import jakarta.validation.constraints.Size;
 import kh.edu.istad.ite.shared.enums.DiscountRuleType;
 import kh.edu.istad.ite.shared.enums.DiscountScope;
 import kh.edu.istad.ite.shared.enums.DiscountType;
@@ -7,12 +8,10 @@ import kh.edu.istad.ite.shared.enums.RecordStatus;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
-import java.util.UUID;
 
-public record DiscountResponse(
-        UUID id,
-        UUID businessId,
-        String name,
+public record PatchDiscountRequest(
+
+        @Size(max = 150) String name,
         String description,
         DiscountType type,
         DiscountRuleType ruleType,
@@ -27,7 +26,7 @@ public record DiscountResponse(
         LocalDateTime startsAt,
         LocalDateTime endsAt,
         String selectedDay,
-        RecordStatus status,
-        String createdBy
+        RecordStatus status
+
 ) {
 }

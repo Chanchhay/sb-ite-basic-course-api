@@ -1,23 +1,16 @@
 package kh.edu.istad.ite.features.discount.repository;
 
 import kh.edu.istad.ite.features.discount.entity.Discount;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
-
+import org.springframework.stereotype.Repository;
+//import java.awt.print.Pageable;
 import java.util.Optional;
 import java.util.UUID;
 
-public interface DiscountRepository extends
-        JpaRepository<Discount, UUID>,
-        JpaSpecificationExecutor<Discount> {
-
-    Optional<Discount> findByIdAndBusinessIdAndDeletedAtIsNull(UUID id, UUID businessId);
-
-    boolean existsByBusinessIdAndNameIgnoreCaseAndDeletedAtIsNull(UUID businessId, String name);
-
-    boolean existsByBusinessIdAndNameIgnoreCaseAndIdNotAndDeletedAtIsNull(
-            UUID businessId,
-            String name,
-            UUID id
-    );
+@Repository
+public interface DiscountRepository extends JpaRepository<Discount, UUID> {
+    Page<Discount> findByBusinessId(UUID businessId, Pageable pageable);
+    Optional<Discount> findByIdAndBusinessId(UUID id, UUID businessId);
 }
