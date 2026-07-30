@@ -9,4 +9,6 @@ import java.util.UUID;
 public interface GlobalCustomerRepository extends JpaRepository<GlobalCustomer, UUID> {
 
     Optional<GlobalCustomer> findByPhoneNumber(String phoneNumber);
+    Optional<GlobalCustomer> findByKeycloakUserId(UUID keycloakUserId);
+    Optional<GlobalCustomer> findByEmailIgnoreCase(String email);
 }

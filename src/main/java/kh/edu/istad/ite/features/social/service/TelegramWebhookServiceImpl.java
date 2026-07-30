@@ -18,8 +18,7 @@ import kh.edu.istad.ite.features.customer.entity.Customer;
 import kh.edu.istad.ite.features.customer.entity.CustomerChannelIdentity;
 import kh.edu.istad.ite.features.customer.entity.GlobalCustomer;
 import kh.edu.istad.ite.features.customer.repository.CustomerChannelIdentityRepository;
-import kh.edu.istad.ite.features.customer.repository.CustomerRepository;
-import kh.edu.istad.ite.features.customer.repository.GlobalCustomerRepository;
+import kh.edu.istad.ite.features.customer.service.CustomerIdentityService;
 import kh.edu.istad.ite.features.social.entity.BotSession;
 import kh.edu.istad.ite.features.social.entity.BusinessTelegramBot;
 import kh.edu.istad.ite.features.social.repository.BotSessionRepository;
@@ -82,8 +81,7 @@ public class TelegramWebhookServiceImpl implements TelegramWebhookService {
     private final BusinessTelegramBotRepository telegramBotRepository;
     private final BotSessionRepository botSessionRepository;
     private final CustomerChannelIdentityRepository customerChannelIdentityRepository;
-    private final CustomerRepository customerRepository;
-    private final GlobalCustomerRepository globalCustomerRepository;
+    private final CustomerIdentityService customerIdentityService;
     private final ItemRepository itemRepository;
     private final ItemGroupRepository itemGroupRepository;
     private final CartRepository cartRepository;
@@ -514,17 +512,18 @@ public class TelegramWebhookServiceImpl implements TelegramWebhookService {
         }
 
         try {
-            String phoneToSearch = (userInfo.phoneNumber() != null && !userInfo.phoneNumber().equals("N/A")) ? userInfo.phoneNumber() : userInfo.username();
-            GlobalCustomer globalCustomer = globalCustomerRepository.findByPhoneNumber(phoneToSearch)
-                    .orElseGet(() -> {
-                        GlobalCustomer created = new GlobalCustomer();
-                        created.setFullName(userInfo.getFullName());
-                        created.setPhoneNumber(phoneToSearch);
-                        return globalCustomerRepository.save(created);
-                    });
-
-            globalCustomer.setFullName(userInfo.getFullName());
-            globalCustomer = globalCustomerRepository.save(globalCustomer);
+            // Keycloak has already verified this person and handed us their user id.
+            // Anchoring on that is what makes the web cart and the Telegram cart the
+            // same cart rather than two that merely look alike.
+            //
+            // The old code fell back to username() when the phone was "N/A", which is
+            // how usernames ended up in the phone column; resolve() drops "N/A" instead
+            // of storing it.
+            GlobalCustomer globalCustomer = customerIdentityService.resolve(
+                    CustomerIdentityService.parseKeycloakId(userInfo.id()),
+                    userInfo.email(),
+                    userInfo.phoneNumber(),
+                    userInfo.getFullName());
 
             Customer customer = findOrCreateCustomer(setting, globalCustomer);
             linkTelegramIdentity(setting, session, customer);
@@ -663,13 +662,12 @@ public class TelegramWebhookServiceImpl implements TelegramWebhookService {
             authService.register(request);
             log.info("Successfully registered user {} via internal AuthService with Record DTO", username);
 
-            GlobalCustomer globalCustomer = globalCustomerRepository.findByPhoneNumber(phone)
-                    .orElseGet(() -> {
-                        GlobalCustomer created = new GlobalCustomer();
-                        created.setFullName(firstName + " " + lastName);
-                        created.setPhoneNumber(phone);
-                        return globalCustomerRepository.save(created);
-                    });
+            // authService.register just created the Keycloak account, so this email is
+            // verified in the only sense that matters here: this person chose it and
+            // holds the password. The Keycloak id gets backfilled the first time they
+            // sign in on the web.
+            GlobalCustomer globalCustomer = customerIdentityService.resolve(
+                    null, email, phone, firstName + " " + lastName);
 
             Customer customer = findOrCreateCustomer(setting, globalCustomer);
             linkTelegramIdentity(setting, session, customer);
@@ -703,14 +701,9 @@ public class TelegramWebhookServiceImpl implements TelegramWebhookService {
      * to hand the same person a different cart each time they logged in.
      */
     private Customer findOrCreateCustomer(BusinessTelegramBot setting, GlobalCustomer globalCustomer) {
-        return customerRepository
-                .findByBusiness_IdAndGlobalCustomer_Id(setting.getBusiness().getId(), globalCustomer.getId())
-                .orElseGet(() -> {
-                    Customer created = new Customer();
-                    created.setBusiness(setting.getBusiness());
-                    created.setGlobalCustomer(globalCustomer);
-                    return customerRepository.save(created);
-                });
+        // Delegated so the bot and the storefront share one implementation. Two
+        // copies of this drifted apart once already.
+        return customerIdentityService.customerFor(setting.getBusiness(), globalCustomer);
     }
 
     /** Same idea for the chat link - reuse it instead of piling up duplicate rows. */
