@@ -16,6 +16,7 @@ import kh.edu.istad.ite.features.customer.entity.Customer;
 import kh.edu.istad.ite.features.customer.entity.GlobalCustomer;
 import kh.edu.istad.ite.features.customer.repository.CustomerRepository;
 import kh.edu.istad.ite.features.customer.service.CustomerIdentityService;
+import kh.edu.istad.ite.features.minio.MinioService;
 import kh.edu.istad.ite.shared.enums.BusinessFeature;
 import kh.edu.istad.ite.shared.enums.CartStatus;
 import kh.edu.istad.ite.shared.enums.ItemStatus;
@@ -52,6 +53,7 @@ public class StorefrontCartService {
     private final CustomerRepository customerRepository;
     private final CustomerIdentityService customerIdentityService;
     private final BusinessHelper businessHelper;
+    private final MinioService minioService;
 
 
     @Transactional(readOnly = true)
@@ -290,7 +292,9 @@ public class StorefrontCartService {
                 business.getSlug(),
                 business.getDisplayName(),
                 business.getBusinessCategory() == null ? null : business.getBusinessCategory().getName(),
-                business.getLogo(),
+                StringUtils.hasText(business.getLogo())
+                        ? minioService.getPublicUrl(business.getLogo())
+                        : null,
                 business.getAddress(),
 
                 null,
@@ -329,6 +333,8 @@ public class StorefrontCartService {
             return null;
         }
 
-        return item.getImages().getFirst().getImageKey();
+        String imageKey = item.getImages().getFirst().getImageKey();
+
+        return StringUtils.hasText(imageKey) ? minioService.getPublicUrl(imageKey) : null;
     }
 }

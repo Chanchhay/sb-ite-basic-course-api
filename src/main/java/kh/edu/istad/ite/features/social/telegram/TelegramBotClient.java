@@ -28,7 +28,6 @@ import java.util.concurrent.Executors;
 @Slf4j
 public class TelegramBotClient {
 
-    /** Telegram hard limits. Exceeding them returns 400 and the message is silently lost. */
     private static final int MAX_MESSAGE_LENGTH = 4096;
     private static final int MAX_CAPTION_LENGTH = 1024;
 
@@ -333,8 +332,16 @@ public class TelegramBotClient {
                 : Map.of("text", button.label(), "callback_data", truncateCallbackData(button.callbackData()));
     }
 
+
     private String truncateCallbackData(String data) {
-        return data.length() <= 64 ? data : data.substring(0, 64);
+        if (data.length() <= 64) {
+            return data;
+        }
+
+        log.error("callback_data is {} chars, over Telegram's 64 limit, and will be truncated: {}",
+                data.length(), data);
+
+        return data.substring(0, 64);
     }
 
     private String nullSafe(String value, String fallback) {

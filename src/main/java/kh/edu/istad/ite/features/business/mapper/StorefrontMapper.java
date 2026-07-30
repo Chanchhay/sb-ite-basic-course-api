@@ -4,6 +4,7 @@ import kh.edu.istad.ite.config.props.StorefrontProps;
 import kh.edu.istad.ite.features.business.dto.PublicStoreDetailResponse;
 import kh.edu.istad.ite.features.business.dto.PublicStoreResponse;
 import kh.edu.istad.ite.features.business.entity.Business;
+import kh.edu.istad.ite.features.minio.MinioService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -13,6 +14,7 @@ public class StorefrontMapper {
 
     private final StorefrontProps storefrontProps;
     private final BusinessMapper businessMapper;
+    private final MinioService minioService;
 
     public String buildStorefrontUrl(String slug) {
         if (slug == null) {
@@ -27,13 +29,18 @@ public class StorefrontMapper {
                 + storefrontProps.getPathPrefix() + "/" + slug;
     }
 
+
+    private String publicUrl(String objectKey) {
+        return objectKey == null || objectKey.isBlank() ? null : minioService.getPublicUrl(objectKey);
+    }
+
     public PublicStoreResponse toPublicResponse(Business business) {
         return new PublicStoreResponse(
                 business.getId(),
                 business.getSlug(),
                 business.getDisplayName(),
-                business.getLogo(),
-                business.getThumbnail(),
+                publicUrl(business.getLogo()),
+                publicUrl(business.getThumbnail()),
                 business.getAbout(),
                 business.getCityOrProvince(),
                 buildStorefrontUrl(business.getSlug()),
@@ -46,8 +53,8 @@ public class StorefrontMapper {
                 business.getId(),
                 business.getSlug(),
                 business.getDisplayName(),
-                business.getLogo(),
-                business.getThumbnail(),
+                publicUrl(business.getLogo()),
+                publicUrl(business.getThumbnail()),
                 business.getAbout(),
                 business.getPhoneNumber(),
                 business.getAddress(),
