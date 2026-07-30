@@ -161,7 +161,12 @@ public class KeycloakRoleAdapter {
         newRole.setDescription(request.name());
         rolesResource.create(newRole);
 
-        internalUpdateRolePermissions(roleSlug, request.permissions(), false);
+        try {
+            internalUpdateRolePermissions(roleSlug, request.permissions(), false);
+        } catch (Exception e) {
+            rolesResource.deleteRole(roleSlug);
+            throw e;
+        }
     }
 
     public void updateBusinessRole(UUID businessId, String roleIdOrSlug, BusinessRoleRequest request) {
@@ -206,7 +211,12 @@ public class KeycloakRoleAdapter {
         newRole.setDescription(request.name());
         rolesResource.create(newRole);
 
-        internalUpdateRolePermissions(roleSlug, request.permissions(), true);
+        try {
+            internalUpdateRolePermissions(roleSlug, request.permissions(), true);
+        } catch (Exception e) {
+            rolesResource.deleteRole(roleSlug);
+            throw e;
+        }
     }
 
     public void updatePlatformRole(String roleIdOrSlug, PlatformRoleRequest request) {
