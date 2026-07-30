@@ -56,6 +56,5 @@ public class NotificationReceiver extends BasedAuditingEntity {
     }
 
     public void markRead(LocalDateTime when)      { if (!read) { read = true; readAt = when; } }
-    public void markDelivered(LocalDateTime when) { if (deliveredAt == null) deliveredAt = when; }
     public void softDelete()                { deleted = true; }
 }

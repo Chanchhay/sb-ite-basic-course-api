@@ -5,6 +5,8 @@ import kh.edu.istad.ite.shared.enums.ItemStatus;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.util.List;
 import java.util.Optional;
@@ -36,4 +38,17 @@ public interface ItemRepository extends JpaRepository<Item, UUID> {
 
     Page<Item> findByBusinessIdAndStatusOrderByNameAsc(
             UUID businessId, ItemStatus status, Pageable pageable);
+    @Query("""
+    SELECT i
+    FROM Item i
+    JOIN ItemChannel ic
+        ON ic.item = i
+    JOIN SalesChannel sc
+        ON sc = ic.salesChannel
+    WHERE sc.code = :channelCode
+    AND ic.isEnabled = true
+""")
+    List<Item> findItemsByChannelCode(
+            @Param("channelCode") String channelCode
+    );
 }
