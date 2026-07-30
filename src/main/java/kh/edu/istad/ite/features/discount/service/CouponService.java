@@ -2,26 +2,26 @@ package kh.edu.istad.ite.features.discount.service;
 
 import kh.edu.istad.ite.features.discount.dto.CouponResponse;
 import kh.edu.istad.ite.features.discount.dto.CreateCouponRequest;
-import kh.edu.istad.ite.features.discount.dto.PatchCouponRequest;
 import kh.edu.istad.ite.features.discount.dto.UpdateCouponRequest;
-import org.springframework.stereotype.Service;
 
 import java.util.List;
 import java.util.UUID;
 
-@Service
 public interface CouponService {
 
-    CouponResponse create(CreateCouponRequest request);
+    CouponResponse createCoupon(UUID businessId, CreateCouponRequest request);
 
-    List<CouponResponse> findAll();
+    List<CouponResponse> findAllCoupons(UUID businessId, UUID discountId);
 
-    CouponResponse findById(UUID id);
+    CouponResponse findCouponById(UUID businessId, UUID couponId);
 
-    CouponResponse update(UUID id, UpdateCouponRequest request);
+    CouponResponse findCouponByCode(UUID businessId, String code);
 
-    CouponResponse patch(UUID id, PatchCouponRequest request);
+    CouponResponse updateCoupon(UUID businessId, UUID couponId, UpdateCouponRequest request);
 
-    void delete(UUID id);
+    CouponResponse activateCoupon(UUID businessId, UUID couponId);
 
+    CouponResponse deactivateCoupon(UUID businessId, UUID couponId);
+
+    void deleteCoupon(UUID businessId, UUID couponId);
 }

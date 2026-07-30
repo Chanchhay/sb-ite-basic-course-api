@@ -1,5 +1,8 @@
 package kh.edu.istad.ite.features.discount.dto;
 
+import kh.edu.istad.ite.shared.enums.CouponStatus;
+
+import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.time.LocalDateTime;
 import java.util.UUID;
@@ -10,17 +13,12 @@ public record CouponResponse(
         Integer usageLimit,
         Integer usageLimitPerCustomer,
         Integer usedCount,
-        Double minPurchaseAmount,
+        BigDecimal minPurchaseAmount,
         LocalDateTime startsAt,
         LocalDateTime endsAt,
-        String status,
-        BigInteger createBy,
-
-        UUID discountId,
-        String discountName,
-
+        CouponStatus status,
         UUID businessOwnerId,
-        String businessName
+        UUID discountId
 
 ) {
 }

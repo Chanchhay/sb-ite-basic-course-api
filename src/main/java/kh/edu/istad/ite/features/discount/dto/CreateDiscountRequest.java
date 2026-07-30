@@ -1,19 +1,15 @@
 package kh.edu.istad.ite.features.discount.dto;
 
 import jakarta.validation.constraints.*;
-import kh.edu.istad.ite.features.business.entity.Business;
 import kh.edu.istad.ite.shared.enums.DiscountRuleType;
 import kh.edu.istad.ite.shared.enums.DiscountScope;
 import kh.edu.istad.ite.shared.enums.DiscountType;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
-import java.util.UUID;
+import java.util.List;
 
 public record CreateDiscountRequest(
-
-//        @NotBlank(message = "business_id cannot be empty")
-//        Business business,
         @NotBlank(message = "name cannot be empty")
         @Size(max = 150, message = "name must be at most 150 characters")
         String name,
@@ -50,10 +46,8 @@ public record CreateDiscountRequest(
         @NotBlank
         LocalDateTime endsAt,
         @NotBlank
-        String selectedDays,
+        List<String> selectedDays ,
         @NotBlank(message = "Input like ACTIVE || INACTIVE")
-        String status,
-        @NotBlank
-        String createBy
+        String status
 ) {
 }

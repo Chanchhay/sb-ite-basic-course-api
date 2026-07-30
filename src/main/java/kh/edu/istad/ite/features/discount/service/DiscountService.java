@@ -1,34 +1,25 @@
 package kh.edu.istad.ite.features.discount.service;
 
-import kh.edu.istad.ite.features.discount.dto.*;
-import kh.edu.istad.ite.shared.enums.DiscountRuleType;
-import kh.edu.istad.ite.shared.enums.DiscountScope;
-import kh.edu.istad.ite.shared.enums.DiscountType;
-import kh.edu.istad.ite.shared.enums.RecordStatus;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.Pageable;
+import kh.edu.istad.ite.features.discount.dto.CreateDiscountRequest;
+import kh.edu.istad.ite.features.discount.dto.DiscountResponse;
+import kh.edu.istad.ite.features.discount.dto.UpdateDiscountRequest;
 
-import java.time.LocalDateTime;
+import java.util.List;
 import java.util.UUID;
 
 public interface DiscountService {
 
     DiscountResponse createDiscount(UUID businessId, CreateDiscountRequest request);
 
-//    Page<DiscountResponse> searchDiscounts(
-//            UUID businessId,
-//            String keyword,
-//            DiscountType type,
-//            DiscountRuleType ruleType,
-//            DiscountScope scope,
-//            RecordStatus status,
-//            LocalDateTime activeAt,
-//            Pageable pageable
-//    );
+    List<DiscountResponse> findAllDiscounts(UUID businessId);
 
-    DiscountResponse getDiscountById(UUID businessId, UUID id);
-    Page<DiscountResponse> getAllDiscounts(UUID businessId, Pageable pageable);
-    DiscountResponse updateDiscount(UUID businessId, UUID id, CreateDiscountRequest request);
-    DiscountResponse patchDiscount(UUID businessId, UUID id, PatchDiscountRequest request);
-    void deleteDiscount(UUID businessId, UUID id);
+    DiscountResponse findDiscountById(UUID businessId, UUID discountId);
+
+    DiscountResponse updateDiscount(UUID businessId, UUID discountId, UpdateDiscountRequest request);
+
+    DiscountResponse activateDiscount(UUID businessId, UUID discountId);
+
+    DiscountResponse deactivateDiscount(UUID businessId, UUID discountId);
+
+    void deleteDiscount(UUID businessId, UUID discountId);
 }

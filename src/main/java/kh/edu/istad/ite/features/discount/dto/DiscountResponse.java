@@ -7,6 +7,7 @@ import kh.edu.istad.ite.shared.enums.RecordStatus;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.UUID;
 
 public record DiscountResponse(
@@ -26,8 +27,7 @@ public record DiscountResponse(
         Boolean requiresCoupon,
         LocalDateTime startsAt,
         LocalDateTime endsAt,
-        String selectedDay,
-        RecordStatus status,
-        String createdBy
+        List<String> selectedDay,
+        RecordStatus status
 ) {
 }

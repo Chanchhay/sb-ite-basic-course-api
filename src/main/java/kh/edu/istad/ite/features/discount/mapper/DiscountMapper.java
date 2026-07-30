@@ -5,26 +5,35 @@ import kh.edu.istad.ite.features.discount.dto.DiscountResponse;
 import kh.edu.istad.ite.features.discount.dto.PatchDiscountRequest;
 import kh.edu.istad.ite.features.discount.entity.Discount;
 import org.mapstruct.*;
+import org.springframework.stereotype.Component;
 
-@Mapper(componentModel = "spring")
-public interface DiscountMapper {
+@Component
+public class DiscountMapper {
 
-    @Mapping(target = "businessId", source = "business.id")
-    DiscountResponse toResponse(Discount discount);
+    public DiscountResponse toResponse(Discount discount) {
+        if (discount == null) {
+            return null;
+        }
 
-    @Mapping(target = "id", ignore = true)
-    @Mapping(target = "business", ignore = true)
-    Discount toEntity(CreateDiscountRequest request);
-
-    @BeanMapping(nullValuePropertyMappingStrategy = NullValuePropertyMappingStrategy.IGNORE)
-    @Mapping(target = "id", ignore = true)
-    @Mapping(target = "business", ignore = true)
-    @Mapping(target = "createdBy", ignore = true)
-    void updateEntityFromRequest(CreateDiscountRequest request, @MappingTarget Discount discount);
-
-    @BeanMapping(nullValuePropertyMappingStrategy = NullValuePropertyMappingStrategy.IGNORE)
-    @Mapping(target = "id", ignore = true)
-    @Mapping(target = "business", ignore = true)
-    @Mapping(target = "createdBy", ignore = true)
-    void patchEntityFromRequest(PatchDiscountRequest request, @MappingTarget Discount discount);
+        return new DiscountResponse(
+                discount.getId(),
+                discount.getBusiness() == null ? null : discount.getBusiness().getId(),
+                discount.getName(),
+                discount.getDescription(),
+                discount.getType(),
+                discount.getRuleType(),
+                discount.getBuyQuantity(),
+                discount.getGetQuantity(),
+                discount.getMinQuantity(),
+                discount.getValue(),
+                discount.getScope(),
+                discount.getMinOrderAmount(),
+                discount.getMaxDiscountAmount(),
+                discount.getRequiresCoupon(),
+                discount.getStartsAt(),
+                discount.getEndsAt(),
+                discount.getSelectedDays(),
+                discount.getStatus()
+        );
+    }
 }

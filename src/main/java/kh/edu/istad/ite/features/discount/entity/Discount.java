@@ -5,6 +5,7 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
+import jakarta.persistence.ForeignKey;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -17,36 +18,21 @@ import kh.edu.istad.ite.shared.enums.DiscountRuleType;
 import kh.edu.istad.ite.shared.enums.DiscountScope;
 import kh.edu.istad.ite.shared.enums.DiscountType;
 import kh.edu.istad.ite.shared.enums.RecordStatus;
-import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.UUID;
 
-/**
- * Maps to the real "discounts" table:
- * id, business_owner_id, name, description, type, rule_type, buy_quantity,
- * get_quantity, min_quantity, value, scope, min_order_amount,
- * max_discount_amount, requires_coupon, starts_at, ends_at, status,
- * branch_id, created_by, created_at, updated_at, deleted_at.
- *
- * created_by / created_at / updated_at come from BasedAuditingEntity, same
- * as every other entity in this codebase (Business, Item, Order, ...).
- * deleted_at stays here since Discount is currently the only entity with
- * soft delete.
- *
- * Note: every other entity in this codebase uses UUID primary/foreign keys
- * (Business.id, UserProfile.userId, etc.), so id / business_owner_id /
- * branch_id are kept as UUID here for consistency instead of bigint.
- */
 @Entity
 @Getter
 @Setter
 @NoArgsConstructor
-@AllArgsConstructor
 @Table(name = "discounts")
 public class Discount extends BasedAuditingEntity {
 
@@ -56,7 +42,11 @@ public class Discount extends BasedAuditingEntity {
     private UUID id;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "business_owner_id", nullable = false)
+    @JoinColumn(
+            name = "business_owner_id",
+            nullable = false,
+            foreignKey = @ForeignKey(name = "fk_discounts_business")
+    )
     private Business business;
 
     @Column(nullable = false, length = 150)
@@ -66,11 +56,11 @@ public class Discount extends BasedAuditingEntity {
     private String description;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "type", nullable = false, length = 20)
+    @Column(nullable = false, length = 30)
     private DiscountType type;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "rule_type", nullable = false, length = 20)
+    @Column(name = "rule_type", nullable = false, length = 30)
     private DiscountRuleType ruleType;
 
     @Column(name = "buy_quantity")
@@ -82,11 +72,11 @@ public class Discount extends BasedAuditingEntity {
     @Column(name = "min_quantity")
     private Integer minQuantity;
 
-    @Column(precision = 12, scale = 2)
+    @Column(nullable = false, precision = 12, scale = 2)
     private BigDecimal value;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "scope", nullable = false, length = 20)
+    @Column(nullable = false, length = 30)
     private DiscountScope scope;
 
     @Column(name = "min_order_amount", precision = 12, scale = 2)
@@ -95,7 +85,11 @@ public class Discount extends BasedAuditingEntity {
     @Column(name = "max_discount_amount", precision = 12, scale = 2)
     private BigDecimal maxDiscountAmount;
 
-    @Column(name = "requires_coupon", nullable = false, columnDefinition = "boolean default false")
+    @Column(
+            name = "requires_coupon",
+            nullable = false,
+            columnDefinition = "boolean default false"
+    )
     private Boolean requiresCoupon = false;
 
     @Column(name = "starts_at")
@@ -104,17 +98,15 @@ public class Discount extends BasedAuditingEntity {
     @Column(name = "ends_at")
     private LocalDateTime endsAt;
 
-    @Column(name = "selected_day")
-    private String selectedDay;
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "selected_days", columnDefinition = "jsonb")
+    private List<String> selectedDays;
 
     @Enumerated(EnumType.STRING)
     @Column(
-            name = "status",
             nullable = false,
             length = 20,
             columnDefinition = "varchar(20) default 'ACTIVE'"
     )
     private RecordStatus status = RecordStatus.ACTIVE;
-    @Column(name = "created_by")
-    private String createdBy;
 }
