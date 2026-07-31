@@ -98,6 +98,8 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.PUT, "/api/v1/businesses/*/items/*").hasAuthority("SCOPE_item:update")
                 .requestMatchers(HttpMethod.PATCH, "/api/v1/businesses/*/items/*").hasAuthority("SCOPE_item:update")
                 .requestMatchers(HttpMethod.DELETE, "/api/v1/businesses/*/items/*").hasAuthority("SCOPE_item:delete")
+                .requestMatchers(HttpMethod.POST,   "/api/v1/businesses/*/items/*/images").hasAuthority("SCOPE_item:update")
+                .requestMatchers(HttpMethod.DELETE, "/api/v1/businesses/*/items/*/images/*").hasAuthority("SCOPE_item:update")
 
                 // Item Groups
                 .requestMatchers(HttpMethod.GET, "/api/v1/businesses/*/item-groups", "/api/v1/businesses/*/item-groups/*").hasAuthority("SCOPE_item-group:read")

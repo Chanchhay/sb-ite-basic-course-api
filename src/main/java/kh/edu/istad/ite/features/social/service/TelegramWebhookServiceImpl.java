@@ -827,7 +827,8 @@ public class TelegramWebhookServiceImpl implements TelegramWebhookService {
         List<List<InlineKeyboardButton>> keyboard = new ArrayList<>();
         if (!outOfStock) {
             if (item.getVariants() != null && !item.getVariants().isEmpty()) {
-                keyboard.add(List.of(new InlineKeyboardButton("🛒 ជ្រើសរើសជម្រើស", "cart:pickvariant:" + itemId)));
+//                keyboard.add(List.of(new InlineKeyboardButton("🛒 ជ្រើសរើសជម្រើស", "cart:pickvariant:" + itemId)));
+                keyboard.addAll(variantButtons(item, setting));
             } else {
                 keyboard.add(List.of(new InlineKeyboardButton("🛒 ថែមចូលកន្ត្រក", "cart:add:" + itemId)));
             }
@@ -867,20 +868,29 @@ public class TelegramWebhookServiceImpl implements TelegramWebhookService {
         telegramBotClient.sendMessage(botToken, chatId, uiHelper.header("🔍", "លទ្ធផលស្វែងរក៖ " + keyword) + "រកឃើញ *" + searchResults.getTotalElements() + "* ផលិតផល៖", keyboard);
     }
 
+    private List<List<InlineKeyboardButton>> variantButtons(Item item, BusinessTelegramBot setting) {
+        List<List<InlineKeyboardButton>> rows = new ArrayList<>();
+
+        for (var variant : item.getVariants()) {
+            String price = uiHelper.formatPrice(
+                    variant.getPrice() != null ? variant.getPrice() : item.getPrice(), setting).replace("`", "");
+            String label = "▫️ " + variant.getVariantName() + " — [" + price + "]";
+
+            rows.add(List.of(new InlineKeyboardButton(label, "cart:addv:" + variant.getId())));
+        }
+
+        return rows;
+    }
+
+
+
     private void showVariantPicker(String botToken, Long chatId, BusinessTelegramBot setting, String itemIdRaw) {
         UUID itemId;
         try { itemId = UUID.fromString(itemIdRaw); } catch (Exception e) { return; }
         Item item = itemRepository.findByIdAndBusinessId(itemId, setting.getBusiness().getId()).orElse(null);
         if (item == null || item.getVariants().isEmpty()) return;
 
-        List<List<InlineKeyboardButton>> keyboard = new ArrayList<>();
-        for (var variant : item.getVariants()) {
-            String price = uiHelper.formatPrice(
-                    variant.getPrice() != null ? variant.getPrice() : item.getPrice(), setting).replace("`", "");
-            String label = "▫️ " + variant.getVariantName() + " — [" + price + "]";
-
-            keyboard.add(List.of(new InlineKeyboardButton(label, "cart:addv:" + variant.getId())));
-        }
+        List<List<InlineKeyboardButton>> keyboard = new ArrayList<>(variantButtons(item, setting));
         keyboard.add(List.of(new InlineKeyboardButton("⬅️ ត្រលប់ក្រោយ", "item:" + itemId)));
 
         telegramBotClient.sendMessage(botToken, chatId,

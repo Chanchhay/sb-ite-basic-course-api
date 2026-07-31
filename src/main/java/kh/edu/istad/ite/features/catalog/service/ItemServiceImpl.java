@@ -161,8 +161,9 @@ public class ItemServiceImpl implements ItemService {
     @Override
     @Transactional
     public ItemResponse uploadItemImages(UUID businessId, UUID itemId, List<MultipartFile> files) {
-        businessHelper.findOwnedBusiness(businessId);
+        businessHelper.findAccessibleBusiness(businessId);
         Item item = findItem(itemId, businessId);
+
 
         if (files == null || files.isEmpty()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "At least one image file is required");
