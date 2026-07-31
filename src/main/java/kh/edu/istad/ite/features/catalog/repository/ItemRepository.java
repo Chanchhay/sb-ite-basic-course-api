@@ -40,7 +40,6 @@ public interface ItemRepository extends JpaRepository<Item, UUID> {
 
     Page<Item> findByBusinessIdAndStatusOrderByNameAsc(
             UUID businessId, ItemStatus status, Pageable pageable);
-
     Page<Item> findByBusinessIdAndStatusAndNameContainingIgnoreCaseOrderByNameAsc(
             UUID businessId, ItemStatus status, String name, Pageable pageable);
 
@@ -60,5 +59,19 @@ public interface ItemRepository extends JpaRepository<Item, UUID> {
             @Param("minPrice") BigDecimal minPrice,
             @Param("maxPrice") BigDecimal maxPrice,
             Pageable pageable
+    );
+
+    @Query("""
+    SELECT i
+    FROM Item i
+    JOIN ItemChannel ic
+        ON ic.item = i
+    JOIN SalesChannel sc
+        ON sc = ic.salesChannel
+    WHERE sc.code = :channelCode
+    AND ic.isEnabled = true
+""")
+    List<Item> findItemsByChannelCode(
+            @Param("channelCode") String channelCode
     );
 }
