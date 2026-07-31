@@ -20,6 +20,9 @@ public record PublicStoreDetailResponse(
         String baseCurrency,
         String displayCurrency,
         BusinessSubCategoryResponse category,
-        List<Map<String, String>> socialLinks
+        List<Map<String, String>> socialLinks,
+        Boolean isClosed,
+        Boolean isOpen,
+        String discountLabel
 ) {
 }

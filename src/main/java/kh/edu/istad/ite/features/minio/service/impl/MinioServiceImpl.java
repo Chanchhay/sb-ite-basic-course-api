@@ -56,6 +56,12 @@ public class MinioServiceImpl implements MinioService {
 
     @Override
     public String getPublicUrl(String objectName) {
+        if (objectName == null || objectName.isBlank()) {
+            return null;
+        }
+        if (objectName.startsWith("http://") || objectName.startsWith("https://")) {
+            return objectName;
+        }
         return endpoint + "/" + assetsBucket + "/" + objectName;
     }
 
