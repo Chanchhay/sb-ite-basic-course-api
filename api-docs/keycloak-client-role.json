@@ -1,0 +1,394 @@
+{
+  "realm": "istad-fluxipos-auth",
+  "roles": {
+    "client": {
+      "fluxipos-backend": [
+        {
+          "name": "admin-audit:read",
+          "description": "Fluxipos endpoint permission: admin-audit:read",
+          "composite": false,
+          "clientRole": true,
+          "attributes": {}
+        },
+        {
+          "name": "admin-business:delete",
+          "description": "Fluxipos endpoint permission: admin-business:delete",
+          "composite": false,
+          "clientRole": true,
+          "attributes": {}
+        },
+        {
+          "name": "admin-business:manage",
+          "description": "Fluxipos endpoint permission: admin-business:manage",
+          "composite": false,
+          "clientRole": true,
+          "attributes": {}
+        },
+        {
+          "name": "admin-business:read",
+          "description": "Fluxipos endpoint permission: admin-business:read",
+          "composite": false,
+          "clientRole": true,
+          "attributes": {}
+        },
+        {
+          "name": "admin-category:create",
+          "description": "Fluxipos endpoint permission: admin-category:create",
+          "composite": false,
+          "clientRole": true,
+          "attributes": {}
+        },
+        {
+          "name": "admin-category:delete",
+          "description": "Fluxipos endpoint permission: admin-category:delete",
+          "composite": false,
+          "clientRole": true,
+          "attributes": {}
+        },
+        {
+          "name": "admin-category:read",
+          "description": "Fluxipos endpoint permission: admin-category:read",
+          "composite": false,
+          "clientRole": true,
+          "attributes": {}
+        },
+        {
+          "name": "admin-category:update",
+          "description": "Fluxipos endpoint permission: admin-category:update",
+          "composite": false,
+          "clientRole": true,
+          "attributes": {}
+        },
+        {
+          "name": "admin-dashboard:read",
+          "description": "Fluxipos endpoint permission: admin-dashboard:read",
+          "composite": false,
+          "clientRole": true,
+          "attributes": {}
+        },
+        {
+          "name": "admin-unit:create",
+          "description": "Fluxipos endpoint permission: admin-unit:create",
+          "composite": false,
+          "clientRole": true,
+          "attributes": {}
+        },
+        {
+          "name": "admin-unit:delete",
+          "description": "Fluxipos endpoint permission: admin-unit:delete",
+          "composite": false,
+          "clientRole": true,
+          "attributes": {}
+        },
+        {
+          "name": "admin-unit:read",
+          "description": "Fluxipos endpoint permission: admin-unit:read",
+          "composite": false,
+          "clientRole": true,
+          "attributes": {}
+        },
+        {
+          "name": "admin-unit:update",
+          "description": "Fluxipos endpoint permission: admin-unit:update",
+          "composite": false,
+          "clientRole": true,
+          "attributes": {}
+        },
+        {
+          "name": "bakong-setting:preview",
+          "description": "Fluxipos endpoint permission: bakong-setting:preview",
+          "composite": false,
+          "clientRole": true,
+          "attributes": {}
+        },
+        {
+          "name": "bakong-setting:read",
+          "description": "Fluxipos endpoint permission: bakong-setting:read",
+          "composite": false,
+          "clientRole": true,
+          "attributes": {}
+        },
+        {
+          "name": "bakong-setting:update",
+          "description": "Fluxipos endpoint permission: bakong-setting:update",
+          "composite": false,
+          "clientRole": true,
+          "attributes": {}
+        },
+        {
+          "name": "business:create",
+          "description": "Fluxipos endpoint permission: business:create",
+          "composite": false,
+          "clientRole": true,
+          "attributes": {}
+        },
+        {
+          "name": "business:delete",
+          "description": "Fluxipos endpoint permission: business:delete",
+          "composite": false,
+          "clientRole": true,
+          "attributes": {}
+        },
+        {
+          "name": "business:read",
+          "description": "Fluxipos endpoint permission: business:read",
+          "composite": false,
+          "clientRole": true,
+          "attributes": {}
+        },
+        {
+          "name": "business:update",
+          "description": "Fluxipos endpoint permission: business:update",
+          "composite": false,
+          "clientRole": true,
+          "attributes": {}
+        },
+        {
+          "name": "currency:create",
+          "description": "Fluxipos endpoint permission: currency:create",
+          "composite": false,
+          "clientRole": true,
+          "attributes": {}
+        },
+        {
+          "name": "currency:delete",
+          "description": "Fluxipos endpoint permission: currency:delete",
+          "composite": false,
+          "clientRole": true,
+          "attributes": {}
+        },
+        {
+          "name": "currency:read",
+          "description": "Fluxipos endpoint permission: currency:read",
+          "composite": false,
+          "clientRole": true,
+          "attributes": {}
+        },
+        {
+          "name": "currency:set-base",
+          "description": "Fluxipos endpoint permission: currency:set-base",
+          "composite": false,
+          "clientRole": true,
+          "attributes": {}
+        },
+        {
+          "name": "currency:set-display",
+          "description": "Fluxipos endpoint permission: currency:set-display",
+          "composite": false,
+          "clientRole": true,
+          "attributes": {}
+        },
+        {
+          "name": "currency:update",
+          "description": "Fluxipos endpoint permission: currency:update",
+          "composite": false,
+          "clientRole": true,
+          "attributes": {}
+        },
+        {
+          "name": "item-group:create",
+          "description": "Fluxipos endpoint permission: item-group:create",
+          "composite": false,
+          "clientRole": true,
+          "attributes": {}
+        },
+        {
+          "name": "item-group:delete",
+          "description": "Fluxipos endpoint permission: item-group:delete",
+          "composite": false,
+          "clientRole": true,
+          "attributes": {}
+        },
+        {
+          "name": "item-group:read",
+          "description": "Fluxipos endpoint permission: item-group:read",
+          "composite": false,
+          "clientRole": true,
+          "attributes": {}
+        },
+        {
+          "name": "item-group:update",
+          "description": "Fluxipos endpoint permission: item-group:update",
+          "composite": false,
+          "clientRole": true,
+          "attributes": {}
+        },
+        {
+          "name": "item:create",
+          "description": "Fluxipos endpoint permission: item:create",
+          "composite": false,
+          "clientRole": true,
+          "attributes": {}
+        },
+        {
+          "name": "item:delete",
+          "description": "Fluxipos endpoint permission: item:delete",
+          "composite": false,
+          "clientRole": true,
+          "attributes": {}
+        },
+        {
+          "name": "item:read",
+          "description": "Fluxipos endpoint permission: item:read",
+          "composite": false,
+          "clientRole": true,
+          "attributes": {}
+        },
+        {
+          "name": "item:update",
+          "description": "Fluxipos endpoint permission: item:update",
+          "composite": false,
+          "clientRole": true,
+          "attributes": {}
+        },
+        {
+          "name": "member:manage",
+          "description": "Fluxipos endpoint permission: member:manage",
+          "composite": false,
+          "clientRole": true,
+          "attributes": {}
+        },
+        {
+          "name": "member:read",
+          "description": "Fluxipos endpoint permission: member:read",
+          "composite": false,
+          "clientRole": true,
+          "attributes": {}
+        },
+        {
+          "name": "order:cancel",
+          "description": "Fluxipos endpoint permission: order:cancel",
+          "composite": false,
+          "clientRole": true,
+          "attributes": {}
+        },
+        {
+          "name": "order:create",
+          "description": "Fluxipos endpoint permission: order:create",
+          "composite": false,
+          "clientRole": true,
+          "attributes": {}
+        },
+        {
+          "name": "order:generate-khqr",
+          "description": "Fluxipos endpoint permission: order:generate-khqr",
+          "composite": false,
+          "clientRole": true,
+          "attributes": {}
+        },
+        {
+          "name": "order:pay",
+          "description": "Fluxipos endpoint permission: order:pay",
+          "composite": false,
+          "clientRole": true,
+          "attributes": {}
+        },
+        {
+          "name": "order:read",
+          "description": "Fluxipos endpoint permission: order:read",
+          "composite": false,
+          "clientRole": true,
+          "attributes": {}
+        },
+        {
+          "name": "profile:read",
+          "description": "Fluxipos endpoint permission: profile:read",
+          "composite": false,
+          "clientRole": true,
+          "attributes": {}
+        },
+        {
+          "name": "profile:update",
+          "description": "Fluxipos endpoint permission: profile:update",
+          "composite": false,
+          "clientRole": true,
+          "attributes": {}
+        },
+        {
+          "name": "role:assign",
+          "description": "Fluxipos endpoint permission: role:assign",
+          "composite": false,
+          "clientRole": true,
+          "attributes": {}
+        },
+        {
+          "name": "role:create",
+          "description": "Fluxipos endpoint permission: role:create",
+          "composite": false,
+          "clientRole": true,
+          "attributes": {}
+        },
+        {
+          "name": "role:delete",
+          "description": "Fluxipos endpoint permission: role:delete",
+          "composite": false,
+          "clientRole": true,
+          "attributes": {}
+        },
+        {
+          "name": "role:read",
+          "description": "Fluxipos endpoint permission: role:read",
+          "composite": false,
+          "clientRole": true,
+          "attributes": {}
+        },
+        {
+          "name": "role:update",
+          "description": "Fluxipos endpoint permission: role:update",
+          "composite": false,
+          "clientRole": true,
+          "attributes": {}
+        },
+        {
+          "name": "stock:read",
+          "description": "Fluxipos endpoint permission: stock:read",
+          "composite": false,
+          "clientRole": true,
+          "attributes": {}
+        },
+        {
+          "name": "stock:write",
+          "description": "Fluxipos endpoint permission: stock:write",
+          "composite": false,
+          "clientRole": true,
+          "attributes": {}
+        },
+        {
+          "name": "storefront:read",
+          "description": "Fluxipos endpoint permission: storefront:read",
+          "composite": false,
+          "clientRole": true,
+          "attributes": {}
+        },
+        {
+          "name": "storefront:update",
+          "description": "Fluxipos endpoint permission: storefront:update",
+          "composite": false,
+          "clientRole": true,
+          "attributes": {}
+        },
+        {
+          "name": "telegram-setting:read",
+          "description": "Fluxipos endpoint permission: telegram-setting:read",
+          "composite": false,
+          "clientRole": true,
+          "attributes": {}
+        },
+        {
+          "name": "telegram-setting:update",
+          "description": "Fluxipos endpoint permission: telegram-setting:update",
+          "composite": false,
+          "clientRole": true,
+          "attributes": {}
+        },
+        {
+          "name": "unit:read",
+          "description": "Fluxipos endpoint permission: unit:read",
+          "composite": false,
+          "clientRole": true,
+          "attributes": {}
+        }
+      ]
+    }
+  }
+}

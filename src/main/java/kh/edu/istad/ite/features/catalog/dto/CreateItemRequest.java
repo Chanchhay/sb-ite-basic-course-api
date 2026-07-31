@@ -32,6 +32,8 @@ public record CreateItemRequest(
 
         String description,
 
+        @Size(max = 40, message = "badge must be at most 40 characters")
+        String badge,
         @Size(max = 100, message = "barcode must be at most 100 characters")
         String barcode,
 
@@ -39,10 +41,17 @@ public record CreateItemRequest(
         @Digits(integer = 10, fraction = 2, message = "price must have at most 10 integer digits and 2 decimal places")
         BigDecimal price,
 
+        @DecimalMin(value = "0.0", inclusive = true, message = "compareAtPrice must be at least zero")
+        @Digits(integer = 10, fraction = 2, message = "compareAtPrice must have at most 10 integer digits and 2 decimal places")
+        BigDecimal compareAtPrice,
+
         @NotNull(message = "itemType cannot be null")
         ItemType itemType,
 
-        Map<String, Object> attributes,
+        List<@Valid ItemAttributeRequest> attributes,
+
+        @Size(max = 30, message = "descriptionBlocks must have at most 30 items")
+        List<@Valid DescriptionBlockRequest> descriptionBlocks,
 
         List<@Valid ItemVariantRequest> variants,
 

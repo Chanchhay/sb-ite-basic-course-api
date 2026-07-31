@@ -20,12 +20,25 @@ import kh.edu.istad.ite.shared.helper.BusinessHelper;
 import kh.edu.istad.ite.shared.helper.SlugHelper;
 import kh.edu.istad.ite.shared.helper.TextHelper;
 import lombok.RequiredArgsConstructor;
+import kh.edu.istad.ite.features.catalog.dto.DescriptionBlockRequest;
+import kh.edu.istad.ite.features.catalog.dto.DescriptionColumnRequest;
+import kh.edu.istad.ite.features.catalog.dto.ItemAttributeRequest;
+import kh.edu.istad.ite.features.catalog.dto.ItemAttributeValueRequest;
+import kh.edu.istad.ite.features.catalog.entity.DescriptionBlock;
+import kh.edu.istad.ite.features.catalog.entity.DescriptionColumn;
+import kh.edu.istad.ite.features.catalog.entity.ItemAttribute;
+import kh.edu.istad.ite.features.catalog.entity.ItemAttributeValue;
+import kh.edu.istad.ite.shared.enums.AttributePlacement;
+import kh.edu.istad.ite.shared.enums.AttributeType;
+import kh.edu.istad.ite.shared.enums.DescriptionBlockType;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
+
+import java.util.ArrayList;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -63,6 +76,8 @@ public class ItemServiceImpl implements ItemService {
         item.setUnit(findUnit(request.unitId()));
         String name = TextHelper.trimRequired(request.name(), "Item name cannot be empty");
         ensureItemNameIsUnique(businessId, name);
+        validateAttributes(request.attributes());
+        validateDescriptionBlocks(request.descriptionBlocks());
         item.setName(name);
         item.setSlug(generateUniqueSlug(name, businessId));
         item.setSku(TextHelper.trimToNull(request.sku()));
@@ -71,7 +86,10 @@ public class ItemServiceImpl implements ItemService {
         item.setBarcode(TextHelper.trimToNull(request.barcode()));
         item.setPrice(normalizePrice(request.price()));
         item.setItemType(request.itemType());
-        item.setAttributes(request.attributes());
+        item.setBadge(TextHelper.trimToNull(request.badge()));
+        item.setCompareAtPrice(normalizePrice(request.compareAtPrice()));
+        item.setDescriptionBlocks(mapDescriptionBlocks(request.descriptionBlocks()));
+        item.setAttributes(mapAttributes(request.attributes()));
         replaceVariants(item, business, request.variants());
         item.setLowStockDefault(request.lowStockDefault() == null ? DEFAULT_LOW_STOCK : request.lowStockDefault());
         item.setStatus(request.status() == null ? ItemStatus.ACTIVE : request.status());
@@ -120,6 +138,13 @@ public class ItemServiceImpl implements ItemService {
                 item.setSlug(generateUniqueSlug(name, businessId, itemId));
             }
         }
+        
+        if (request.attributes() != null) {
+            validateAttributes(request.attributes());
+        }
+        if (request.descriptionBlocks() != null) {
+            validateDescriptionBlocks(request.descriptionBlocks());
+        }
         if (request.sku() != null) {
             item.setSku(TextHelper.trimToNull(request.sku()));
         }
@@ -138,8 +163,17 @@ public class ItemServiceImpl implements ItemService {
         if (request.itemType() != null) {
             item.setItemType(request.itemType());
         }
+        if (request.badge() != null) {
+            item.setBadge(TextHelper.trimToNull(request.badge()));
+        }
+        if (request.compareAtPrice() != null) {
+            item.setCompareAtPrice(normalizePrice(request.compareAtPrice()));
+        }
+        if (request.descriptionBlocks() != null) {
+            item.setDescriptionBlocks(mapDescriptionBlocks(request.descriptionBlocks()));
+        }
         if (request.attributes() != null) {
-            item.setAttributes(request.attributes());
+            item.setAttributes(mapAttributes(request.attributes()));
         }
         if (request.variants() != null) {
             replaceVariants(item, item.getBusiness(), request.variants());
@@ -282,6 +316,140 @@ public class ItemServiceImpl implements ItemService {
         return price.setScale(2, RoundingMode.HALF_UP);
     }
 
+    private List<ItemAttribute> mapAttributes(List<ItemAttributeRequest> requests) {
+        if (requests == null) {
+            return new ArrayList<>();
+        }
+        return requests.stream().map(req -> {
+            ItemAttribute attr = new ItemAttribute();
+            attr.setName(req.name());
+            attr.setType(req.type());
+            attr.setPlacement(req.placement());
+            attr.setIcon(req.icon());
+            if (req.values() != null) {
+                attr.setValues(req.values().stream().map(valReq -> {
+                    ItemAttributeValue val = new ItemAttributeValue();
+                    val.setValue(valReq.value());
+                    val.setLabel(valReq.label());
+                    val.setColorHex(valReq.colorHex());
+                    val.setAvailable(valReq.available());
+                    return val;
+                }).toList());
+            } else {
+                attr.setValues(new ArrayList<>());
+            }
+            return attr;
+        }).toList();
+    }
+
+    private List<DescriptionBlock> mapDescriptionBlocks(List<DescriptionBlockRequest> requests) {
+        if (requests == null) {
+            return new ArrayList<>();
+        }
+        return requests.stream().map(this::mapDescriptionBlock).toList();
+    }
+
+    private DescriptionBlock mapDescriptionBlock(DescriptionBlockRequest req) {
+        DescriptionBlock block = new DescriptionBlock();
+        block.setType(req.type());
+        block.setText(req.text());
+        block.setItems(req.items() == null ? null : new ArrayList<>(req.items()));
+        block.setUrl(req.url());
+        block.setCaption(req.caption());
+        if (req.columns() != null) {
+            block.setColumns(req.columns().stream().map(colReq -> {
+                DescriptionColumn col = new DescriptionColumn();
+                col.setBlocks(mapDescriptionBlocks(colReq.blocks()));
+                return col;
+            }).toList());
+        }
+        return block;
+    }
+
+    private void validateAttributes(List<ItemAttributeRequest> attributes) {
+        if (attributes == null) return;
+        
+        Set<String> names = new HashSet<>();
+        for (ItemAttributeRequest attr : attributes) {
+            String nameLower = attr.name().toLowerCase();
+            if (!names.add(nameLower)) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Attribute name must be unique: " + attr.name());
+            }
+            
+            if (attr.placement() == AttributePlacement.HIGHLIGHT || attr.placement() == AttributePlacement.SPECIFICATION) {
+                if (attr.values() != null && attr.values().size() > 1) {
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "HIGHLIGHT or SPECIFICATION attribute can have at most 1 value: " + attr.name());
+                }
+            }
+            
+            if (attr.placement() == AttributePlacement.OPTION && (attr.type() == AttributeType.SELECTION || attr.type() == AttributeType.COLOR)) {
+                if (attr.values() == null || attr.values().isEmpty()) {
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "OPTION attribute with SELECTION or COLOR must have at least 1 value: " + attr.name());
+                }
+            }
+            
+            if (attr.type() == AttributeType.TOGGLE) {
+                if (attr.values() != null && !attr.values().isEmpty()) {
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "TOGGLE attribute must have exactly 0 values: " + attr.name());
+                }
+            }
+            
+            if (attr.values() != null) {
+                for (ItemAttributeValueRequest val : attr.values()) {
+                    if (attr.type() == AttributeType.COLOR && val.colorHex() == null) {
+                        throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "COLOR attribute values must carry colorHex: " + attr.name());
+                    }
+                    if (attr.type() == AttributeType.NUMBER) {
+                        try {
+                            Double.parseDouble(val.value());
+                        } catch (NumberFormatException e) {
+                            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "NUMBER attribute value must parse as a number: " + val.value());
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private void validateDescriptionBlocks(List<DescriptionBlockRequest> blocks) {
+        if (blocks == null) return;
+        
+        for (DescriptionBlockRequest block : blocks) {
+            if (block.type() == DescriptionBlockType.COLUMNS) {
+                if (block.columns() != null) {
+                    for (DescriptionColumnRequest col : block.columns()) {
+                        if (col.blocks() != null) {
+                            for (DescriptionBlockRequest nestedBlock : col.blocks()) {
+                                if (nestedBlock.type() == DescriptionBlockType.COLUMNS) {
+                                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "COLUMNS cannot be nested inside a column");
+                                }
+                                validateDescriptionBlockContent(nestedBlock);
+                            }
+                        }
+                    }
+                }
+            } else {
+                validateDescriptionBlockContent(block);
+            }
+        }
+    }
+    
+    private void validateDescriptionBlockContent(DescriptionBlockRequest block) {
+        if (block.type() == DescriptionBlockType.PARAGRAPH || block.type() == DescriptionBlockType.HEADING) {
+            if (block.text() == null || block.text().isBlank()) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, block.type() + " block requires text");
+            }
+        } else if (block.type() == DescriptionBlockType.BULLETS) {
+            if (block.items() == null || block.items().isEmpty()) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "BULLETS block requires items");
+            }
+        } else if (block.type() == DescriptionBlockType.IMAGE) {
+            if (block.url() == null || block.url().isBlank()) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "IMAGE block requires url");
+            }
+        }
+    }
+
     private void replaceVariants(
             Item item,
             Business business,
@@ -302,6 +470,7 @@ public class ItemServiceImpl implements ItemService {
             variant.setVariantName(variantName);
             variant.setSlug(generateUniqueVariantSlug(variantName, usedSlugs));
             variant.setPrice(normalizePrice(request.price()));
+            variant.setAvailable(request.available());
             item.getVariants().add(variant);
         }
     }
