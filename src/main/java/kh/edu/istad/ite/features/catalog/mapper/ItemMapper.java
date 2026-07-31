@@ -1,10 +1,10 @@
 package kh.edu.istad.ite.features.catalog.mapper;
 
+import kh.edu.istad.ite.features.catalog.dto.ItemImageResponse;
 import kh.edu.istad.ite.features.catalog.dto.ItemResponse;
 import kh.edu.istad.ite.features.catalog.dto.ItemVariantResponse;
-import kh.edu.istad.ite.features.catalog.entity.DescriptionBlock;
-import kh.edu.istad.ite.features.catalog.entity.DescriptionColumn;
 import kh.edu.istad.ite.features.catalog.entity.Item;
+import kh.edu.istad.ite.features.catalog.entity.ItemImage;
 import kh.edu.istad.ite.features.catalog.entity.ItemVariant;
 import kh.edu.istad.ite.features.minio.MinioService;
 import org.springframework.stereotype.Component;
@@ -33,16 +33,13 @@ public class ItemMapper {
                 item.getSku(),
                 item.getCode(),
                 item.getDescription(),
+                item.getImages().stream()
+                        .map(this::toImageResponse)
+                        .toList(),
                 item.getBarcode(),
                 item.getPrice(),
-                item.getCompareAtPrice(),
                 item.getItemType(),
-                item.getAttributes() == null ? null : item.getAttributes().stream()
-                        .map(this::toAttributeResponse)
-                        .toList(),
-                item.getDescriptionBlocks() == null ? null : item.getDescriptionBlocks().stream()
-                        .map(this::toDescriptionBlockResponse)
-                        .toList(),
+                item.getAttributes(),
                 item.getVariants().stream()
                         .map(this::toVariantResponse)
                         .toList(),
@@ -51,6 +48,11 @@ public class ItemMapper {
         );
     }
 
+    private ItemImageResponse toImageResponse(ItemImage image) {
+        return new ItemImageResponse(
+                image.getId(),
+                minioService.getPublicUrl(image.getImageKey()),
+                image.getPosition()
         );
     }
 
@@ -59,8 +61,7 @@ public class ItemMapper {
                 variant.getId(),
                 variant.getSlug(),
                 variant.getVariantName(),
-                variant.getPrice(),
-                variant.getAvailable()
+                variant.getPrice()
         );
     }
 }

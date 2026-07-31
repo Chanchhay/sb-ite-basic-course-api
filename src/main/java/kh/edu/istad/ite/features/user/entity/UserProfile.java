@@ -31,8 +31,8 @@ public class UserProfile extends BasedAuditingEntity {
     private Business business;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "user_status", length = 20)
-    private RecordStatus userStatus;
+    @Column(name = "staff_status", length = 20)
+    private RecordStatus staffStatus;
 
     @Column(name = "joined_at")
     private LocalDateTime joinedAt;

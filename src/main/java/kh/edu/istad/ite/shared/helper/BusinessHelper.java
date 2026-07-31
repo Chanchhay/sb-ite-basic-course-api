@@ -43,7 +43,7 @@ public class BusinessHelper {
             return business;
         }
 
-        boolean activeStaff = userProfileRepository.existsByUserIdAndBusinessIdAndUserStatus(
+        boolean activeStaff = userProfileRepository.existsByUserIdAndBusinessIdAndStaffStatus(
                 keycloakUserId, businessId, RecordStatus.ACTIVE);
 
         if (!activeStaff) {
