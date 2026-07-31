@@ -40,6 +40,7 @@ public interface ItemRepository extends JpaRepository<Item, UUID> {
 
     Page<Item> findByBusinessIdAndStatusOrderByNameAsc(
             UUID businessId, ItemStatus status, Pageable pageable);
+
     Page<Item> findByBusinessIdAndStatusAndNameContainingIgnoreCaseOrderByNameAsc(
             UUID businessId, ItemStatus status, String name, Pageable pageable);
 
