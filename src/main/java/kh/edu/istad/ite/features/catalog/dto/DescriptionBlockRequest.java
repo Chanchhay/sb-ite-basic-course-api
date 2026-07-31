@@ -17,7 +17,7 @@ public record DescriptionBlockRequest(
         @Size(max = 20, message = "block items must have at most 20 items")
         List<@Size(max = 300, message = "each block item must be at most 300 characters") String> items,
 
-        @Size(max = 255, message = "block url must be at most 255 characters")
+        @Size(max = 2048, message = "block url must be at most 2048 characters")
         String url,
 
         @Size(max = 150, message = "block caption must be at most 150 characters")

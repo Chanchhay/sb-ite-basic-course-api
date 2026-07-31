@@ -85,11 +85,15 @@ public class ItemMapper {
     }
 
     private DescriptionBlockResponse toDescriptionBlockResponse(DescriptionBlock block) {
+        String url = block.getUrl();
+        if (url != null && !url.isBlank() && !url.startsWith("http://") && !url.startsWith("https://")) {
+            url = minioService.getPublicUrl(url);
+        }
         return new DescriptionBlockResponse(
                 block.getType(),
                 block.getText(),
                 block.getItems(),
-                block.getUrl(),
+                url,
                 block.getCaption(),
                 block.getColumns() == null ? null : block.getColumns().stream()
                         .map(this::toDescriptionColumnResponse)

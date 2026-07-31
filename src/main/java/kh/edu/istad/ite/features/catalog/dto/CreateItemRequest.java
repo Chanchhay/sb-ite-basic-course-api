@@ -10,6 +10,8 @@ import jakarta.validation.constraints.Size;
 import kh.edu.istad.ite.shared.enums.ItemStatus;
 import kh.edu.istad.ite.shared.enums.ItemType;
 
+import org.springframework.web.multipart.MultipartFile;
+
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
@@ -58,6 +60,8 @@ public record CreateItemRequest(
         @Min(value = 0, message = "lowStockDefault must be at least 0")
         Integer lowStockDefault,
 
-        ItemStatus status
+        ItemStatus status,
+
+        List<MultipartFile> files
 ) {
 }

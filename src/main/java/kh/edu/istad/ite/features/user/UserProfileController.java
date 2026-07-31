@@ -26,4 +26,10 @@ public class UserProfileController {
         return userProfileService.me();
     }
 
+    @ResponseStatus(org.springframework.http.HttpStatus.NO_CONTENT)
+    @DeleteMapping("/me/picture")
+    public void removeProfilePicture() {
+        userProfileService.removeProfilePicture();
+    }
+
 }

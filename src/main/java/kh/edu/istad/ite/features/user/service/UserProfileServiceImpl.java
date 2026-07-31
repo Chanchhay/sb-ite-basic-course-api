@@ -82,6 +82,24 @@ public class UserProfileServiceImpl implements UserProfileService {
     }
 
     @Override
+    @Transactional
+    public void removeProfilePicture() {
+        String userId = SecurityUtils.extractUserId();
+        UUID userUuid = UUID.fromString(userId);
+
+        UserProfile userProfile = userProfileRepository.findById(userUuid)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User profile has not been found"));
+
+        String oldKey = userProfile.getProfilePicture();
+        if (oldKey != null && !oldKey.isBlank() && !oldKey.startsWith("http://") && !oldKey.startsWith("https://")) {
+            minioService.deleteAsset(oldKey);
+        }
+
+        userProfile.setProfilePicture(null);
+        userProfileRepository.save(userProfile);
+    }
+
+    @Override
     public List<UserProfile> findByBusinessIdAndUserStatus(UUID businessId, RecordStatus status) {
         return List.of();
     }
