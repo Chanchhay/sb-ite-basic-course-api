@@ -28,6 +28,8 @@ public class MembershipType {
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
+    private String typeName;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "business_owner_id")
     private Business business;
