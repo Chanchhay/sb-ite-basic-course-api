@@ -279,6 +279,16 @@ public class StorefrontCartService {
         return price;
     }
 
+    private String toPublicUrl(String key) {
+        if (key == null || key.isBlank()) {
+            return null;
+        }
+        if (key.startsWith("http://") || key.startsWith("https://")) {
+            return key;
+        }
+        return minioService.getPublicUrl(key);
+    }
+
     private CartSummaryResponse.StoreCart toStoreCart(Cart cart) {
         Business business = cart.getBusiness();
 
@@ -292,9 +302,7 @@ public class StorefrontCartService {
                 business.getSlug(),
                 business.getDisplayName(),
                 business.getBusinessCategory() == null ? null : business.getBusinessCategory().getName(),
-                StringUtils.hasText(business.getLogo())
-                        ? minioService.getPublicUrl(business.getLogo())
-                        : null,
+                toPublicUrl(business.getLogo()),
                 business.getAddress(),
 
                 null,
@@ -333,8 +341,6 @@ public class StorefrontCartService {
             return null;
         }
 
-        String imageKey = item.getImages().getFirst().getImageKey();
-
-        return StringUtils.hasText(imageKey) ? minioService.getPublicUrl(imageKey) : null;
+        return toPublicUrl(item.getImages().getFirst().getImageKey());
     }
 }

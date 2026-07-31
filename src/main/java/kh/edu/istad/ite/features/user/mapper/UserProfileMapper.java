@@ -11,13 +11,20 @@ import java.util.List;
 import java.util.Map;
 
 
+import kh.edu.istad.ite.features.minio.MinioService;
+import org.springframework.beans.factory.annotation.Autowired;
+
 @Mapper(componentModel = "spring")
 public abstract class UserProfileMapper {
     private static final String PHONE_NUMBER_ATTRIBUTE = "phone_number";
     private static final String GENDER_ATTRIBUTE = "gender";
 
+    @Autowired
+    protected MinioService minioService;
+
     @BeanMapping(nullValuePropertyMappingStrategy = NullValuePropertyMappingStrategy.IGNORE)
     @Mapping(target = "userId", ignore = true)
+    @Mapping(target = "profilePicture", ignore = true)
     public abstract void mapUpdateUserProfileRequestToUserProfile(
             UpdateUserProfileRequest updateUserProfileRequest,
             @MappingTarget UserProfile userProfile
@@ -46,6 +53,13 @@ public abstract class UserProfileMapper {
     }
 
     public UserProfileResponse toUserProfileResponse(UserRepresentation userRepresentation, UserProfile userProfile, String role) {
+        String profilePictureUrl = null;
+        if (userProfile.getProfilePicture() != null && !userProfile.getProfilePicture().isBlank()) {
+            profilePictureUrl = userProfile.getProfilePicture().startsWith("http://") || userProfile.getProfilePicture().startsWith("https://")
+                    ? userProfile.getProfilePicture()
+                    : minioService.getPublicUrl(userProfile.getProfilePicture());
+        }
+
         return UserProfileResponse.builder()
                 .userId(userRepresentation.getId())
                 .username(userRepresentation.getUsername())
@@ -56,7 +70,7 @@ public abstract class UserProfileMapper {
                 .gender(userProfile.getGender())
                 .role(role)
                 .address(userProfile.getAddress())
-                .profilePicture(userProfile.getProfilePicture())
+                .profilePicture(profilePictureUrl)
                 .build();
     }
 

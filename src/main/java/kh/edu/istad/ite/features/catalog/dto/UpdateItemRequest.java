@@ -8,6 +8,8 @@ import jakarta.validation.constraints.Size;
 import kh.edu.istad.ite.shared.enums.ItemStatus;
 import kh.edu.istad.ite.shared.enums.ItemType;
 
+import org.springframework.web.multipart.MultipartFile;
+
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
@@ -29,6 +31,8 @@ public record UpdateItemRequest(
 
         String description,
 
+        @Size(max = 40, message = "badge must be at most 40 characters")
+        String badge,
         @Size(max = 100, message = "barcode must be at most 100 characters")
         String barcode,
 
@@ -45,6 +49,8 @@ public record UpdateItemRequest(
         @Min(value = 0, message = "lowStockDefault must be at least 0")
         Integer lowStockDefault,
 
-        ItemStatus status
+        ItemStatus status,
+
+        List<MultipartFile> files
 ) {
 }

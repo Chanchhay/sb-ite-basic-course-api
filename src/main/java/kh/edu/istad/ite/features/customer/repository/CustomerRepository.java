@@ -11,6 +11,8 @@ public interface CustomerRepository extends JpaRepository<Customer, UUID> {
 
     Optional<Customer> findByIdAndBusinessId(UUID id, UUID businessId);
 
+    boolean existsByMembershipType_Id(UUID membershipTypeId);
+
     Optional<Customer> findByBusiness_IdAndGlobalCustomer_Id(UUID businessId, UUID globalCustomerId);
 
     List<Customer> findAllByGlobalCustomer_Id(UUID globalCustomerId);

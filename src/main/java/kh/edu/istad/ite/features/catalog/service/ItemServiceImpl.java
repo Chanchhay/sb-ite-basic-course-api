@@ -4,7 +4,11 @@ import kh.edu.istad.ite.features.business.entity.Business;
 import kh.edu.istad.ite.features.catalog.dto.CreateItemRequest;
 import kh.edu.istad.ite.features.catalog.dto.ItemResponse;
 import kh.edu.istad.ite.features.catalog.dto.ItemVariantRequest;
+import kh.edu.istad.ite.features.catalog.dto.ReorderItemImagesRequest;
 import kh.edu.istad.ite.features.catalog.dto.UpdateItemRequest;
+import kh.edu.istad.ite.features.catalog.dto.UploadItemImagesRequest;
+import java.util.Map;
+import java.util.stream.Collectors;
 import kh.edu.istad.ite.features.catalog.entity.Item;
 import kh.edu.istad.ite.features.catalog.entity.ItemGroup;
 import kh.edu.istad.ite.features.catalog.entity.ItemImage;
@@ -71,10 +75,15 @@ public class ItemServiceImpl implements ItemService {
         item.setBarcode(TextHelper.trimToNull(request.barcode()));
         item.setPrice(normalizePrice(request.price()));
         item.setItemType(request.itemType());
+        item.setBadge(TextHelper.trimToNull(request.badge()));
         item.setAttributes(request.attributes());
         replaceVariants(item, business, request.variants());
         item.setLowStockDefault(request.lowStockDefault() == null ? DEFAULT_LOW_STOCK : request.lowStockDefault());
         item.setStatus(request.status() == null ? ItemStatus.ACTIVE : request.status());
+
+        if (request.files() != null && !request.files().isEmpty()) {
+            processAndAttachImages(item, request.files());
+        }
 
         try {
             return itemMapper.toResponse(itemRepository.saveAndFlush(item));
@@ -138,6 +147,9 @@ public class ItemServiceImpl implements ItemService {
         if (request.itemType() != null) {
             item.setItemType(request.itemType());
         }
+        if (request.badge() != null) {
+            item.setBadge(TextHelper.trimToNull(request.badge()));
+        }
         if (request.attributes() != null) {
             item.setAttributes(request.attributes());
         }
@@ -150,6 +162,9 @@ public class ItemServiceImpl implements ItemService {
         if (request.status() != null) {
             item.setStatus(request.status());
         }
+        if (request.files() != null && !request.files().isEmpty()) {
+            processAndAttachImages(item, request.files());
+        }
 
         try {
             return itemMapper.toResponse(itemRepository.saveAndFlush(item));
@@ -160,13 +175,22 @@ public class ItemServiceImpl implements ItemService {
 
     @Override
     @Transactional
-    public ItemResponse uploadItemImages(UUID businessId, UUID itemId, List<MultipartFile> files) {
-        businessHelper.findAccessibleBusiness(businessId);
+    public ItemResponse uploadItemImages(UUID businessId, UUID itemId, UploadItemImagesRequest request) {
+        businessHelper.findOwnedBusiness(businessId);
         Item item = findItem(itemId, businessId);
 
-
+        List<MultipartFile> files = request != null ? request.files() : null;
         if (files == null || files.isEmpty()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "At least one image file is required");
+        }
+        processAndAttachImages(item, files);
+
+        return itemMapper.toResponse(itemRepository.saveAndFlush(item));
+    }
+
+    private void processAndAttachImages(Item item, List<MultipartFile> files) {
+        if (files == null || files.isEmpty()) {
+            return;
         }
         if (item.getImages().size() + files.size() > MAX_ITEM_IMAGES) {
             throw new ResponseStatusException(
@@ -188,6 +212,29 @@ public class ItemServiceImpl implements ItemService {
             image.setPosition(nextPosition++);
             item.getImages().add(image);
         }
+    }
+
+    @Override
+    @Transactional
+    public ItemResponse reorderItemImages(UUID businessId, UUID itemId, ReorderItemImagesRequest request) {
+        businessHelper.findOwnedBusiness(businessId);
+        Item item = findItem(itemId, businessId);
+
+        List<UUID> imageIds = request != null ? request.imageIds() : null;
+        if (imageIds == null || imageIds.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "imageIds list cannot be empty");
+        }
+
+        Map<UUID, ItemImage> imageMap = item.getImages().stream()
+                .collect(Collectors.toMap(ItemImage::getId, img -> img));
+
+        int position = 0;
+        for (UUID id : imageIds) {
+            ItemImage image = imageMap.get(id);
+            if (image != null) {
+                image.setPosition(position++);
+            }
+        }
 
         return itemMapper.toResponse(itemRepository.saveAndFlush(item));
     }
@@ -204,6 +251,12 @@ public class ItemServiceImpl implements ItemService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Image has not been found"));
 
         item.getImages().remove(image);
+
+        int pos = 0;
+        for (ItemImage img : item.getImages()) {
+            img.setPosition(pos++);
+        }
+
         Item saved = itemRepository.saveAndFlush(item);
 
         minioService.deleteAsset(image.getImageKey());

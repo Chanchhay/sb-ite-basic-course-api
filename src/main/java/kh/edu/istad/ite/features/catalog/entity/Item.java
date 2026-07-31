@@ -96,6 +96,9 @@ public class Item extends BasedAuditingEntity {
     @Column(name = "item_type", nullable = false, length = 20)
     private ItemType itemType = ItemType.PHYSICAL;
 
+    @Column(length = 40)
+    private String badge;
+
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(columnDefinition = "jsonb")
     private Map<String, Object> attributes;

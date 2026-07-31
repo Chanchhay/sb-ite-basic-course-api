@@ -33,6 +33,7 @@ public class ItemMapper {
                 item.getSku(),
                 item.getCode(),
                 item.getDescription(),
+                item.getBadge(),
                 item.getImages().stream()
                         .map(this::toImageResponse)
                         .toList(),

@@ -29,9 +29,14 @@ public class StorefrontMapper {
                 + storefrontProps.getPathPrefix() + "/" + slug;
     }
 
-
-    private String publicUrl(String objectKey) {
-        return objectKey == null || objectKey.isBlank() ? null : minioService.getPublicUrl(objectKey);
+    private String toPublicUrl(String key) {
+        if (key == null || key.isBlank()) {
+            return null;
+        }
+        if (key.startsWith("http://") || key.startsWith("https://")) {
+            return key;
+        }
+        return minioService.getPublicUrl(key);
     }
 
     public PublicStoreResponse toPublicResponse(Business business) {
@@ -40,8 +45,8 @@ public class StorefrontMapper {
                 business.getId(),
                 business.getSlug(),
                 business.getDisplayName(),
-                publicUrl(business.getLogo()),
-                publicUrl(business.getThumbnail()),
+                toPublicUrl(business.getLogo()),
+                toPublicUrl(business.getThumbnail()),
                 business.getAbout(),
                 business.getCityOrProvince(),
                 buildStorefrontUrl(business.getSlug()),
@@ -58,8 +63,8 @@ public class StorefrontMapper {
                 business.getId(),
                 business.getSlug(),
                 business.getDisplayName(),
-                publicUrl(business.getLogo()),
-                publicUrl(business.getThumbnail()),
+                toPublicUrl(business.getLogo()),
+                toPublicUrl(business.getThumbnail()),
                 business.getAbout(),
                 business.getPhoneNumber(),
                 business.getAddress(),

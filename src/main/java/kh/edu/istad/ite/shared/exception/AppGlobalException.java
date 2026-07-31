@@ -10,6 +10,7 @@ import org.springframework.dao.DataAccessException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -104,6 +105,17 @@ public class AppGlobalException {
                 .message("Request data is invalid..!")
                 .timestamp(Instant.now())
                 .errorDetail(filedErrorResponseList)
+                .build();
+    }
+
+    @ResponseStatus(HttpStatus.PAYLOAD_TOO_LARGE)
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ErrorResponse handleMaxUploadSizeExceeded(MaxUploadSizeExceededException e) {
+        return ErrorResponse.builder()
+                .status(HttpStatus.PAYLOAD_TOO_LARGE.getReasonPhrase())
+                .code(HttpStatus.PAYLOAD_TOO_LARGE.value())
+                .message("File size exceeds maximum permitted upload limit.")
+                .timestamp(Instant.now())
                 .build();
     }
 

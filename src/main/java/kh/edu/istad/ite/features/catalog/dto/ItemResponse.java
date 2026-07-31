@@ -2,12 +2,14 @@ package kh.edu.istad.ite.features.catalog.dto;
 
 import kh.edu.istad.ite.shared.enums.ItemStatus;
 import kh.edu.istad.ite.shared.enums.ItemType;
+import lombok.Builder;
 
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+@Builder
 public record ItemResponse(
         UUID id,
         UUID businessId,
@@ -18,6 +20,7 @@ public record ItemResponse(
         String sku,
         String code,
         String description,
+        String badge,
         List<ItemImageResponse> images,
         String barcode,
         BigDecimal price,
