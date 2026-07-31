@@ -92,13 +92,27 @@ public class Item extends BasedAuditingEntity {
     @Column(precision = 12, scale = 2)
     private BigDecimal price;
 
+    @Column(name = "compare_at_price", precision = 12, scale = 2)
+    private BigDecimal compareAtPrice;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "item_type", nullable = false, length = 20)
     private ItemType itemType = ItemType.PHYSICAL;
 
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(columnDefinition = "jsonb")
-    private Map<String, Object> attributes;
+    private List<String> images = new ArrayList<>();
+
+    @Column(length = 40)
+    private String badge;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(columnDefinition = "jsonb")
+    private List<DescriptionBlock> descriptionBlocks = new ArrayList<>();
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(columnDefinition = "jsonb")
+    private List<ItemAttribute> attributes;
 
     @OneToMany(mappedBy = "item", cascade = CascadeType.ALL, orphanRemoval = true)
     @OrderBy("variantName ASC")
