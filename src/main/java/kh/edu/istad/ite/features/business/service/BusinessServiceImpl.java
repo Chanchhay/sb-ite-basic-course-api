@@ -10,6 +10,7 @@ import kh.edu.istad.ite.features.business.entity.BusinessCurrency;
 import kh.edu.istad.ite.features.business.mapper.BusinessMapper;
 import kh.edu.istad.ite.features.business.repository.BusinessCategoryRepository;
 import kh.edu.istad.ite.features.business.repository.BusinessRepository;
+import kh.edu.istad.ite.features.minio.MinioService;
 import kh.edu.istad.ite.shared.enums.BusinessOwnerStatus;
 import kh.edu.istad.ite.shared.helper.AuthHelper;
 import kh.edu.istad.ite.shared.helper.BusinessHelper;
@@ -20,6 +21,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
+import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
@@ -39,6 +41,7 @@ public class BusinessServiceImpl implements BusinessService {
     private final BusinessCategoryRepository businessCategoryRepository;
     private final BusinessMapper businessMapper;
     private final BusinessHelper businessHelper;
+    private final MinioService minioService;
 
     @Override
     @Transactional
@@ -108,12 +111,6 @@ public class BusinessServiceImpl implements BusinessService {
         if (StringUtils.hasText(request.address())) {
             business.setAddress(request.address().trim());
         }
-        if (request.logo() != null) {
-            business.setLogo(TextHelper.trimToNull(request.logo()));
-        }
-        if (request.thumbnail() != null) {
-            business.setThumbnail(TextHelper.trimToNull(request.thumbnail()));
-        }
         if (request.about() != null) {
             business.setAbout(TextHelper.trimToNull(request.about()));
         }
@@ -134,6 +131,76 @@ public class BusinessServiceImpl implements BusinessService {
         }
 
         return businessMapper.toResponse(businessRepository.save(business));
+    }
+
+    @Override
+    @Transactional
+    public BusinessResponse uploadLogo(UUID businessId, MultipartFile file) {
+        Business business = businessHelper.findOwnedBusinessOrNotFound(businessId);
+        validateImage(file);
+
+        String oldKey = business.getLogo();
+        business.setLogo(minioService.uploadAsset(file));
+        Business saved = businessRepository.save(business);
+
+        if (oldKey != null) {
+            minioService.deleteAsset(oldKey);
+        }
+        return businessMapper.toResponse(saved);
+    }
+
+    @Override
+    @Transactional
+    public BusinessResponse deleteLogo(UUID businessId) {
+        Business business = businessHelper.findOwnedBusinessOrNotFound(businessId);
+        String oldKey = business.getLogo();
+        business.setLogo(null);
+        Business saved = businessRepository.save(business);
+
+        if (oldKey != null) {
+            minioService.deleteAsset(oldKey);
+        }
+        return businessMapper.toResponse(saved);
+    }
+
+    @Override
+    @Transactional
+    public BusinessResponse uploadThumbnail(UUID businessId, MultipartFile file) {
+        Business business = businessHelper.findOwnedBusinessOrNotFound(businessId);
+        validateImage(file);
+
+        String oldKey = business.getThumbnail();
+        business.setThumbnail(minioService.uploadAsset(file));
+        Business saved = businessRepository.save(business);
+
+        if (oldKey != null) {
+            minioService.deleteAsset(oldKey);
+        }
+        return businessMapper.toResponse(saved);
+    }
+
+    @Override
+    @Transactional
+    public BusinessResponse deleteThumbnail(UUID businessId) {
+        Business business = businessHelper.findOwnedBusinessOrNotFound(businessId);
+        String oldKey = business.getThumbnail();
+        business.setThumbnail(null);
+        Business saved = businessRepository.save(business);
+
+        if (oldKey != null) {
+            minioService.deleteAsset(oldKey);
+        }
+        return businessMapper.toResponse(saved);
+    }
+
+    private void validateImage(MultipartFile file) {
+        if (file == null || file.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Image file cannot be empty");
+        }
+        String contentType = file.getContentType();
+        if (contentType == null || !contentType.startsWith("image/")) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Only image files are allowed");
+        }
     }
 
     @Override

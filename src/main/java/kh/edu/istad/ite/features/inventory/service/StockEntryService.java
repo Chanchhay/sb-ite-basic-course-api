@@ -38,4 +38,6 @@ public interface StockEntryService {
     List<StockSummaryResponse> findCurrentStock(UUID businessId);
 
     StockSummaryResponse findCurrentStockByItem(UUID businessId, UUID itemId);
+
+    StockSummaryResponse findAvailableStock(UUID businessId, UUID itemId);
 }

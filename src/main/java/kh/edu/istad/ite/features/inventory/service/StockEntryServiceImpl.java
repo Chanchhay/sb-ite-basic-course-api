@@ -207,6 +207,14 @@ public class StockEntryServiceImpl implements StockEntryService {
                 .orElseGet(() -> stockEntryMapper.emptySummary(itemId));
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public StockSummaryResponse findAvailableStock(UUID businessId, UUID itemId) {
+        return stockEntryRepository.findFirstByBusiness_IdAndItem_IdOrderByCreatedDateDescIdDesc(businessId, itemId)
+                .map(stockEntryMapper::toSummary)
+                .orElseGet(() -> stockEntryMapper.emptySummary(itemId));
+    }
+
     private Item findItem(UUID itemId, UUID businessId) {
         return itemRepository.findByIdAndBusinessId(itemId, businessId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Item has not been found"));

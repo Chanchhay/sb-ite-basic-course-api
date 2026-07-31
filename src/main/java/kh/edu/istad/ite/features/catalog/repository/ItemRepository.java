@@ -8,6 +8,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -15,6 +16,7 @@ import java.util.UUID;
 public interface ItemRepository extends JpaRepository<Item, UUID> {
 
     boolean existsByUnit_Id(UUID unitId);
+
     List<Item> findAllByBusinessIdOrderByNameAsc(UUID businessId);
 
     Optional<Item> findByIdAndBusinessId(UUID id, UUID businessId);
@@ -50,5 +52,27 @@ public interface ItemRepository extends JpaRepository<Item, UUID> {
 """)
     List<Item> findItemsByChannelCode(
             @Param("channelCode") String channelCode
+    );
+}
+
+    Page<Item> findByBusinessIdAndStatusAndNameContainingIgnoreCaseOrderByNameAsc(
+            UUID businessId, ItemStatus status, String name, Pageable pageable);
+
+    Page<Item> findByBusinessIdAndStatusAndPriceBetweenOrderByNameAsc(
+            UUID businessId, ItemStatus status, BigDecimal minPrice, BigDecimal maxPrice, Pageable pageable);
+
+    @Query("SELECT i FROM Item i WHERE i.business.id = :businessId " +
+            "AND i.status = :status " +
+            "AND (:itemGroupId IS NULL OR i.itemGroup.id = :itemGroupId) " +
+            "AND (:minPrice IS NULL OR i.price >= :minPrice) " +
+            "AND (:maxPrice IS NULL OR i.price <= :maxPrice) " +
+            "ORDER BY i.name ASC")
+    Page<Item> filterTelegramBotItems(
+            @Param("businessId") UUID businessId,
+            @Param("status") ItemStatus status,
+            @Param("itemGroupId") UUID itemGroupId,
+            @Param("minPrice") BigDecimal minPrice,
+            @Param("maxPrice") BigDecimal maxPrice,
+            Pageable pageable
     );
 }

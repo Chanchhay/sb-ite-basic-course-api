@@ -22,8 +22,6 @@ import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import kh.edu.istad.ite.features.business.entity.Business;
 
-// Links a raw chat-platform identity (e.g. a Telegram chat id) to a business-scoped
-// Customer, so returning shoppers are auto-recognized on their next message.
 @Entity
 @Getter
 @Setter
