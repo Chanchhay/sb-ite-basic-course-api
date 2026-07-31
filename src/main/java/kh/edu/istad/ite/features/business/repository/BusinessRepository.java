@@ -27,6 +27,8 @@ public interface BusinessRepository extends JpaRepository<Business, UUID>, JpaSp
 
     long countByIsClosedTrue();
 
+    long countByIsListingTrueAndIsClosedFalse();
+
     long countByCreatedDateGreaterThanEqual(LocalDateTime since);
 
     boolean existsByBusinessCategory_Id(UUID businessCategoryId);

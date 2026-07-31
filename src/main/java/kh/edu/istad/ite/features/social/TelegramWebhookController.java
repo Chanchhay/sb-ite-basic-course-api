@@ -24,8 +24,6 @@ public class TelegramWebhookController {
             @RequestHeader(value = "X-Telegram-Bot-Api-Secret-Token", required = false) String secretTokenHeader,
             @RequestBody TelegramUpdate update
     ) {
-        // Always 200 - Telegram retries (with backoff, then gives up) on any non-2xx response.
-        // Invalid/mismatched calls are dropped silently here and logged server-side instead.
         telegramWebhookService.handleUpdate(webhookSecret, secretTokenHeader, update);
         return ResponseEntity.ok().build();
     }

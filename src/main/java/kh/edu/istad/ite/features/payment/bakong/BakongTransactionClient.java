@@ -4,6 +4,7 @@ import kh.edu.istad.ite.config.props.BakongProps;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
+import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 
@@ -36,31 +37,44 @@ public class BakongTransactionClient {
                     .body(new org.springframework.core.ParameterizedTypeReference<Map<String, Object>>() {});
 
             return interpret(body);
+
+        } catch (HttpClientErrorException.Unauthorized | HttpClientErrorException.Forbidden exception) {
+            // The shop's Bakong API token has expired or been revoked. Shouting
+            // about this is the whole point: silently returning "not paid" makes
+            // a real payment look pending forever.
+            log.error("Bakong rejected the API token while checking md5 {} — the shop must renew it. {}",
+                    md5, exception.getMessage());
+            return BakongCheckResult.unverifiable(
+                    "Bakong rejected this shop's API token. The shop needs to renew it.");
+
         } catch (RestClientException exception) {
-            log.warn("Bakong check failed for md5 {}: {}", md5, exception.getMessage());
-            return BakongCheckResult.notPaid("Could not reach Bakong: " + exception.getMessage());
+            log.error("Bakong check failed for md5 {}: {}", md5, exception.getMessage());
+            return BakongCheckResult.unverifiable("Could not reach Bakong: " + exception.getMessage());
         }
     }
 
     private BakongCheckResult interpret(Map<String, Object> body) {
         if (body == null) {
-            return BakongCheckResult.notPaid("Empty response from Bakong");
+            return BakongCheckResult.unverifiable("Empty response from Bakong");
         }
 
         Number responseCode = (Number) body.get("responseCode");
         String message = String.valueOf(body.getOrDefault("responseMessage", ""));
 
+        // responseCode 0 = paid, 1 = transaction not found (i.e. not paid yet).
         if (responseCode == null || responseCode.intValue() != RESPONSE_CODE_SUCCESS) {
+            log.debug("Bakong says not paid: code={} message={}", responseCode, message);
             return BakongCheckResult.notPaid(message);
         }
 
         Object data = body.get("data");
         if (!(data instanceof Map<?, ?> transaction)) {
-            return BakongCheckResult.notPaid("Success without transaction details");
+            return BakongCheckResult.unverifiable("Success without transaction details");
         }
 
         return new BakongCheckResult(
                 true,
+                false,
                 message,
                 asString(transaction.get("hash")),
                 asString(transaction.get("fromAccountId")),

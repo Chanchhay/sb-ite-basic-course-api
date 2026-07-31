@@ -14,8 +14,10 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 import java.util.UUID;
@@ -58,6 +60,24 @@ public class ItemController {
         return itemService.updateItem(businessId, itemId, request);
     }
 
+    @PostMapping(value = "/{itemId}/images", consumes = "multipart/form-data")
+    public ItemResponse uploadItemImages(
+            @PathVariable UUID businessId,
+            @PathVariable UUID itemId,
+            @RequestParam("files") List<MultipartFile> files
+    ) {
+        return itemService.uploadItemImages(businessId, itemId, files);
+    }
+
+    @DeleteMapping("/{itemId}/images/{imageId}")
+    public ItemResponse deleteItemImage(
+            @PathVariable UUID businessId,
+            @PathVariable UUID itemId,
+            @PathVariable UUID imageId
+    ) {
+        return itemService.deleteItemImage(businessId, itemId, imageId);
+    }
+
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @DeleteMapping("/{itemId}")
     public void deleteItem(
@@ -65,5 +85,14 @@ public class ItemController {
             @PathVariable UUID itemId
     ) {
         itemService.deleteItem(businessId, itemId);
+    }
+
+    @ResponseStatus(HttpStatus.OK)
+    @GetMapping("/barcode/{barcode}")
+    public ItemResponse findItemByBarcode(
+            @PathVariable UUID businessId,
+            @PathVariable String barcode
+    ) {
+        return itemService.findItemByBarcode(businessId, barcode);
     }
 }

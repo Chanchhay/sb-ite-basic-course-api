@@ -8,12 +8,19 @@ import kh.edu.istad.ite.features.business.dto.BusinessSubCategoryResponse;
 import kh.edu.istad.ite.features.business.entity.Business;
 import kh.edu.istad.ite.features.business.entity.BusinessCategory;
 import kh.edu.istad.ite.features.business.entity.BusinessCurrency;
+import kh.edu.istad.ite.features.minio.MinioService;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
 
 @Component
 public class BusinessMapper {
+
+    private final MinioService minioService;
+
+    public BusinessMapper(MinioService minioService) {
+        this.minioService = minioService;
+    }
 
     public BusinessResponse toResponse(Business business) {
         return new BusinessResponse(
@@ -23,8 +30,8 @@ public class BusinessMapper {
                 business.getDisplayName(),
                 business.getStatus(),
                 business.getProvisionedAt(),
-                business.getLogo(),
-                business.getThumbnail(),
+                business.getLogo() == null ? null : minioService.getPublicUrl(business.getLogo()),
+                business.getThumbnail() == null ? null : minioService.getPublicUrl(business.getThumbnail()),
                 business.getAbout(),
                 business.getPhoneNumber(),
                 business.getGoogleMap(),

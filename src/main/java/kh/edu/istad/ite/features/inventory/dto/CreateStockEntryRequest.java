@@ -10,8 +10,8 @@ import java.util.Map;
 import java.util.UUID;
 
 public record CreateStockEntryRequest(
-        @NotNull(message = "productId cannot be null")
-        UUID productId,
+        @NotNull(message = "itemId cannot be null")
+        UUID itemId,
 
         @NotNull(message = "entryType cannot be null")
         @Pattern(regexp = "OPENING_STOCK|STOCK_IN|STOCK_OUT|ADJUSTMENT|SALE|RETURN", message = "Entry type must be one of: OPENING_STOCK, STOCK_IN, STOCK_OUT, ADJUSTMENT, SALE, RETURN")

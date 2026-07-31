@@ -46,10 +46,10 @@ public class StockEntryServiceImpl implements StockEntryService {
     @Transactional
     public StockEntryResponse createStockEntry(UUID businessId, CreateStockEntryRequest request) {
         Business business = businessHelper.findOwnedBusiness(businessId);
-        Item product = findProduct(request.productId(), businessId);
+        Item item = findItem(request.itemId(), businessId);
 
         Optional<StockEntry> latestEntry = stockEntryRepository
-                .findFirstByBusiness_IdAndProduct_IdOrderByCreatedDateDescIdDesc(businessId, product.getId());
+                .findFirstByBusiness_IdAndItem_IdOrderByCreatedDateDescIdDesc(businessId, item.getId());
         BigDecimal quantityBefore = latestEntry
                 .map(StockEntry::getQuantityAfter)
                 .orElse(ZERO_QUANTITY);
@@ -65,7 +65,7 @@ public class StockEntryServiceImpl implements StockEntryService {
 
         StockEntry stockEntry = new StockEntry();
         stockEntry.setBusiness(business);
-        stockEntry.setProduct(product);
+        stockEntry.setItem(item);
         stockEntry.setEntryType(entryType);
         stockEntry.setQuantityChange(quantityChange);
         stockEntry.setQuantityBefore(quantityBefore);
@@ -90,7 +90,7 @@ public class StockEntryServiceImpl implements StockEntryService {
             String invoiceNumber
     ) {
         Optional<StockEntry> latestEntry = stockEntryRepository
-                .findFirstByBusiness_IdAndProduct_IdOrderByCreatedDateDescIdDesc(business.getId(), item.getId());
+                .findFirstByBusiness_IdAndItem_IdOrderByCreatedDateDescIdDesc(business.getId(), item.getId());
 
         BigDecimal quantityBefore = latestEntry.map(StockEntry::getQuantityAfter).orElse(ZERO_QUANTITY);
         BigDecimal quantityChange = normalizeQuantity(quantity).negate();
@@ -104,7 +104,7 @@ public class StockEntryServiceImpl implements StockEntryService {
 
         StockEntry stockEntry = new StockEntry();
         stockEntry.setBusiness(business);
-        stockEntry.setProduct(item);
+        stockEntry.setItem(item);
         stockEntry.setEntryType(StockEntryType.SALE);
         stockEntry.setQuantityChange(quantityChange);
         stockEntry.setQuantityBefore(quantityBefore);
@@ -122,7 +122,7 @@ public class StockEntryServiceImpl implements StockEntryService {
     @Transactional(readOnly = true)
     public BigDecimal findLatestUnitCost(UUID businessId, UUID itemId) {
         return stockEntryRepository
-                .findAllByBusiness_IdAndProduct_IdOrderByCreatedDateDescIdDesc(businessId, itemId)
+                .findFirstByBusiness_IdAndItem_IdOrderByCreatedDateDescIdDesc(businessId, itemId)
                 .map(StockEntry::getUnitCost)
                 .orElse(BigDecimal.ZERO);
     }
@@ -131,7 +131,7 @@ public class StockEntryServiceImpl implements StockEntryService {
     @Transactional(readOnly = true)
     public List<StockEntryResponse> findAllStockEntries(
             UUID businessId,
-            UUID productId,
+            UUID itemId,
             StockEntryType entryType,
             String referenceType,
             UUID referenceId,
@@ -139,13 +139,13 @@ public class StockEntryServiceImpl implements StockEntryService {
             LocalDateTime to
     ) {
         businessHelper.findOwnedBusiness(businessId);
-        if (productId != null) {
-            findProduct(productId, businessId);
+        if (itemId != null) {
+            findItem(itemId, businessId);
         }
 
         Specification<StockEntry> specification = stockEntrySpecification(
                 businessId,
-                productId,
+                itemId,
                 entryType,
                 TextHelper.trimToNull(referenceType),
                 referenceId,
@@ -171,11 +171,11 @@ public class StockEntryServiceImpl implements StockEntryService {
 
     @Override
     @Transactional(readOnly = true)
-    public List<StockEntryResponse> findProductStockEntries(UUID businessId, UUID productId) {
+    public List<StockEntryResponse> findItemStockEntries(UUID businessId, UUID itemId) {
         businessHelper.findOwnedBusiness(businessId);
-        findProduct(productId, businessId);
+        findItem(itemId, businessId);
 
-        return stockEntryRepository.findAllByBusiness_IdAndProduct_IdOrderByCreatedDateDescIdDesc(businessId, productId)
+        return stockEntryRepository.findAllByBusiness_IdAndItem_IdOrderByCreatedDateDescIdDesc(businessId, itemId)
                 .stream()
                 .map(stockEntryMapper::toResponse)
                 .toList();
@@ -185,31 +185,39 @@ public class StockEntryServiceImpl implements StockEntryService {
     @Transactional(readOnly = true)
     public List<StockSummaryResponse> findCurrentStock(UUID businessId) {
         businessHelper.findOwnedBusiness(businessId);
-        Map<UUID, StockSummaryResponse> currentStockByProductId = new LinkedHashMap<>();
+        Map<UUID, StockSummaryResponse> currentStockByItemId = new LinkedHashMap<>();
 
         stockEntryRepository.findAllByBusiness_IdOrderByCreatedDateDescIdDesc(businessId)
-                .forEach(stockEntry -> currentStockByProductId.computeIfAbsent(
-                        stockEntry.getProduct().getId(),
+                .forEach(stockEntry -> currentStockByItemId.computeIfAbsent(
+                        stockEntry.getItem().getId(),
                         ignored -> stockEntryMapper.toSummary(stockEntry)
                 ));
 
-        return List.copyOf(currentStockByProductId.values());
+        return List.copyOf(currentStockByItemId.values());
     }
 
     @Override
     @Transactional(readOnly = true)
-    public StockSummaryResponse findCurrentStockByProduct(UUID businessId, UUID productId) {
+    public StockSummaryResponse findCurrentStockByItem(UUID businessId, UUID itemId) {
         businessHelper.findOwnedBusiness(businessId);
-        findProduct(productId, businessId);
+        findItem(itemId, businessId);
 
-        return stockEntryRepository.findFirstByBusiness_IdAndProduct_IdOrderByCreatedDateDescIdDesc(businessId, productId)
+        return stockEntryRepository.findFirstByBusiness_IdAndItem_IdOrderByCreatedDateDescIdDesc(businessId, itemId)
                 .map(stockEntryMapper::toSummary)
-                .orElseGet(() -> stockEntryMapper.emptySummary(productId));
+                .orElseGet(() -> stockEntryMapper.emptySummary(itemId));
     }
 
-    private Item findProduct(UUID productId, UUID businessId) {
-        return itemRepository.findByIdAndBusinessId(productId, businessId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Product has not been found"));
+    @Override
+    @Transactional(readOnly = true)
+    public StockSummaryResponse findAvailableStock(UUID businessId, UUID itemId) {
+        return stockEntryRepository.findFirstByBusiness_IdAndItem_IdOrderByCreatedDateDescIdDesc(businessId, itemId)
+                .map(stockEntryMapper::toSummary)
+                .orElseGet(() -> stockEntryMapper.emptySummary(itemId));
+    }
+
+    private Item findItem(UUID itemId, UUID businessId) {
+        return itemRepository.findByIdAndBusinessId(itemId, businessId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Item has not been found"));
     }
 
     private StockEntry findStockEntry(UUID stockEntryId, UUID businessId) {
@@ -234,7 +242,7 @@ public class StockEntryServiceImpl implements StockEntryService {
     private void validateQuantityChange(
             StockEntryType entryType,
             BigDecimal quantityChange,
-            boolean productHasStockEntries
+            boolean itemHasStockEntries
     ) {
         if (quantityChange.compareTo(BigDecimal.ZERO) == 0) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Quantity change cannot be zero");
@@ -242,8 +250,8 @@ public class StockEntryServiceImpl implements StockEntryService {
 
         switch (entryType) {
             case OPENING_STOCK -> {
-                if (productHasStockEntries) {
-                    throw new ResponseStatusException(HttpStatus.CONFLICT, "Opening stock already exists for this product");
+                if (itemHasStockEntries) {
+                    throw new ResponseStatusException(HttpStatus.CONFLICT, "Opening stock already exists for this item");
                 }
                 if (quantityChange.compareTo(BigDecimal.ZERO) < 0) {
                     throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Opening stock must be at least zero");
@@ -270,7 +278,7 @@ public class StockEntryServiceImpl implements StockEntryService {
 
     private Specification<StockEntry> stockEntrySpecification(
             UUID businessId,
-            UUID productId,
+            UUID itemId,
             StockEntryType entryType,
             String referenceType,
             UUID referenceId,
@@ -281,8 +289,8 @@ public class StockEntryServiceImpl implements StockEntryService {
             List<Predicate> predicates = new ArrayList<>();
             predicates.add(criteriaBuilder.equal(root.get("business").get("id"), businessId));
 
-            if (productId != null) {
-                predicates.add(criteriaBuilder.equal(root.get("product").get("id"), productId));
+            if (itemId != null) {
+                predicates.add(criteriaBuilder.equal(root.get("item").get("id"), itemId));
             }
             if (entryType != null) {
                 predicates.add(criteriaBuilder.equal(root.get("entryType"), entryType));

@@ -5,7 +5,7 @@ import java.time.LocalDateTime;
 import java.util.UUID;
 
 public record StockSummaryResponse(
-        UUID productId,
+        UUID itemId,
         BigDecimal quantityOnHand,
         UUID lastEntryId,
         LocalDateTime updatedAt

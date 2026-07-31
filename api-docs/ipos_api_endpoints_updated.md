@@ -910,7 +910,7 @@ These are schema constraints, not additional endpoint requirements.
 
 1. `item_groups.parent_id` is marked unique, which allows only one child for each parent.
 2. `customer_channel_identities` has no `external_id`, so Telegram and Messenger identities cannot be uniquely stored.
-3. `discounts` supports `CATEGORY`, `PRODUCT`, and `MEMBERSHIP` scopes but has no target table or target ID.
+3. `discounts` supports `CATEGORY`, `ITEM`, and `MEMBERSHIP` scopes but has no target table or target ID.
 4. `stock_levels.location_id` has no `location_type`, while stock movements do.
 5. Branch and warehouse tables are not present.
 6. Stock-in and stock-out headers are not present; only item tables exist.

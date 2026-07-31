@@ -14,7 +14,7 @@ public interface UserProfileRepository extends JpaRepository<UserProfile, UUID> 
 
     Optional<UserProfile> findByUserIdAndBusinessId(UUID userId, UUID businessId);
 
-    boolean existsByUserIdAndBusinessIdAndStaffStatus(UUID userId, UUID businessId, RecordStatus staffStatus);
+    boolean existsByUserIdAndBusinessIdAndUserStatus(UUID userId, UUID businessId, RecordStatus userStatus);
 
-    long countByBusinessIdAndStaffStatus(UUID businessId, RecordStatus staffStatus);
+    long countByBusinessIdAndUserStatus(UUID businessId, RecordStatus userStatus);
 }
