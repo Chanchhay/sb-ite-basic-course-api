@@ -39,6 +39,7 @@ public class ItemChannel extends BasedAuditingEntity {
             name = "item_id",
             nullable = false
     )
+
     private Item item;
 
 
