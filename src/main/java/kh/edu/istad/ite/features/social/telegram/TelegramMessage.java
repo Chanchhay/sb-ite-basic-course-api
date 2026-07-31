@@ -5,7 +5,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record TelegramMessage(
-        @JsonProperty("message_id") Long messageId,
+        @JsonProperty("message_id") Integer messageId,
         TelegramChat chat,
         TelegramFrom from,
         String text

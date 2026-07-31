@@ -48,6 +48,11 @@ public class SecurityConfig {
                 .requestMatchers("/ws/customer-display/**", "/ws/customer-display-sockjs/**").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/v1/public/**").permitAll()
 
+
+                //order
+                .requestMatchers(HttpMethod.PATCH, "/api/v1/businesses/*/orders/*/pay").hasAuthority("SCOPE_order:pay")
+                .requestMatchers(HttpMethod.PATCH, "/api/v1/businesses/*/orders/*/cancel").hasAuthority("SCOPE_order:cancel")
+
                 // Admin Dashboard
                 .requestMatchers(HttpMethod.GET, "/api/v1/admin/dashboard").hasAuthority("SCOPE_admin-dashboard:read")
 

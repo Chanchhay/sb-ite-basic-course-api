@@ -24,12 +24,6 @@ public record UpdateBusinessRequest(
         @Size(max = 255, message = "address must be at most 255 characters")
         String address,
 
-        @Size(max = 255, message = "logo must be at most 255 characters")
-        String logo,
-
-        @Size(max = 255, message = "thumbnail must be at most 255 characters")
-        String thumbnail,
-
         @Size(max = 255, message = "about must be at most 255 characters")
         String about,
 

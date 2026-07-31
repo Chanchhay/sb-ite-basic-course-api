@@ -29,15 +29,8 @@ public record UpdateItemRequest(
 
         String description,
 
-        @Size(max = 255, message = "imageUrl must be at most 255 characters")
-        String imageUrl,
-
-        @Size(max = 8, message = "images list must have at most 8 items")
-        List<@Size(max = 255, message = "each image url must be at most 255 characters") String> images,
-
         @Size(max = 40, message = "badge must be at most 40 characters")
         String badge,
-
         @Size(max = 100, message = "barcode must be at most 100 characters")
         String barcode,
 

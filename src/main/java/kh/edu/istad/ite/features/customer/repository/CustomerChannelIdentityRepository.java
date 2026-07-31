@@ -11,4 +11,7 @@ public interface CustomerChannelIdentityRepository extends JpaRepository<Custome
 
     Optional<CustomerChannelIdentity> findByBusiness_IdAndChannelAndExternalId(
             UUID businessId, ChannelType channel, String externalId);
+
+    Optional<CustomerChannelIdentity> findByBusiness_IdAndChannelAndCustomer_Id(
+            UUID businessId, ChannelType channel, UUID customerId);
 }

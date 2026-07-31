@@ -25,6 +25,13 @@ public class GlobalCustomer extends BasedAuditingEntity {
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
+    @Column(name = "keycloak_user_id", unique = true)
+    private UUID keycloakUserId;
+
+
+    @Column(name = "email", unique = true, length = 255)
+    private String email;
+
     @Column(name = "full_name", length = 200)
     private String fullName;
 
