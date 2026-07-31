@@ -14,7 +14,6 @@ public interface MembershipTypeRepository extends JpaRepository<MembershipType, 
     List<MembershipType> findAllByBusinessIdOrderByTypeNameAsc(UUID businessId);
 
     boolean existsByBusinessIdAndTypeNameIgnoreCase(UUID businessId, String typeName);
-
     boolean existsByBusinessIdAndTypeNameIgnoreCaseAndIdNot(UUID businessId, String typeName, UUID id);
 
     boolean existsByDiscount_Id(UUID discountId);

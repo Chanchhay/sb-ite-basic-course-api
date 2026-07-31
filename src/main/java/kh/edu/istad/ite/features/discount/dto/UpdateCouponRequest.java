@@ -6,7 +6,7 @@ import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Size;
 
 import java.math.BigDecimal;
-import java.math.BigInteger;
+
 import java.time.LocalDateTime;
 
 public record UpdateCouponRequest(

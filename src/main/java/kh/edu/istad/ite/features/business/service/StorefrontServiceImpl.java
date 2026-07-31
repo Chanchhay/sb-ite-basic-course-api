@@ -31,6 +31,11 @@ import java.util.Locale;
 import java.util.UUID;
 import java.util.regex.Pattern;
 
+import kh.edu.istad.ite.features.catalog.dto.ItemResponse;
+import kh.edu.istad.ite.features.catalog.entity.Item;
+import kh.edu.istad.ite.features.catalog.mapper.ItemMapper;
+import kh.edu.istad.ite.shared.enums.ItemStatus;
+
 @Service
 @RequiredArgsConstructor
 public class StorefrontServiceImpl implements StorefrontService {
@@ -40,6 +45,7 @@ public class StorefrontServiceImpl implements StorefrontService {
     private final BusinessRepository businessRepository;
     private final BusinessHelper businessHelper;
     private final ItemRepository itemRepository;
+    private final ItemMapper itemMapper;
     private final StorefrontMapper storefrontMapper;
     private final StorefrontProps storefrontProps;
 
@@ -130,14 +136,61 @@ public class StorefrontServiceImpl implements StorefrontService {
 
     @Override
     @Transactional(readOnly = true)
-    public PublicStoreDetailResponse getPublicStoreBySlug(String slug) {
-        Business business = businessRepository.findOne(
-                        PublicStoreSpecifications.publiclyVisible()
-                                .and((root, query, cb) -> cb.equal(root.get("slug"), normalizeSlug(slug)))
-                )
+    public PublicStoreDetailResponse getPublicStoreBySlug(String slugOrId) {
+        String normalized = normalizeSlug(slugOrId);
+
+        org.springframework.data.jpa.domain.Specification<Business> spec = PublicStoreSpecifications.publiclyVisible()
+                .and((root, query, cb) -> {
+                    try {
+                        UUID uuid = UUID.fromString(slugOrId);
+                        return cb.or(
+                                cb.equal(root.get("slug"), normalized),
+                                cb.equal(root.get("id"), uuid)
+                        );
+                    } catch (IllegalArgumentException e) {
+                        return cb.equal(root.get("slug"), normalized);
+                    }
+                });
+
+        Business business = businessRepository.findOne(spec)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Store has not been found"));
 
         return storefrontMapper.toPublicDetailResponse(business);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<ItemResponse> getPublicStoreItems(String slugOrId) {
+        String normalized = normalizeSlug(slugOrId);
+
+        org.springframework.data.jpa.domain.Specification<Business> spec = PublicStoreSpecifications.publiclyVisible()
+                .and((root, query, cb) -> {
+                    try {
+                        UUID uuid = UUID.fromString(slugOrId);
+                        return cb.or(
+                                cb.equal(root.get("slug"), normalized),
+                                cb.equal(root.get("id"), uuid)
+                        );
+                    } catch (IllegalArgumentException e) {
+                        return cb.equal(root.get("slug"), normalized);
+                    }
+                });
+
+        Business business = businessRepository.findOne(spec)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Store has not been found"));
+
+        List<Item> items = itemRepository.findAllByBusinessIdOrderByNameAsc(business.getId());
+        return items.stream()
+                .filter(item -> item.getStatus() == ItemStatus.ACTIVE)
+                .map(itemMapper::toResponse)
+                .toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Page<PublicStoreResponse> getRecommendedStores(UUID categoryId, Pageable pageable) {
+        return businessRepository.findRecommendedStores(categoryId, pageable)
+                .map(storefrontMapper::toPublicResponse);
     }
 
     private List<StorefrontRequirement> evaluateRequirements(Business business) {

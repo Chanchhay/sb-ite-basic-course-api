@@ -40,6 +40,7 @@ public class StorefrontMapper {
     }
 
     public PublicStoreResponse toPublicResponse(Business business) {
+        boolean isClosed = Boolean.TRUE.equals(business.getIsClosed());
         return new PublicStoreResponse(
                 business.getId(),
                 business.getSlug(),
@@ -49,11 +50,15 @@ public class StorefrontMapper {
                 business.getAbout(),
                 business.getCityOrProvince(),
                 buildStorefrontUrl(business.getSlug()),
-                businessMapper.toSubCategoryResponse(business.getBusinessCategory())
+                businessMapper.toSubCategoryResponse(business.getBusinessCategory()),
+                isClosed,
+                !isClosed,
+                null
         );
     }
 
     public PublicStoreDetailResponse toPublicDetailResponse(Business business) {
+        boolean isClosed = Boolean.TRUE.equals(business.getIsClosed());
         return new PublicStoreDetailResponse(
                 business.getId(),
                 business.getSlug(),
@@ -70,7 +75,10 @@ public class StorefrontMapper {
                 business.getBaseCurrency(),
                 business.getDisplayCurrency(),
                 businessMapper.toSubCategoryResponse(business.getBusinessCategory()),
-                business.getSocialLinks()
+                business.getSocialLinks(),
+                isClosed,
+                !isClosed,
+                null
         );
     }
 }

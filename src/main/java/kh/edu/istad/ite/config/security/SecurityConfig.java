@@ -47,6 +47,7 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.POST, "/api/v1/webhooks/telegram/**").permitAll()
                 .requestMatchers("/ws/customer-display/**", "/ws/customer-display-sockjs/**").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/v1/public/**").permitAll()
+                .requestMatchers(HttpMethod.GET, "/api/v1/business-categories", "/api/v1/business-categories/**").permitAll()
 
 
                 //order
@@ -62,7 +63,7 @@ public class SecurityConfig {
                 .requestMatchers("/api/v1/admin/businesses", "/api/v1/admin/businesses/**").hasAuthority("SCOPE_admin-business:manage")
 
                 // Admin Business Categories
-                .requestMatchers(HttpMethod.GET, "/api/v1/admin/business-categories", "/api/v1/admin/business-categories/**").hasAuthority("SCOPE_admin-category:read")
+                .requestMatchers(HttpMethod.GET, "/api/v1/admin/business-categories", "/api/v1/admin/business-categories/**").permitAll()
                 .requestMatchers(HttpMethod.POST, "/api/v1/admin/business-categories").hasAuthority("SCOPE_admin-category:create")
                 .requestMatchers(HttpMethod.PUT, "/api/v1/admin/business-categories/**").hasAuthority("SCOPE_admin-category:update")
                 .requestMatchers(HttpMethod.PATCH, "/api/v1/admin/business-categories/**").hasAuthority("SCOPE_admin-category:update")
@@ -98,6 +99,8 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.PUT, "/api/v1/businesses/*/items/*").hasAuthority("SCOPE_item:update")
                 .requestMatchers(HttpMethod.PATCH, "/api/v1/businesses/*/items/*").hasAuthority("SCOPE_item:update")
                 .requestMatchers(HttpMethod.DELETE, "/api/v1/businesses/*/items/*").hasAuthority("SCOPE_item:delete")
+                .requestMatchers(HttpMethod.POST,   "/api/v1/businesses/*/items/*/images").hasAuthority("SCOPE_item:update")
+                .requestMatchers(HttpMethod.DELETE, "/api/v1/businesses/*/items/*/images/*").hasAuthority("SCOPE_item:update")
 
                 // Item Groups
                 .requestMatchers(HttpMethod.GET, "/api/v1/businesses/*/item-groups", "/api/v1/businesses/*/item-groups/*").hasAuthority("SCOPE_item-group:read")

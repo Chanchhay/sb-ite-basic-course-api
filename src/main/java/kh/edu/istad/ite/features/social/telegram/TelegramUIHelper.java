@@ -12,6 +12,7 @@ import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.Map;
 import java.util.Optional;
 
 @Component
@@ -66,11 +67,67 @@ public class TelegramUIHelper {
             sb.append("_").append(item.getDescription().trim()).append("_\n");
         }
 
+        sb.append(renderAttributes(item));
+
         sb.append(divider());
         sb.append("👇 *សូមជ្រើសរើសជម្រើសខាងក្រោម៖*");
         return sb.toString();
     }
 
+
+    private String renderAttributes(Item item) {
+        Map<String, Object> attributes = item.getAttributes();
+
+        if (attributes == null || attributes.isEmpty()) {
+            return "";
+        }
+
+        StringBuilder sb = new StringBuilder();
+
+        for (Map.Entry<String, Object> entry : attributes.entrySet()) {
+            String value = renderAttributeValue(entry.getValue());
+
+            if (!StringUtils.hasText(entry.getKey()) || !StringUtils.hasText(value)) {
+                continue;
+            }
+
+            sb.append("• ").append(escape(entry.getKey())).append(" ៖ `").append(value).append("`\n");
+        }
+
+        return sb.isEmpty() ? "" : "\n\uD83C\uDFF7\uFE0F *លក្ខណៈពិសេស៖*\n" + sb;
+    }
+
+    private String renderAttributeValue(Object value) {
+        if (value == null) {
+            return "";
+        }
+
+        if (value instanceof Iterable<?> many) {
+            StringBuilder joined = new StringBuilder();
+
+            for (Object element : many) {
+                if (element == null || element instanceof Map || element instanceof Iterable) {
+                    continue;
+                }
+                if (!joined.isEmpty()) {
+                    joined.append(", ");
+                }
+                joined.append(String.valueOf(element).trim());
+            }
+
+            return escape(joined.toString());
+        }
+
+        if (value instanceof Map) {
+            return "";
+        }
+
+        return escape(String.valueOf(value).trim());
+    }
+
+    private String escape(String value) {
+        return value == null ? "" : value.replace("`", "'").replace("*", "").replace("_", " ");
+    }
 
     private String stockBadge(Optional<BigDecimal> availableQuantity) {
         if (availableQuantity.isEmpty()) {

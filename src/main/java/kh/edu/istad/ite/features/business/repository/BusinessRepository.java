@@ -2,6 +2,8 @@ package kh.edu.istad.ite.features.business.repository;
 
 import kh.edu.istad.ite.features.business.entity.Business;
 import kh.edu.istad.ite.shared.enums.BusinessOwnerStatus;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Query;
@@ -41,6 +43,39 @@ public interface BusinessRepository extends JpaRepository<Business, UUID>, JpaSp
             + "from businesses where created_date >= :since group by month order by month",
             nativeQuery = true)
     List<MonthlyCountProjection> countGroupedByMonth(@Param("since") LocalDateTime since);
+
+    @Query(
+            value = """
+                    SELECT b FROM Business b
+                    WHERE b.isListing = true
+                      AND b.isEnabled = true
+                      AND b.isClosed = false
+                      AND b.status = kh.edu.istad.ite.shared.enums.BusinessOwnerStatus.ACTIVE
+                      AND NOT EXISTS (
+                          SELECT f FROM BusinessFeatureFlag f
+                          WHERE f.business = b
+                            AND f.feature = kh.edu.istad.ite.shared.enums.BusinessFeature.STOREFRONT
+                            AND f.enabled = false
+                      )
+                      AND (:categoryId IS NULL OR b.businessCategory.id = :categoryId)
+                    ORDER BY COALESCE((SELECT SUM(s.itemCount) FROM Sale s WHERE s.business = b), 0) DESC, b.createdDate DESC
+                    """,
+            countQuery = """
+                    SELECT COUNT(b) FROM Business b
+                    WHERE b.isListing = true
+                      AND b.isEnabled = true
+                      AND b.isClosed = false
+                      AND b.status = kh.edu.istad.ite.shared.enums.BusinessOwnerStatus.ACTIVE
+                      AND NOT EXISTS (
+                          SELECT f FROM BusinessFeatureFlag f
+                          WHERE f.business = b
+                            AND f.feature = kh.edu.istad.ite.shared.enums.BusinessFeature.STOREFRONT
+                            AND f.enabled = false
+                      )
+                      AND (:categoryId IS NULL OR b.businessCategory.id = :categoryId)
+                    """
+    )
+    Page<Business> findRecommendedStores(@Param("categoryId") UUID categoryId, Pageable pageable);
 
     interface CategoryCountProjection {
         String getCategoryName();

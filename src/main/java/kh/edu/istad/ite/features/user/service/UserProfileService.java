@@ -13,9 +13,8 @@ public interface UserProfileService {
     UserProfileResponse me();
 
     UserProfileResponse updateProfile(UpdateUserProfileRequest updateUserProfileRequest);
-
     void removeProfilePicture();
 
-    List<UserProfile> findByBusinessIdAndUserStatus(UUID businessId, RecordStatus status);
+    List<UserProfile> findByBusinessIdAndStaffStatus(UUID businessId, RecordStatus status);
 
 }

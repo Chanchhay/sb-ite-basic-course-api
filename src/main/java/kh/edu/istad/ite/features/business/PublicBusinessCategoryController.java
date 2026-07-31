@@ -15,14 +15,14 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 @RestController
-@RequestMapping("/api/v1/public/business-categories")
+@RequestMapping({"/api/v1/public/business-categories", "/api/v1/business-categories"})
 @RequiredArgsConstructor
 public class PublicBusinessCategoryController {
 
     private final BusinessCategoryRepository businessCategoryRepository;
     private final BusinessMapper businessMapper;
 
-    @GetMapping
+    @GetMapping({"", "/tree"})
     public List<BusinessCategoryResponse> getBusinessCategories() {
         Map<UUID, List<BusinessCategory>> subCategoriesByParentId =
                 businessCategoryRepository.findByParentCategoryIsNotNullOrderByNameAsc()
