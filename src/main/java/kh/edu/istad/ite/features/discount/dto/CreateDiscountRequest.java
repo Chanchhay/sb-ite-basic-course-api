@@ -39,14 +39,17 @@ public record CreateDiscountRequest(
         @DecimalMin(value = "0.0", message = "maxDiscountAmount cannot be negative")
         @Digits(integer = 10, fraction = 2)
         BigDecimal maxDiscountAmount,
-        @NotBlank(message = "requiresCoupon cannot be empty")
-        Boolean requiresCoupon,
-        @NotBlank
+        @NotNull(message = "startsAt is required")
         LocalDateTime startsAt,
-        @NotBlank
+
+        @NotNull(message = "endsAt is required")
         LocalDateTime endsAt,
-        @NotBlank
-        List<String> selectedDays ,
+
+        @NotNull(message = "requiresCoupon is required")
+        Boolean requiresCoupon,
+
+        @NotEmpty(message = "selectedDays cannot be empty")
+        List<@NotBlank String> selectedDays,
         @NotBlank(message = "Input like ACTIVE || INACTIVE")
         String status
 ) {

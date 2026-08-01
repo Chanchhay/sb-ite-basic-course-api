@@ -60,4 +60,13 @@ public interface OrderRepository extends JpaRepository<Order, UUID> {
             @Param("customerIds") Collection<UUID> customerIds,
             @Param("channel") OrderChannel channel,
             @Param("status") OrderStatus status);
+
+    @Query("""
+            SELECT DISTINCT o FROM Order o
+            JOIN FETCH o.business
+            LEFT JOIN FETCH o.items i
+            WHERE o.customer.id IN :customerIds
+            ORDER BY o.createdDate DESC
+            """)
+    List<Order> findAllOrdersForShopper(@Param("customerIds") Collection<UUID> customerIds);
 }

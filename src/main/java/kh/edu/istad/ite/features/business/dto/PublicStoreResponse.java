@@ -14,6 +14,8 @@ public record PublicStoreResponse(
         BusinessSubCategoryResponse category,
         Boolean isClosed,
         Boolean isOpen,
-        String discountLabel
+        String discountLabel,
+        String openTime,
+        String closeTime
 ) {
 }

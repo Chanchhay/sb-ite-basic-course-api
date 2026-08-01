@@ -6,6 +6,7 @@ import kh.edu.istad.ite.features.business.repository.BusinessRepository;
 import kh.edu.istad.ite.features.cart.dto.ActiveCheckoutResponse;
 import kh.edu.istad.ite.features.cart.dto.StorefrontCheckoutRequest;
 import kh.edu.istad.ite.features.cart.dto.StorefrontCheckoutResponse;
+import kh.edu.istad.ite.features.cart.dto.StorefrontOrderResponse;
 import kh.edu.istad.ite.features.cart.dto.StorefrontPaymentStatusResponse;
 import kh.edu.istad.ite.features.cart.entity.Cart;
 import kh.edu.istad.ite.features.cart.entity.CartItem;
@@ -626,5 +627,63 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
         String datePart = LocalDateTime.now().format(INVOICE_DATE);
         long sequence = orderRepository.countByBusinessId(businessId) + 1;
         return "INV-" + datePart + "-" + String.format("%05d", sequence);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<StorefrontOrderResponse> getMyOrders() {
+        GlobalCustomer shopper = currentShopper();
+        List<UUID> customerIds = customerIdsOf(shopper);
+        List<Order> orders = orderRepository.findAllOrdersForShopper(customerIds);
+        return orders.stream().map(this::toStorefrontOrderResponse).toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public StorefrontOrderResponse getMyOrderReceipt(UUID orderId) {
+        GlobalCustomer shopper = currentShopper();
+        Order order = requireOwnOrder(shopper, orderId);
+        return toStorefrontOrderResponse(order);
+    }
+
+    private StorefrontOrderResponse toStorefrontOrderResponse(Order order) {
+        Business b = order.getBusiness();
+        Customer c = order.getCustomer();
+        GlobalCustomer gc = c != null ? c.getGlobalCustomer() : null;
+
+        List<StorefrontOrderResponse.StorefrontOrderItemResponse> items = order.getItems().stream()
+                .map(item -> new StorefrontOrderResponse.StorefrontOrderItemResponse(
+                        item.getItem() != null ? item.getItem().getId() : null,
+                        item.getItemName(),
+                        item.getQuantity() != null ? item.getQuantity() : 1,
+                        item.getUnitPrice() != null ? item.getUnitPrice() : BigDecimal.ZERO,
+                        item.getLineTotal() != null ? item.getLineTotal() : BigDecimal.ZERO
+                ))
+                .toList();
+
+        return new StorefrontOrderResponse(
+                order.getId(),
+                order.getInvoiceNumber(),
+                b.getId(),
+                b.getDisplayName(),
+                b.getSlug(),
+                b.getLogo(),
+                b.getAddress(),
+                b.getPhoneNumber(),
+                gc != null ? gc.getFullName() : null,
+                gc != null ? gc.getEmail() : null,
+                gc != null ? gc.getPhoneNumber() : null,
+                order.getStatus(),
+                order.getChannel() != null ? order.getChannel().name() : "WEB",
+                "Bakong KHQR",
+                order.getSubtotal() != null ? order.getSubtotal() : BigDecimal.ZERO,
+                order.getDiscountAmount() != null ? order.getDiscountAmount() : BigDecimal.ZERO,
+                order.getTotal() != null ? order.getTotal() : BigDecimal.ZERO,
+                order.getCurrency() != null ? order.getCurrency() : "USD",
+                order.getItems().stream().mapToInt(i -> i.getQuantity() != null ? i.getQuantity() : 1).sum(),
+                order.getCreatedDate(),
+                OrderStatus.PAID.equals(order.getStatus()) ? order.getLastModifiedDate() : null,
+                items
+        );
     }
 }

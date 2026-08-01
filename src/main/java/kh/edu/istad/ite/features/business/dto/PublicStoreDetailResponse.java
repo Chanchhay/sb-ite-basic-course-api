@@ -23,6 +23,8 @@ public record PublicStoreDetailResponse(
         List<Map<String, String>> socialLinks,
         Boolean isClosed,
         Boolean isOpen,
-        String discountLabel
+        String discountLabel,
+        String openTime,
+        String closeTime
 ) {
 }

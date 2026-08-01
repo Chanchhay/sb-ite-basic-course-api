@@ -129,6 +129,12 @@ public class BusinessServiceImpl implements BusinessService {
         if (request.socialLinks() != null) {
             business.setSocialLinks(toSocialLinkMaps(request.socialLinks()));
         }
+        if (request.openTime() != null) {
+            business.setOpenTime(TextHelper.trimToNull(request.openTime()));
+        }
+        if (request.closeTime() != null) {
+            business.setCloseTime(TextHelper.trimToNull(request.closeTime()));
+        }
 
         return businessMapper.toResponse(businessRepository.save(business));
     }

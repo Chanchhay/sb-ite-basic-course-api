@@ -45,7 +45,9 @@ public class BusinessMapper {
                 toSubCategoryResponse(business.getBusinessCategory()),
                 business.getBaseCurrency(),
                 business.getDisplayCurrency(),
-                business.getSocialLinks()
+                business.getSocialLinks(),
+                business.getOpenTime(),
+                business.getCloseTime()
         );
     }
 
