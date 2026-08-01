@@ -27,6 +27,7 @@ import kh.edu.istad.ite.features.payment.repository.PaymentQrCodeRepository;
 import kh.edu.istad.ite.features.payment.service.ReceiptService;
 import kh.edu.istad.ite.features.social.telegram.TelegramUIHelper;
 import kh.edu.istad.ite.shared.enums.BusinessFeature;
+import kh.edu.istad.ite.features.social.event.TelegramQrGeneratedEvent;
 import kh.edu.istad.ite.shared.enums.CartStatus;
 import kh.edu.istad.ite.shared.enums.OrderChannel;
 import kh.edu.istad.ite.shared.enums.OrderStatus;
@@ -36,6 +37,7 @@ import kh.edu.istad.ite.shared.enums.ReceiptType;
 import kh.edu.istad.ite.shared.helper.BusinessHelper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -75,6 +77,7 @@ public class TelegramCheckoutServiceImpl implements TelegramCheckoutService {
     private final ReceiptService receiptService;
     private final TelegramStockHelper stockHelper;
     private final TelegramUIHelper uiHelper;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Override
     @Transactional
@@ -182,6 +185,7 @@ public class TelegramCheckoutServiceImpl implements TelegramCheckoutService {
         qrCode.setCreatedAt(LocalDateTime.now());
 
         paymentQrCodeRepository.save(qrCode);
+        eventPublisher.publishEvent(new TelegramQrGeneratedEvent(qrCode.getId()));
 
         byte[] png = qrImageRenderer.toPngBytes(result.qr(), QR_IMAGE_SIZE);
 

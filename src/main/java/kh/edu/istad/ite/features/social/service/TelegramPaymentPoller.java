@@ -7,6 +7,7 @@ import kh.edu.istad.ite.features.payment.entity.PaymentQrCode;
 import kh.edu.istad.ite.features.payment.repository.PaymentQrCodeRepository;
 import kh.edu.istad.ite.features.social.entity.BusinessTelegramBot;
 import kh.edu.istad.ite.features.social.repository.BusinessTelegramBotRepository;
+import kh.edu.istad.ite.features.social.event.TelegramQrGeneratedEvent;
 import kh.edu.istad.ite.features.social.telegram.InlineKeyboardButton;
 import kh.edu.istad.ite.features.social.telegram.TelegramBotClient;
 import kh.edu.istad.ite.shared.enums.ChannelType;
@@ -15,12 +16,15 @@ import kh.edu.istad.ite.shared.enums.OrderStatus;
 import kh.edu.istad.ite.shared.enums.QrStatus;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 
 @Component
@@ -35,10 +39,37 @@ public class TelegramPaymentPoller {
     private final TelegramBotClient telegramBotClient;
     private final CredentialCipher credentialCipher;
 
+    private final AtomicBoolean hasPendingQr = new AtomicBoolean(false);
+
+    @EventListener(ApplicationReadyEvent.class)
+    public void onApplicationReady() {
+        try {
+            List<PaymentQrCode> outstanding = paymentQrCodeRepository.findOutstandingByChannel(
+                    QrStatus.PENDING, OrderStatus.PENDING, OrderChannel.TELEGRAM);
+            if (!outstanding.isEmpty()) {
+                hasPendingQr.set(true);
+                log.info("Startup check found {} outstanding Telegram payment(s), active polling enabled", outstanding.size());
+            }
+        } catch (Exception exception) {
+            log.warn("Could not check outstanding Telegram QR codes on startup: {}", exception.getMessage());
+        }
+    }
+
+    @EventListener
+    public void onTelegramQrGenerated(TelegramQrGeneratedEvent event) {
+        if (!hasPendingQr.getAndSet(true)) {
+            log.info("Telegram QR code generated: enabling payment polling");
+        }
+    }
+
     @Scheduled(
             initialDelayString = "${app.telegram.payment-poll-initial-delay-ms:10000}",
             fixedDelayString = "${app.telegram.payment-poll-interval-ms:5000}")
     public void pollOutstandingPayments() {
+        if (!hasPendingQr.get()) {
+            return;
+        }
+
         List<PaymentQrCode> outstanding;
 
         try {
@@ -50,6 +81,9 @@ public class TelegramPaymentPoller {
         }
 
         if (outstanding.isEmpty()) {
+            if (hasPendingQr.compareAndSet(true, false)) {
+                log.info("No outstanding Telegram QR codes remaining: pausing payment polling");
+            }
             return;
         }
 

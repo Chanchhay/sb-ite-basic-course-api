@@ -61,8 +61,7 @@ public class UserProfileServiceImpl implements UserProfileService {
         );
         userResource.update(userRepresentation);
 
-        UserProfile userProfile = userProfileRepository.findById(userUuid)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User profile has not been found"));
+        UserProfile userProfile = getOrCreateUserProfile(userUuid);
         userProfileMapper.mapUpdateUserProfileRequestToUserProfile(
                 updateUserProfileRequest,
                 userProfile
@@ -93,8 +92,7 @@ public class UserProfileServiceImpl implements UserProfileService {
         String userId = SecurityUtils.extractUserId();
         UUID userUuid = UUID.fromString(userId);
 
-        UserProfile userProfile = userProfileRepository.findById(userUuid)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User profile has not been found"));
+        UserProfile userProfile = getOrCreateUserProfile(userUuid);
 
         String oldKey = userProfile.getProfilePicture();
         if (oldKey != null && !oldKey.isBlank() && !oldKey.startsWith("http://") && !oldKey.startsWith("https://")) {
@@ -119,10 +117,18 @@ public class UserProfileServiceImpl implements UserProfileService {
                 .users()
                 .get(userId);
         UserRepresentation keycloakUser = userResource.toRepresentation();
-        UserProfile userProfile = userProfileRepository.findById(userUuid)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User profile has not been found"));
+        UserProfile userProfile = getOrCreateUserProfile(userUuid);
 
         return userProfileMapper.toUserProfileResponse(keycloakUser, userProfile, resolveRole(userResource));
+    }
+
+    private UserProfile getOrCreateUserProfile(UUID userUuid) {
+        return userProfileRepository.findById(userUuid)
+                .orElseGet(() -> {
+                    UserProfile newProfile = new UserProfile();
+                    newProfile.setUserId(userUuid);
+                    return userProfileRepository.save(newProfile);
+                });
     }
 
     private String resolveRole(UserResource userResource) {

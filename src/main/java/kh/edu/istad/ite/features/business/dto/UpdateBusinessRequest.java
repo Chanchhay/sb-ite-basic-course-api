@@ -45,6 +45,12 @@ public record UpdateBusinessRequest(
 
         @Valid
         @Size(max = 20, message = "socialLinks must contain at most 20 links")
-        List<SocialLinkRequest> socialLinks
+        List<SocialLinkRequest> socialLinks,
+
+        @Size(max = 30, message = "openTime must be at most 30 characters")
+        String openTime,
+
+        @Size(max = 30, message = "closeTime must be at most 30 characters")
+        String closeTime
 ) {
 }

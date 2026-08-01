@@ -29,6 +29,8 @@ public record BusinessResponse(
         BusinessSubCategoryResponse category,
         String baseCurrency,
         String displayCurrency,
-        List<Map<String, String>> socialLinks
+        List<Map<String, String>> socialLinks,
+        String openTime,
+        String closeTime
 ) {
 }

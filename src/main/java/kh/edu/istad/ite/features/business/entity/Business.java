@@ -83,6 +83,12 @@ public class Business extends BasedAuditingEntity {
     @Column(name = "is_closed", nullable = false)
     private Boolean isClosed;
 
+    @Column(name = "open_time", length = 30)
+    private String openTime;
+
+    @Column(name = "close_time", length = 30)
+    private String closeTime;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(
             name = "category_id",

@@ -44,7 +44,7 @@ public interface BusinessRepository extends JpaRepository<Business, UUID>, JpaSp
             nativeQuery = true)
     List<MonthlyCountProjection> countGroupedByMonth(@Param("since") LocalDateTime since);
 
-    @Query(
+        @Query(
             value = """
                     SELECT b FROM Business b
                     WHERE b.isListing = true
@@ -76,6 +76,7 @@ public interface BusinessRepository extends JpaRepository<Business, UUID>, JpaSp
                     """
     )
     Page<Business> findRecommendedStores(@Param("categoryId") UUID categoryId, Pageable pageable);
+
 
     interface CategoryCountProjection {
         String getCategoryName();
