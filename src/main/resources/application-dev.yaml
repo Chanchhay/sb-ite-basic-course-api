@@ -40,6 +40,13 @@ keycloak:
     send-verification-email: false
 
 app:
+  cors:
+    allowed-origin-patterns:
+      - "http://localhost:[*]"
+      - "http://127.0.0.1:[*]"
+      - "https://www.fluxibiz.store"
+      - "https://*.fluxibiz.store"
+      - "https://fluxibiz.store"
   storefront:
     base-domain: ${BASE_STOREFRONT_DOMAIN}
     protocol: https
