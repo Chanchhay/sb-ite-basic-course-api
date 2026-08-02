@@ -9,7 +9,7 @@ import kh.edu.istad.ite.features.register.dto.response.RegisterSessionResponse;
 import java.util.List;
 
 public interface RegisterSessionService {
-    RegisterSessionResponse openSession(Long registerId, OpenSessionRequest request, String cashierId);
+    RegisterSessionResponse openSession(OpenSessionRequest request, String userId);
     RegisterSessionResponse closeSession(Long sessionId, CloseSessionRequest request);
     RegisterSessionResponse getSessionSummary(Long sessionId);
     CashMovementResponse addCashMovement(Long sessionId, CashMovementRequest request);

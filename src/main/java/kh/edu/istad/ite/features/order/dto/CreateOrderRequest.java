@@ -16,7 +16,6 @@ public record CreateOrderRequest(
 
         UUID customerId,
 
-        @NotEmpty
         @Valid
         List<CreateOrderItemRequest> items,
 

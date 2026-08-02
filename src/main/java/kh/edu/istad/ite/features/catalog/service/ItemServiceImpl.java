@@ -21,6 +21,12 @@ import kh.edu.istad.ite.features.catalog.repository.UnitRepository;
 import kh.edu.istad.ite.features.minio.MinioService;
 import kh.edu.istad.ite.shared.enums.ItemStatus;
 import kh.edu.istad.ite.shared.helper.BusinessHelper;
+
+import kh.edu.istad.ite.config.filter.RequestDto;
+import kh.edu.istad.ite.config.specification.FilterSpecification;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+
 import kh.edu.istad.ite.shared.helper.SlugHelper;
 import kh.edu.istad.ite.shared.helper.TextHelper;
 import lombok.RequiredArgsConstructor;
@@ -55,6 +61,8 @@ public class ItemServiceImpl implements ItemService {
     private final ItemRepository itemRepository;
     private final ItemMapper itemMapper;
     private final MinioService minioService;
+
+    private final FilterSpecification<Item> filterSpecification;
 
     @Override
     @Transactional
@@ -409,4 +417,19 @@ public class ItemServiceImpl implements ItemService {
                 )
         );
     }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Page<ItemResponse> filterItems(UUID businessId, RequestDto requestDto, Pageable pageable) {
+        businessHelper.findAccessibleBusiness(businessId);
+        
+        org.springframework.data.jpa.domain.Specification<Item> spec = filterSpecification.getSearchSpecificationDynamic(
+                requestDto.getSearchRequestDto(), requestDto.getGlobalOperator());
+                
+        org.springframework.data.jpa.domain.Specification<Item> businessSpec = (root, query, cb) -> 
+                cb.equal(root.get("business").get("id"), businessId);
+                
+        return itemRepository.findAll(businessSpec.and(spec), pageable).map(itemMapper::toResponse);
+    }
+
 }

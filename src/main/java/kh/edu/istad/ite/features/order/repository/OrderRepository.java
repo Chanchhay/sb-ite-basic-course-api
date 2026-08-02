@@ -14,11 +14,14 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
-public interface OrderRepository extends JpaRepository<Order, UUID> {
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+
+public interface OrderRepository extends JpaRepository<Order, UUID>, JpaSpecificationExecutor<Order> {
 
     Optional<Order> findByIdAndBusinessId(UUID id, UUID businessId);
-
     long countByBusinessId(UUID businessId);
+
+    long countByCashierIdAndCreatedDateBetween(UUID cashierId, java.time.LocalDateTime start, java.time.LocalDateTime end);
     @Query("""
             SELECT o FROM Order o
             WHERE o.business.id = :businessId

@@ -33,6 +33,12 @@ import kh.edu.istad.ite.shared.enums.QrStatus;
 import kh.edu.istad.ite.shared.enums.ReceiptType;
 import kh.edu.istad.ite.shared.helper.AuthHelper;
 import kh.edu.istad.ite.shared.helper.BusinessHelper;
+
+import kh.edu.istad.ite.config.filter.RequestDto;
+import kh.edu.istad.ite.config.specification.FilterSpecification;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -70,6 +76,8 @@ public class OrderServiceImpl implements OrderService {
     private final SaleRepository saleRepository;
     private final StockEntryService stockEntryService;
     private final ReceiptService receiptService;
+    private final FilterSpecification<Order> filterSpecification;
+    private final kh.edu.istad.ite.features.register.repository.RegisterSessionRepository registerSessionRepository;
 
     @Override
     @Transactional
@@ -95,9 +103,29 @@ public class OrderServiceImpl implements OrderService {
 
         BigDecimal subtotal = BigDecimal.ZERO;
 
-        for (CreateOrderItemRequest itemRequest : request.items()) {
-            OrderItem item = buildItem(businessId, itemRequest);
-            order.addItem(item);
+        int maxLineNumber = 0;
+        if (request.items() != null) {
+            for (CreateOrderItemRequest itemRequest : request.items()) {
+                java.util.Optional<OrderItem> existingOpt = order.getItems().stream()
+                        .filter(i -> i.getItem().getId().equals(itemRequest.itemId()) &&
+                                (i.getVariant() == null ? itemRequest.variantId() == null : i.getVariant().getId().equals(itemRequest.variantId())))
+                        .findFirst();
+
+                if (existingOpt.isPresent()) {
+                    OrderItem existing = existingOpt.get();
+                    existing.setQuantity(existing.getQuantity() + itemRequest.quantity());
+                    BigDecimal itemDiscount = existing.getDiscountAmount() != null ? existing.getDiscountAmount() : BigDecimal.ZERO;
+                    existing.setLineTotal(existing.getUnitPrice().multiply(BigDecimal.valueOf(existing.getQuantity())).subtract(itemDiscount));
+                } else {
+                    OrderItem item = buildItem(businessId, itemRequest);
+                    maxLineNumber++;
+                    item.setLineNumber(maxLineNumber);
+                    order.addItem(item);
+                }
+            }
+        }
+        
+        for (OrderItem item : order.getItems()) {
             subtotal = subtotal.add(item.getLineTotal());
         }
 
@@ -200,6 +228,16 @@ public class OrderServiceImpl implements OrderService {
         Order order = findOrder(businessId, orderId);
 
         requirePending(order);
+
+        if (kh.edu.istad.ite.shared.enums.OrderChannel.POS.equals(order.getChannel())) {
+            boolean hasOpenSession = registerSessionRepository.findByUserIdAndStatus(
+                    AuthHelper.currentUserId().toString(), 
+                    kh.edu.istad.ite.shared.enums.SessionStatus.OPEN
+            ).isPresent();
+            if (!hasOpenSession) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "No open register session found for current cashier");
+            }
+        }
 
         int scale = scaleFor(order);
         BigDecimal total = order.getTotal();
@@ -463,4 +501,141 @@ public class OrderServiceImpl implements OrderService {
         long sequence = orderRepository.countByBusinessId(businessId) + 1;
         return "INV-" + datePart + "-" + String.format("%05d", sequence);
     }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Page<OrderResponse> filterOrders(UUID businessId, RequestDto requestDto, Pageable pageable) {
+        businessHelper.findAccessibleBusiness(businessId);
+        
+        // Add businessId filter implicitly
+        kh.edu.istad.ite.config.filter.SearchRequestDto bizFilter = new kh.edu.istad.ite.config.filter.SearchRequestDto();
+        bizFilter.setColumn("business.id"); // Wait, FilterSpecification handles nested? No, "business" usually requires join or just "business.id" if it maps to simple property, let's use join.
+        bizFilter.setOperation(kh.edu.istad.ite.config.filter.SearchRequestDto.Operation.JOIN);
+        bizFilter.setJoinTable("business");
+        bizFilter.setColumn("id");
+        bizFilter.setValue(businessId.toString()); // Wait, FilterSpecification maps string? FilterSpecification uses equal(..., requestDto.getValue()). Value is string. UUID needs to be converted if it doesn't match type.
+        // Actually, just fetching by Spec might be tricky if we don't control the UUID type conversion in generic spec.
+        // I will use a custom specification combined with FilterSpecification.
+        
+        org.springframework.data.jpa.domain.Specification<Order> spec = filterSpecification.getSearchSpecificationDynamic(
+                requestDto.getSearchRequestDto(), requestDto.getGlobalOperator());
+                
+        org.springframework.data.jpa.domain.Specification<Order> businessSpec = (root, query, cb) -> 
+                cb.equal(root.get("business").get("id"), businessId);
+                
+        return orderRepository.findAll(businessSpec.and(spec), pageable).map(orderMapper::toResponse);
+    }
+
+    @Override
+    @Transactional
+    public OrderResponse addOrderItem(UUID businessId, UUID orderId, AddOrderItemRequest request) {
+        Order order = validateOrderModification(businessId, orderId);
+
+        java.util.Optional<OrderItem> existingOpt = order.getItems().stream()
+                .filter(i -> i.getItem().getId().equals(request.itemId()) &&
+                        (i.getVariant() == null ? request.variantId() == null : i.getVariant().getId().equals(request.variantId())))
+                .findFirst();
+
+        if (existingOpt.isPresent()) {
+            OrderItem existing = existingOpt.get();
+            existing.setQuantity(existing.getQuantity() + request.quantity());
+            BigDecimal itemDiscount = existing.getDiscountAmount() != null ? existing.getDiscountAmount() : BigDecimal.ZERO;
+            if (request.discountAmount() != null) {
+                itemDiscount = itemDiscount.add(request.discountAmount());
+                existing.setDiscountAmount(itemDiscount);
+            }
+            existing.setLineTotal(existing.getUnitPrice().multiply(BigDecimal.valueOf(existing.getQuantity())).subtract(itemDiscount));
+        } else {
+            CreateOrderItemRequest createReq = new CreateOrderItemRequest(
+                    request.itemId(), request.variantId(), request.quantity());
+            
+            OrderItem item = buildItem(businessId, createReq);
+            if (request.discountAmount() != null) {
+                item.setDiscountAmount(request.discountAmount());
+                item.setLineTotal(item.getUnitPrice().multiply(BigDecimal.valueOf(item.getQuantity())).subtract(request.discountAmount()));
+            }
+            int maxLine = order.getItems().stream()
+                    .mapToInt(i -> i.getLineNumber() == null ? 0 : i.getLineNumber())
+                    .max()
+                    .orElse(0);
+            item.setLineNumber(maxLine + 1);
+            order.addItem(item);
+        }
+        
+        recalculateOrderTotals(order);
+        return orderMapper.toResponse(orderRepository.save(order));
+    }
+
+    @Override
+    @Transactional
+    public OrderResponse updateOrderItem(UUID businessId, UUID orderId, UUID orderItemId, UpdateOrderItemRequest request) {
+        Order order = validateOrderModification(businessId, orderId);
+        
+        OrderItem item = order.getItems().stream()
+                .filter(i -> i.getId().equals(orderItemId))
+                .findFirst()
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Order item not found"));
+                
+        if (request.quantity() != null) {
+            item.setQuantity(request.quantity());
+        }
+        
+        if (request.discountAmount() != null) {
+            item.setDiscountAmount(request.discountAmount());
+        }
+        
+        // Recalculate line total
+        BigDecimal discount = item.getDiscountAmount() != null ? item.getDiscountAmount() : BigDecimal.ZERO;
+        item.setLineTotal(item.getUnitPrice().multiply(BigDecimal.valueOf(item.getQuantity())).subtract(discount));
+        
+        recalculateOrderTotals(order);
+        return orderMapper.toResponse(orderRepository.save(order));
+    }
+
+    @Override
+    @Transactional
+    public OrderResponse removeOrderItem(UUID businessId, UUID orderId, UUID orderItemId) {
+        Order order = validateOrderModification(businessId, orderId);
+        
+        boolean removed = order.getItems().removeIf(i -> i.getId().equals(orderItemId));
+        if (!removed) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Order item not found");
+        }
+        
+        recalculateOrderTotals(order);
+        return orderMapper.toResponse(orderRepository.save(order));
+    }
+    
+    @Override
+    @Transactional
+    public OrderResponse updateOrderNote(UUID businessId, UUID orderId, UpdateOrderNoteRequest request) {
+        Order order = validateOrderModification(businessId, orderId);
+        order.setNote(request.note());
+        return orderMapper.toResponse(orderRepository.save(order));
+    }
+    
+    private Order validateOrderModification(UUID businessId, UUID orderId) {
+        Order order = findOrder(businessId, orderId);
+        if (OrderStatus.PAID.equals(order.getStatus()) || OrderStatus.CANCELLED.equals(order.getStatus())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Cannot modify an order that is already paid or cancelled");
+        }
+        return order;
+    }
+    
+    private void recalculateOrderTotals(Order order) {
+        BigDecimal subtotal = BigDecimal.ZERO;
+        for (OrderItem item : order.getItems()) {
+            subtotal = subtotal.add(item.getLineTotal());
+        }
+        
+        BigDecimal discount = order.getDiscountAmount() == null ? BigDecimal.ZERO : order.getDiscountAmount();
+        if (discount.compareTo(subtotal) > 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Discount cannot exceed the order subtotal");
+        }
+        
+        int scale = CURRENCY_KHR.equalsIgnoreCase(order.getCurrency()) ? 0 : 2;
+        order.setSubtotal(subtotal.setScale(scale, RoundingMode.HALF_UP));
+        order.setTotal(subtotal.subtract(discount).setScale(scale, RoundingMode.HALF_UP));
+    }
+
 }

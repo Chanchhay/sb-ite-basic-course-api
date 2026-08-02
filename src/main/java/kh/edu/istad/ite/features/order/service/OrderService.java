@@ -18,4 +18,12 @@ public interface OrderService {
     PaymentStatusResponse checkPaymentStatus(UUID businessId, UUID orderId);
 
     OrderResponse cancelOrder(UUID businessId, UUID orderId);
+
+    OrderResponse addOrderItem(UUID businessId, UUID orderId, AddOrderItemRequest request);
+    OrderResponse updateOrderItem(UUID businessId, UUID orderId, UUID orderItemId, UpdateOrderItemRequest request);
+    OrderResponse removeOrderItem(UUID businessId, UUID orderId, UUID orderItemId);
+    
+    OrderResponse updateOrderNote(UUID businessId, UUID orderId, UpdateOrderNoteRequest request);
+    
+    org.springframework.data.domain.Page<OrderResponse> filterOrders(UUID businessId, kh.edu.istad.ite.config.filter.RequestDto requestDto, org.springframework.data.domain.Pageable pageable);
 }
