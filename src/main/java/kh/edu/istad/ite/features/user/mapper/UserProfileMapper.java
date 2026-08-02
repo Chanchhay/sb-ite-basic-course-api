@@ -2,7 +2,6 @@ package kh.edu.istad.ite.features.user.mapper;
 
 import kh.edu.istad.ite.features.user.dto.UpdateUserProfileRequest;
 import kh.edu.istad.ite.features.user.dto.UserProfileResponse;
-import kh.edu.istad.ite.features.user.dto.StaffResponse;
 import kh.edu.istad.ite.features.user.entity.UserProfile;
 import org.keycloak.representations.idm.UserRepresentation;
 import org.mapstruct.*;
@@ -74,17 +73,6 @@ public abstract class UserProfileMapper {
                 .profilePicture(profilePictureUrl)
                 .build();
     }
-
-    @Mapping(target = "id", source = "userProfile.userId")
-    @Mapping(target = "username", source = "userRepresentation.username")
-    @Mapping(target = "email", source = "userRepresentation.email")
-    @Mapping(target = "firstName", source = "userRepresentation.firstName")
-    @Mapping(target = "lastName", source = "userRepresentation.lastName")
-    @Mapping(target = "phoneNumber", source = "userProfile.phoneNumber")
-    @Mapping(target = "gender", source = "userProfile.gender")
-    @Mapping(target = "status", source = "userProfile.userStatus")
-    @Mapping(target = "roleId", source = "roleId")
-    public abstract StaffResponse toStaffResponse(UserRepresentation userRepresentation, UserProfile userProfile, String roleId);
 
     private void putAttributeIfPresent(Map<String, List<String>> attributes, String name, String value) {
         if (value != null) {

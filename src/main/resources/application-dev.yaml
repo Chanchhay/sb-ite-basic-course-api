@@ -26,7 +26,7 @@ spring:
 
   datasource:
     driver-class-name: org.postgresql.Driver
-    url: jdbc:postgresql://${PGHOST:localhost}:${PGPORT:5432}/${PGDATABASE:fluxibix}
+    url: jdbc:postgresql://${PGHOST:localhost}:${PGPORT:1681}/${PGDATABASE:fluxibix}
     username: ${DB_USER}
     password: ${DB_PASS}
 
@@ -40,6 +40,13 @@ keycloak:
     send-verification-email: false
 
 app:
+  cors:
+    allowed-origin-patterns:
+      - "http://localhost:[*]"
+      - "http://127.0.0.1:[*]"
+      - "https://www.fluxibiz.store"
+      - "https://*.fluxibiz.store"
+      - "https://fluxibiz.store"
   storefront:
     base-domain: ${BASE_STOREFRONT_DOMAIN}
     protocol: https

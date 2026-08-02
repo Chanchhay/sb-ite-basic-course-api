@@ -24,10 +24,8 @@ public record ItemResponse(
         List<ItemImageResponse> images,
         String barcode,
         BigDecimal price,
-        BigDecimal compareAtPrice,
         ItemType itemType,
-        List<ItemAttributeResponse> attributes,
-        List<DescriptionBlockResponse> descriptionBlocks,
+        Map<String, Object> attributes,
         List<ItemVariantResponse> variants,
         Integer lowStockDefault,
         ItemStatus status

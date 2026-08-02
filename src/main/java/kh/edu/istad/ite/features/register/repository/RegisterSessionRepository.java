@@ -10,5 +10,5 @@ import java.util.Optional;
 @Repository
 public interface RegisterSessionRepository extends JpaRepository<RegisterSession, Long> {
     Optional<RegisterSession> findByRegisterIdAndStatus(Long registerId, SessionStatus status);
-    Optional<RegisterSession> findByCashierIdAndStatus(String cashierId, SessionStatus status);
+    Optional<RegisterSession> findByUserIdAndStatus(String userId, SessionStatus status);
 }

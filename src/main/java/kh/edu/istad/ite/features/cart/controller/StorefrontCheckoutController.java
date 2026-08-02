@@ -4,12 +4,14 @@ import jakarta.validation.Valid;
 import kh.edu.istad.ite.features.cart.dto.ActiveCheckoutResponse;
 import kh.edu.istad.ite.features.cart.dto.StorefrontCheckoutRequest;
 import kh.edu.istad.ite.features.cart.dto.StorefrontCheckoutResponse;
+import kh.edu.istad.ite.features.cart.dto.StorefrontOrderResponse;
 import kh.edu.istad.ite.features.cart.dto.StorefrontPaymentStatusResponse;
 import kh.edu.istad.ite.features.cart.service.StorefrontCheckoutService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
 import java.util.UUID;
 
 @RestController
@@ -40,5 +42,15 @@ public class StorefrontCheckoutController {
     @PatchMapping("/{orderId}/cancel")
     public StorefrontPaymentStatusResponse cancelCheckout(@PathVariable UUID orderId) {
         return checkoutService.cancelCheckout(orderId);
+    }
+
+    @GetMapping("/history")
+    public List<StorefrontOrderResponse> getMyOrders() {
+        return checkoutService.getMyOrders();
+    }
+
+    @GetMapping("/{orderId}/receipt")
+    public StorefrontOrderResponse getMyOrderReceipt(@PathVariable UUID orderId) {
+        return checkoutService.getMyOrderReceipt(orderId);
     }
 }

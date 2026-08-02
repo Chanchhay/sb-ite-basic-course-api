@@ -6,6 +6,7 @@ import lombok.Data;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.UUID;
 
 @Data
 @Builder
@@ -13,7 +14,10 @@ public class RegisterSessionResponse {
     private Long id;
     private Long registerId;
     private String registerName;
-    private String cashierId;
+    private String userId;
+    private String cashierName;
+    private UUID businessId;
+    private Integer orderCount;
     private Instant openedAt;
     private Instant closedAt;
     private BigDecimal openingBalance;

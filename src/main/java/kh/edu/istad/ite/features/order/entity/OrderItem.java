@@ -55,4 +55,7 @@ public class OrderItem {
 
     @Column(name = "line_total", nullable = false, precision = 14, scale = 2)
     private BigDecimal lineTotal = BigDecimal.ZERO;
+
+    @Column(name = "line_number")
+    private Integer lineNumber;
 }

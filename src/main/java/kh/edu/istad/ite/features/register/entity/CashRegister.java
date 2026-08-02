@@ -5,6 +5,8 @@ import kh.edu.istad.ite.config.audit.BasedAuditingEntity;
 import kh.edu.istad.ite.shared.enums.RegisterStatus;
 import lombok.*;
 
+import java.util.UUID;
+
 @Entity
 @Table(name = "cash_registers")
 @Getter
@@ -22,7 +24,7 @@ public class CashRegister extends BasedAuditingEntity {
     private String name;
 
     @Column(nullable = false)
-    private Long businessId;
+    private UUID businessId;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)

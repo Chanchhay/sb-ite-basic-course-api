@@ -23,15 +23,14 @@ public class RegisterSessionController {
 
     private final RegisterSessionService sessionService;
 
-    @PostMapping("/registers/{registerId}/sessions/open")
+    @PostMapping("/sessions/open")
     public ResponseEntity<RegisterSessionResponse> openSession(
-            @PathVariable Long registerId,
             @Valid @RequestBody OpenSessionRequest request) {
 
-        String cashierId = AuthHelper.currentUserId().toString();
+        String userId = AuthHelper.currentUserId().toString();
 
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(sessionService.openSession(registerId, request, cashierId));
+                .body(sessionService.openSession(request, userId));
     }
 
     @PostMapping("/sessions/{sessionId}/close")

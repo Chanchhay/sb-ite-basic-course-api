@@ -1,5 +1,9 @@
 package kh.edu.istad.ite.features.register.service.impl;
 
+import kh.edu.istad.ite.config.props.KeycloakAdminClientProps;
+import kh.edu.istad.ite.features.business.entity.Business;
+import kh.edu.istad.ite.features.business.repository.BusinessRepository;
+import kh.edu.istad.ite.features.order.repository.OrderRepository;
 import kh.edu.istad.ite.features.register.dto.request.CashMovementRequest;
 import kh.edu.istad.ite.features.register.dto.request.CloseSessionRequest;
 import kh.edu.istad.ite.features.register.dto.request.OpenSessionRequest;
@@ -10,11 +14,16 @@ import kh.edu.istad.ite.features.register.repository.CashMovementRepository;
 import kh.edu.istad.ite.features.register.repository.CashRegisterRepository;
 import kh.edu.istad.ite.features.register.repository.RegisterSessionRepository;
 import kh.edu.istad.ite.features.register.service.RegisterSessionService;
+import kh.edu.istad.ite.features.user.entity.UserProfile;
+import kh.edu.istad.ite.features.user.repository.UserProfileRepository;
 import kh.edu.istad.ite.shared.enums.CashMovementType;
 import kh.edu.istad.ite.shared.enums.RegisterStatus;
 import kh.edu.istad.ite.shared.enums.SessionStatus;
 import kh.edu.istad.ite.shared.exception.AppGlobalException;
 import lombok.RequiredArgsConstructor;
+import org.keycloak.admin.client.Keycloak;
+import org.keycloak.admin.client.resource.UserResource;
+import org.keycloak.representations.idm.UserRepresentation;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -22,7 +31,10 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.List;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 @Service
@@ -32,18 +44,46 @@ public class RegisterSessionServiceImpl implements RegisterSessionService {
     private final CashRegisterRepository registerRepository;
     private final RegisterSessionRepository sessionRepository;
     private final CashMovementRepository movementRepository;
+    private final UserProfileRepository userProfileRepository;
+    private final BusinessRepository businessRepository;
+    private final OrderRepository orderRepository;
+    private final kh.edu.istad.ite.features.order.repository.SaleRepository saleRepository;
+    private final Keycloak keycloak;
+    private final KeycloakAdminClientProps props;
 
     @Override
     @Transactional
-    public RegisterSessionResponse openSession(Long registerId, OpenSessionRequest request, String cashierId) {
-        CashRegister register = registerRepository.findById(registerId)
-                .orElseThrow(() -> new ResponseStatusException( HttpStatus.NOT_FOUND,"Cash register not found"));
+    public RegisterSessionResponse openSession(OpenSessionRequest request, String userId) {
+        UUID userUuid = UUID.fromString(userId);
+        Business business = businessRepository.findByKeycloakUserId(userUuid).orElse(null);
+
+        if (business == null) {
+            UserProfile profile = userProfileRepository.findById(userUuid)
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User profile not found"));
+            business = profile.getBusiness();
+        }
+
+        if (business == null) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "User is not associated with any business");
+        }
+        
+        UUID businessId = business.getId();
+
+        CashRegister register = registerRepository.findByBusinessId(businessId)
+                .orElseGet(() -> {
+                    CashRegister newRegister = CashRegister.builder()
+                            .name("Main Register")
+                            .businessId(businessId)
+                            .status(RegisterStatus.CLOSED)
+                            .build();
+                    return registerRepository.save(newRegister);
+                });
 
         if (register.getStatus() == RegisterStatus.OPEN) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Cash register is already open");
         }
 
-        sessionRepository.findByCashierIdAndStatus(cashierId, SessionStatus.OPEN).ifPresent(s -> {
+        sessionRepository.findByUserIdAndStatus(userId, SessionStatus.OPEN).ifPresent(s -> {
             throw new ResponseStatusException( HttpStatus.BAD_REQUEST, "Cashier already has an active open session");
         });
 
@@ -52,7 +92,8 @@ public class RegisterSessionServiceImpl implements RegisterSessionService {
 
         RegisterSession session = RegisterSession.builder()
                 .register(register)
-                .cashierId(cashierId)
+                .userId(userId)
+                .businessId(businessId)
                 .openedAt(Instant.now())
                 .openingBalance(request.getOpeningBalance())
                 .status(SessionStatus.OPEN)
@@ -73,7 +114,8 @@ public class RegisterSessionServiceImpl implements RegisterSessionService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Session is already closed");
         }
 
-        BigDecimal totalCashSales = BigDecimal.ZERO; // Placeholder for Cash sales query from Order feature
+        LocalDateTime openedAt = LocalDateTime.ofInstant(session.getOpenedAt(), ZoneId.systemDefault());
+        BigDecimal totalCashSales = saleRepository.sumCashSalesByCashierAndDateRange(session.getUserId(), openedAt, LocalDateTime.now());
         BigDecimal totalPaidIn = movementRepository.sumAmountBySessionIdAndType(sessionId, CashMovementType.PAID_IN);
         BigDecimal totalPaidOut = movementRepository.sumAmountBySessionIdAndType(sessionId, CashMovementType.PAID_OUT);
 
@@ -109,7 +151,9 @@ public class RegisterSessionServiceImpl implements RegisterSessionService {
         RegisterSession session = sessionRepository.findById(sessionId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,"Register session not found"));
 
-        BigDecimal totalCashSales = BigDecimal.ZERO;
+        LocalDateTime openedAt = LocalDateTime.ofInstant(session.getOpenedAt(), ZoneId.systemDefault());
+        LocalDateTime closedAt = session.getClosedAt() != null ? LocalDateTime.ofInstant(session.getClosedAt(), ZoneId.systemDefault()) : LocalDateTime.now();
+        BigDecimal totalCashSales = saleRepository.sumCashSalesByCashierAndDateRange(session.getUserId(), openedAt, closedAt);
         BigDecimal totalPaidIn = movementRepository.sumAmountBySessionIdAndType(sessionId, CashMovementType.PAID_IN);
         BigDecimal totalPaidOut = movementRepository.sumAmountBySessionIdAndType(sessionId, CashMovementType.PAID_OUT);
 
@@ -171,11 +215,41 @@ public class RegisterSessionServiceImpl implements RegisterSessionService {
             else if (diff.compareTo(BigDecimal.ZERO) < 0) reconStatus = "SHORT";
         }
 
+        int orderCount = 0;
+        if (session.getUserId() != null) {
+            LocalDateTime start = LocalDateTime.ofInstant(session.getOpenedAt(), ZoneId.systemDefault());
+            LocalDateTime end = session.getClosedAt() != null 
+                    ? LocalDateTime.ofInstant(session.getClosedAt(), ZoneId.systemDefault()) 
+                    : LocalDateTime.now();
+            orderCount = (int) orderRepository.countByCashierIdAndCreatedDateBetween(UUID.fromString(session.getUserId()), start, end);
+        }
+
+        String cashierName = null;
+        if (session.getUserId() != null) {
+            try {
+                UserResource userResource = keycloak.realm(props.getTargetRealm())
+                        .users()
+                        .get(session.getUserId());
+                UserRepresentation keycloakUser = userResource.toRepresentation();
+                cashierName = (keycloakUser.getFirstName() != null ? keycloakUser.getFirstName() : "") + 
+                              (keycloakUser.getLastName() != null ? " " + keycloakUser.getLastName() : "");
+                cashierName = cashierName.trim();
+                if (cashierName.isEmpty()) {
+                    cashierName = keycloakUser.getUsername();
+                }
+            } catch (Exception e) {
+                cashierName = "Unknown";
+            }
+        }
+
         return RegisterSessionResponse.builder()
                 .id(session.getId())
                 .registerId(session.getRegister().getId())
                 .registerName(session.getRegister().getName())
-                .cashierId(session.getCashierId())
+                .userId(session.getUserId())
+                .cashierName(cashierName)
+                .businessId(session.getBusinessId())
+                .orderCount(orderCount)
                 .openedAt(session.getOpenedAt())
                 .closedAt(session.getClosedAt())
                 .openingBalance(session.getOpeningBalance())

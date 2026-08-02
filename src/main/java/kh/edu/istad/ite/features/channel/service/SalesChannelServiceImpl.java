@@ -1,6 +1,9 @@
 package kh.edu.istad.ite.features.channel.service;
 
 import kh.edu.istad.ite.features.catalog.dto.ItemResponse;
+import kh.edu.istad.ite.features.channel.dto.SalesChannelItemResponse;
+import kh.edu.istad.ite.features.channel.repository.ItemChannelRepository;
+import kh.edu.istad.ite.features.catalog.mapper.ItemMapper;
 import kh.edu.istad.ite.features.catalog.entity.Item;
 import kh.edu.istad.ite.features.catalog.repository.ItemRepository;
 import kh.edu.istad.ite.features.channel.dto.SalesChannelResponse;
@@ -21,6 +24,8 @@ public class SalesChannelServiceImpl
 
     private final SalesChannelRepository salesChannelRepository;
     private final ItemRepository itemRepository;
+    private final ItemChannelRepository itemChannelRepository;
+    private final ItemMapper itemMapper;
 
 
     @Override
@@ -35,8 +40,14 @@ public class SalesChannelServiceImpl
     }
 
     @Override
-    public List<ItemResponse> findItemsByChannel(String channelCode) {
-        return itemRepository.findItemsByChannelCode(channelCode).stream().map(this::mapToResponse).toList();
+    public List<SalesChannelItemResponse> findItemsByChannel(String channelCode) {
+        return itemChannelRepository.findBySalesChannelCodeAndIsEnabledTrue(channelCode)
+                .stream()
+                .map(ic -> new SalesChannelItemResponse(
+                        ic.getId(),
+                        itemMapper.toResponse(ic.getItem())
+                ))
+                .toList();
     }
     private ItemResponse mapToResponse(Item item){
 

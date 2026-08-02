@@ -27,4 +27,9 @@ public interface ItemChannelRepository extends JpaRepository<ItemChannel, UUID> 
     List<ItemChannel> findBySalesChannelIdAndIsEnabledTrue(
             UUID salesChannelId
     );
+
+    @Query("SELECT ic FROM ItemChannel ic JOIN FETCH ic.item i WHERE ic.salesChannel.code = :code AND ic.isEnabled = true")
+    List<ItemChannel> findBySalesChannelCodeAndIsEnabledTrue(
+            @org.springframework.data.repository.query.Param("code") String code
+    );
 }

@@ -1,10 +1,7 @@
 package kh.edu.istad.ite.features.discount.mapper;
 
-import kh.edu.istad.ite.features.discount.dto.CreateDiscountRequest;
 import kh.edu.istad.ite.features.discount.dto.DiscountResponse;
-import kh.edu.istad.ite.features.discount.dto.PatchDiscountRequest;
 import kh.edu.istad.ite.features.discount.entity.Discount;
-import org.mapstruct.*;
 import org.springframework.stereotype.Component;
 
 @Component

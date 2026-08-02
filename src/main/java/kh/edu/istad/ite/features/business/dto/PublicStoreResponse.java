@@ -11,6 +11,11 @@ public record PublicStoreResponse(
         String about,
         String cityOrProvince,
         String storefrontUrl,
-        BusinessSubCategoryResponse category
+        BusinessSubCategoryResponse category,
+        Boolean isClosed,
+        Boolean isOpen,
+        String discountLabel,
+        String openTime,
+        String closeTime
 ) {
 }

@@ -14,13 +14,6 @@ public record ItemVariantRequest(
 
         @DecimalMin(value = "0.0", inclusive = true, message = "variant price must be at least zero")
         @Digits(integer = 10, fraction = 2, message = "variant price must have at most 10 integer digits and 2 decimal places")
-        BigDecimal price,
-
-        Boolean available
+        BigDecimal price
 ) {
-    public ItemVariantRequest {
-        if (available == null) {
-            available = true;
-        }
-    }
 }

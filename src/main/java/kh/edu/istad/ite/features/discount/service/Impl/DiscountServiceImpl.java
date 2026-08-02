@@ -1,6 +1,7 @@
 package kh.edu.istad.ite.features.discount.service.Impl;
 
 import kh.edu.istad.ite.features.business.entity.Business;
+import kh.edu.istad.ite.features.customer.repository.MembershipTypeRepository;
 import kh.edu.istad.ite.features.discount.dto.CreateDiscountRequest;
 import kh.edu.istad.ite.features.discount.dto.DiscountResponse;
 import kh.edu.istad.ite.features.discount.dto.UpdateDiscountRequest;
@@ -8,7 +9,6 @@ import kh.edu.istad.ite.features.discount.entity.Discount;
 import kh.edu.istad.ite.features.discount.mapper.DiscountMapper;
 import kh.edu.istad.ite.features.discount.repository.CouponRepository;
 import kh.edu.istad.ite.features.discount.repository.DiscountRepository;
-import kh.edu.istad.ite.features.customer.repository.MembershipTypeRepository;
 import kh.edu.istad.ite.features.discount.service.DiscountService;
 import kh.edu.istad.ite.shared.enums.DiscountRuleType;
 import kh.edu.istad.ite.shared.enums.DiscountScope;
