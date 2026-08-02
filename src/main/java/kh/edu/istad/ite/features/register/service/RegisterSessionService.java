@@ -11,6 +11,8 @@ import java.util.List;
 public interface RegisterSessionService {
     RegisterSessionResponse openSession(OpenSessionRequest request, String userId);
     RegisterSessionResponse closeSession(Long sessionId, CloseSessionRequest request);
+    RegisterSessionResponse getCurrentSession(String userId);
+    RegisterSessionResponse joinSession(Long sessionId, String userId);
     RegisterSessionResponse getSessionSummary(Long sessionId);
     CashMovementResponse addCashMovement(Long sessionId, CashMovementRequest request);
     List<CashMovementResponse> getCashMovements(Long sessionId);
