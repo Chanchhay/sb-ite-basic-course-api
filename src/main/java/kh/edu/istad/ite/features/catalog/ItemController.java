@@ -97,4 +97,13 @@ public class ItemController {
     ) {
         return itemService.findItemByBarcode(businessId, barcode);
     }
+
+    @PostMapping("/filter")
+    public org.springframework.data.domain.Page<ItemResponse> filterItems(
+            @PathVariable UUID businessId,
+            @RequestBody kh.edu.istad.ite.config.filter.RequestDto request,
+            org.springframework.data.domain.Pageable pageable
+    ) {
+        return itemService.filterItems(businessId, request, pageable);
+    }
 }

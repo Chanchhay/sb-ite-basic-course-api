@@ -87,4 +87,50 @@ public class OrderController {
     ) {
         return orderService.cancelOrder(businessId, orderId);
     }
+
+    @PostMapping("/filter")
+    public org.springframework.data.domain.Page<OrderResponse> filterOrders(
+            @PathVariable UUID businessId,
+            @RequestBody kh.edu.istad.ite.config.filter.RequestDto request,
+            org.springframework.data.domain.Pageable pageable
+    ) {
+        return orderService.filterOrders(businessId, request, pageable);
+    }
+
+    @PostMapping("/{orderId}/items")
+    public OrderResponse addOrderItem(
+            @PathVariable UUID businessId,
+            @PathVariable UUID orderId,
+            @Valid @RequestBody AddOrderItemRequest request
+    ) {
+        return orderService.addOrderItem(businessId, orderId, request);
+    }
+
+    @PatchMapping("/{orderId}/items/{orderItemId}")
+    public OrderResponse updateOrderItem(
+            @PathVariable UUID businessId,
+            @PathVariable UUID orderId,
+            @PathVariable UUID orderItemId,
+            @Valid @RequestBody UpdateOrderItemRequest request
+    ) {
+        return orderService.updateOrderItem(businessId, orderId, orderItemId, request);
+    }
+
+    @DeleteMapping("/{orderId}/items/{orderItemId}")
+    public OrderResponse removeOrderItem(
+            @PathVariable UUID businessId,
+            @PathVariable UUID orderId,
+            @PathVariable UUID orderItemId
+    ) {
+        return orderService.removeOrderItem(businessId, orderId, orderItemId);
+    }
+
+    @PatchMapping("/{orderId}/note")
+    public OrderResponse updateOrderNote(
+            @PathVariable UUID businessId,
+            @PathVariable UUID orderId,
+            @Valid @RequestBody UpdateOrderNoteRequest request
+    ) {
+        return orderService.updateOrderNote(businessId, orderId, request);
+    }
 }

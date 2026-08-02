@@ -1,6 +1,7 @@
 package kh.edu.istad.ite.features.channel.controller;
 
 import kh.edu.istad.ite.features.catalog.dto.ItemResponse;
+import kh.edu.istad.ite.features.channel.dto.SalesChannelItemResponse;
 import kh.edu.istad.ite.features.channel.dto.SalesChannelResponse;
 import kh.edu.istad.ite.features.channel.service.SalesChannelService;
 import lombok.RequiredArgsConstructor;
@@ -26,7 +27,7 @@ public class SalesChannelController {
     }
 
     @GetMapping("/{channelCode}/items")
-    public List<ItemResponse> findItemsByChannel(
+    public List<SalesChannelItemResponse> findItemsByChannel(
             @PathVariable String channelCode
     ){
         return salesChannelService.findItemsByChannel(channelCode);

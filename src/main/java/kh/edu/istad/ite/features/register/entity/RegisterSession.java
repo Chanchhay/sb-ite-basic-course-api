@@ -7,6 +7,7 @@ import lombok.*;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.UUID;
 
 @Entity
 @Table(name = "register_sessions")
@@ -26,7 +27,10 @@ public class RegisterSession extends BasedAuditingEntity {
     private CashRegister register;
 
     @Column(nullable = false)
-    private String cashierId;
+    private String userId;
+
+    @Column(nullable = false)
+    private UUID businessId;
 
     @Column(nullable = false)
     private Instant openedAt;

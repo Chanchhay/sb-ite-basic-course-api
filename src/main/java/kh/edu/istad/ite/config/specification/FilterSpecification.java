@@ -9,9 +9,61 @@ import org.springframework.stereotype.Service;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.time.LocalDateTime;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
+import java.util.UUID;
+import java.math.BigDecimal;
 
 @Service
 public class FilterSpecification<T> {
+
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private Comparable parseValue(Class<?> javaType, String value) {
+        if (value == null || value.isBlank()) return null;
+        try {
+            if (javaType.equals(String.class)) {
+                return value;
+            } else if (javaType.equals(LocalDateTime.class)) {
+                try {
+                    // Try parsing as ZonedDateTime first (handles 'Z' and '+07:00' etc)
+                    return java.time.ZonedDateTime.parse(value).toLocalDateTime();
+                } catch (DateTimeParseException e1) {
+                    try {
+                        // Fallback to standard LocalDateTime
+                        if (value.contains(" ")) {
+                            return LocalDateTime.parse(value.replace(" ", "T"));
+                        }
+                        return LocalDateTime.parse(value);
+                    } catch (DateTimeParseException e2) {
+                        // Fallback to LocalDate
+                        return LocalDate.parse(value).atStartOfDay();
+                    }
+                }
+            } else if (javaType.equals(LocalDate.class)) {
+                if (value.contains("T")) {
+                    return LocalDate.parse(value.substring(0, value.indexOf("T")));
+                }
+                return LocalDate.parse(value.trim());
+            } else if (javaType.equals(UUID.class)) {
+                return UUID.fromString(value.trim());
+            } else if (javaType.equals(Long.class) || javaType.equals(long.class)) {
+                return Long.parseLong(value.trim());
+            } else if (javaType.equals(Integer.class) || javaType.equals(int.class)) {
+                return Integer.parseInt(value.trim());
+            } else if (javaType.equals(Double.class) || javaType.equals(double.class)) {
+                return Double.parseDouble(value.trim());
+            } else if (javaType.equals(BigDecimal.class)) {
+                return new BigDecimal(value.trim());
+            } else if (Enum.class.isAssignableFrom(javaType)) {
+                return Enum.valueOf((Class<Enum>) javaType, value.trim());
+            }
+        } catch (Exception e) {
+            throw new IllegalArgumentException("Failed to parse filter value '" + value + "' for type " + javaType.getSimpleName(), e);
+        }
+        return value;
+    }
 
     public Specification<T> getSearchSpecificationDynamic(List<SearchRequestDto> searchRequestDto,
                                                           RequestDto.GlobalOperator globalOperator) {
@@ -25,7 +77,7 @@ public class FilterSpecification<T> {
                     case EQUAL:
                         Predicate equal = criteriaBuilder.equal(
                                 root.get(requestDto.getColumn()),
-                                requestDto.getValue()
+                                parseValue(root.get(requestDto.getColumn()).getJavaType(), requestDto.getValue())
                         );
                         predicates.add(equal);
                         break;
@@ -33,7 +85,7 @@ public class FilterSpecification<T> {
                     case NOT_EQUAL:
                         Predicate notEqual = criteriaBuilder.notEqual(
                                 root.get(requestDto.getColumn()),
-                                requestDto.getValue()
+                                parseValue(root.get(requestDto.getColumn()).getJavaType(), requestDto.getValue())
                         );
                         predicates.add(notEqual);
                         break;
@@ -86,32 +138,32 @@ public class FilterSpecification<T> {
 
                     case GREATER_THAN:
                         Predicate greaterThan = criteriaBuilder.greaterThan(
-                                root.get(requestDto.getColumn()),
-                                requestDto.getValue()
+                                (jakarta.persistence.criteria.Expression) root.get(requestDto.getColumn()),
+                                parseValue(root.get(requestDto.getColumn()).getJavaType(), requestDto.getValue())
                         );
                         predicates.add(greaterThan);
                         break;
 
                     case GREATER_THAN_EQUAL:
                         Predicate greaterThanEqual = criteriaBuilder.greaterThanOrEqualTo(
-                                root.get(requestDto.getColumn()),
-                                requestDto.getValue()
+                                (jakarta.persistence.criteria.Expression) root.get(requestDto.getColumn()),
+                                parseValue(root.get(requestDto.getColumn()).getJavaType(), requestDto.getValue())
                         );
                         predicates.add(greaterThanEqual);
                         break;
 
                     case LESS_THAN:
                         Predicate lessThan = criteriaBuilder.lessThan(
-                                root.get(requestDto.getColumn()),
-                                requestDto.getValue()
+                                (jakarta.persistence.criteria.Expression) root.get(requestDto.getColumn()),
+                                parseValue(root.get(requestDto.getColumn()).getJavaType(), requestDto.getValue())
                         );
                         predicates.add(lessThan);
                         break;
 
                     case LESS_THAN_EQUAL:
                         Predicate lessThanEqual = criteriaBuilder.lessThanOrEqualTo(
-                                root.get(requestDto.getColumn()),
-                                requestDto.getValue()
+                                (jakarta.persistence.criteria.Expression) root.get(requestDto.getColumn()),
+                                parseValue(root.get(requestDto.getColumn()).getJavaType(), requestDto.getValue())
                         );
                         predicates.add(lessThanEqual);
                         break;
@@ -174,7 +226,7 @@ public class FilterSpecification<T> {
 
                         Predicate join = criteriaBuilder.equal(
                                 root.join(requestDto.getJoinTable()).get(requestDto.getColumn()),
-                                requestDto.getValue()
+                                parseValue(root.join(requestDto.getJoinTable()).get(requestDto.getColumn()).getJavaType(), requestDto.getValue())
                         );
                         predicates.add(join);
                         break;

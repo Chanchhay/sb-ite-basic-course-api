@@ -20,6 +20,13 @@ public interface SaleRepository extends JpaRepository<Sale, UUID> {
 
     long countBySoldAtGreaterThanEqual(LocalDateTime since);
 
+    @Query("select coalesce(sum(s.totalAmount), 0) from Sale s where cast(s.cashierId as string) = :cashierId and s.paymentMethod = 'CASH' and s.soldAt >= :startTime and (cast(:endTime as timestamp) is null or s.soldAt <= :endTime)")
+    java.math.BigDecimal sumCashSalesByCashierAndDateRange(
+            @Param("cashierId") String cashierId,
+            @Param("startTime") LocalDateTime startTime,
+            @Param("endTime") LocalDateTime endTime
+    );
+
     @Query("select count(distinct s.business.id) from Sale s where s.soldAt >= :since")
     long countTradingBusinessesSince(@Param("since") LocalDateTime since);
 

@@ -17,6 +17,7 @@ public class OrderMapper {
         }
 
         List<OrderItemResponse> items = order.getItems().stream()
+                .sorted(java.util.Comparator.comparing(i -> i.getLineNumber() == null ? 0 : i.getLineNumber()))
                 .map(this::toItemResponse)
                 .toList();
 
