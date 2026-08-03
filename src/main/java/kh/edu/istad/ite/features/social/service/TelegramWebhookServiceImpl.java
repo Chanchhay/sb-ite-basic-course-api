@@ -837,8 +837,8 @@ public class TelegramWebhookServiceImpl implements TelegramWebhookService {
 
         String detailText = uiHelper.renderProductDetail(item, setting, availableQuantity);
         Optional<String> imageUrl = item.getImages().stream()
-                .min(Comparator.comparing(ItemImage::getPosition))
-                .map(image -> minioService.getPublicUrl(image.getImageKey()));
+                .findFirst()
+                .map(image -> minioService.getPublicUrl(image));
         if (imageUrl.isPresent()) telegramBotClient.sendPhoto(botToken, chatId, imageUrl.get(), detailText, keyboard);
         else telegramBotClient.sendMessage(botToken, chatId, detailText, keyboard);
     }

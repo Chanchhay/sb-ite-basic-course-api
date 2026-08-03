@@ -25,6 +25,7 @@ import kh.edu.istad.ite.features.payment.khqr.QrImageRenderer;
 import kh.edu.istad.ite.features.payment.repository.BusinessPaymentSettingRepository;
 import kh.edu.istad.ite.features.payment.repository.PaymentQrCodeRepository;
 import kh.edu.istad.ite.features.payment.service.ReceiptService;
+import kh.edu.istad.ite.features.register.entity.RegisterSession;
 import kh.edu.istad.ite.shared.enums.OrderChannel;
 import kh.edu.istad.ite.shared.enums.BusinessFeature;
 import kh.edu.istad.ite.shared.enums.OrderStatus;
@@ -52,6 +53,7 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -229,11 +231,13 @@ public class OrderServiceImpl implements OrderService {
 
         requirePending(order);
 
-        if (kh.edu.istad.ite.shared.enums.OrderChannel.POS.equals(order.getChannel())) {
-            boolean hasOpenSession = registerSessionRepository.findByUserIdAndStatus(
-                    AuthHelper.currentUserId().toString(), 
-                    kh.edu.istad.ite.shared.enums.SessionStatus.OPEN
-            ).isPresent();
+        if (OrderChannel.POS.equals(order.getChannel())) {
+            boolean hasOpenSession = false;
+            Optional<RegisterSession> sessionOpt =
+                    registerSessionRepository.findByBusinessIdAndStatus(business.getId(), kh.edu.istad.ite.shared.enums.SessionStatus.OPEN);
+            if (sessionOpt.isPresent() && sessionOpt.get().getParticipants().contains(AuthHelper.currentUserId().toString())) {
+                hasOpenSession = true;
+            }
             if (!hasOpenSession) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "No open register session found for current cashier");
             }

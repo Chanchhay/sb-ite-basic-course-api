@@ -46,4 +46,7 @@ public class ItemVariant extends BasedAuditingEntity {
 
     @Column(precision = 12, scale = 2)
     private BigDecimal price;
+
+    @Column(nullable = false, columnDefinition = "boolean default true")
+    private Boolean available = true;
 }

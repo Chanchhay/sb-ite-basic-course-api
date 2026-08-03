@@ -4,6 +4,7 @@ import kh.edu.istad.ite.features.business.entity.Business;
 import kh.edu.istad.ite.features.cart.entity.Cart;
 import kh.edu.istad.ite.features.cart.entity.CartItem;
 import kh.edu.istad.ite.features.catalog.entity.Item;
+import kh.edu.istad.ite.features.catalog.entity.ItemAttribute;
 import kh.edu.istad.ite.features.order.entity.Order;
 import kh.edu.istad.ite.features.order.entity.OrderItem;
 import kh.edu.istad.ite.features.social.entity.BusinessTelegramBot;
@@ -12,6 +13,7 @@ import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
@@ -76,7 +78,7 @@ public class TelegramUIHelper {
 
 
     private String renderAttributes(Item item) {
-        Map<String, Object> attributes = item.getAttributes();
+        List<ItemAttribute> attributes = item.getAttributes();
 
         if (attributes == null || attributes.isEmpty()) {
             return "";
@@ -84,14 +86,17 @@ public class TelegramUIHelper {
 
         StringBuilder sb = new StringBuilder();
 
-        for (Map.Entry<String, Object> entry : attributes.entrySet()) {
-            String value = renderAttributeValue(entry.getValue());
+        for (ItemAttribute attr : attributes) {
+            String value = "";
+            if (attr.getValues() != null && !attr.getValues().isEmpty()) {
+                value = attr.getValues().getFirst().getValue();
+            }
 
-            if (!StringUtils.hasText(entry.getKey()) || !StringUtils.hasText(value)) {
+            if (!StringUtils.hasText(attr.getName()) || !StringUtils.hasText(value)) {
                 continue;
             }
 
-            sb.append("• ").append(escape(entry.getKey())).append(" ៖ `").append(value).append("`\n");
+            sb.append("• ").append(escape(attr.getName())).append(" ៖ `").append(value).append("`\n");
         }
 
         return sb.isEmpty() ? "" : "\n\uD83C\uDFF7\uFE0F *លក្ខណៈពិសេស៖*\n" + sb;
