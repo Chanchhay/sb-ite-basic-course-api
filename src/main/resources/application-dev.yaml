@@ -26,9 +26,9 @@ spring:
 
   datasource:
     driver-class-name: org.postgresql.Driver
-    url: jdbc:postgresql://${PGHOST:localhost}:${PGPORT:5432}/${PGDATABASE:fluxibix}
-    username: ${DB_USER}
-    password: ${DB_PASS}
+    url: jdbc:postgresql://${PGHOST:localhost}:${PGPORT:5432}/${PGDATABASE:ipos_db}
+    username: postgres
+    password: 2003
 
 keycloak:
   admin:

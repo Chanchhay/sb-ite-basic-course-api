@@ -4,10 +4,12 @@ import jakarta.validation.constraints.*;
 import kh.edu.istad.ite.shared.enums.DiscountRuleType;
 import kh.edu.istad.ite.shared.enums.DiscountScope;
 import kh.edu.istad.ite.shared.enums.DiscountType;
+import kh.edu.istad.ite.shared.enums.OrderChannel;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.UUID;
 
 public record CreateDiscountRequest(
         @NotBlank(message = "name cannot be empty")
@@ -48,6 +50,19 @@ public record CreateDiscountRequest(
         @NotBlank
         List<String> selectedDays ,
         @NotBlank(message = "Input like ACTIVE || INACTIVE")
-        String status
+        String status,
+
+
+        // Which order channels this discount is allowed on,
+        // Null/empty = applies everywhere (POS, WEB , TELEGRAM, MESSENGER).
+        // e.g. [WEB] -> only on the website; [POS] -> only in the physical shop.
+        List<OrderChannel> applicableChannels,
+
+        // Required when scope = ITEM: the specific product(s) this discount applies to.
+        List<UUID> targetItemIds,
+
+        // Required when scope = CATEGORY: the specific category/categories
+        // (item groups, e.g. "Food", "Drink") this discount applies to.
+        List<UUID> targetItemGroupIds
 ) {
 }

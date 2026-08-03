@@ -14,10 +14,7 @@ import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import kh.edu.istad.ite.config.audit.BasedAuditingEntity;
 import kh.edu.istad.ite.features.business.entity.Business;
-import kh.edu.istad.ite.shared.enums.DiscountRuleType;
-import kh.edu.istad.ite.shared.enums.DiscountScope;
-import kh.edu.istad.ite.shared.enums.DiscountType;
-import kh.edu.istad.ite.shared.enums.RecordStatus;
+import kh.edu.istad.ite.shared.enums.*;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -101,6 +98,15 @@ public class Discount extends BasedAuditingEntity {
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "selected_days", columnDefinition = "jsonb")
     private List<String> selectedDays;
+
+
+    // Which order channels this discount is allowed to apply on
+    // (e.g. POS only, WEB only, or POS + WEB but not TELEGRAM/MESSENGER).
+    // Null or empty means the discount applies to every channel.
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "applicable_channels", columnDefinition = "jsonb")
+    private List<OrderChannel> applicableChannels;
 
     @Enumerated(EnumType.STRING)
     @Column(

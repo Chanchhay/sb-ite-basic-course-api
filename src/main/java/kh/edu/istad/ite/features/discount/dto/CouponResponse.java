@@ -10,6 +10,7 @@ import java.util.UUID;
 public record CouponResponse(
         UUID id,
         String code,
+        DiscountSummaryResponse discount,
         Integer usageLimit,
         Integer usageLimitPerCustomer,
         Integer usedCount,
