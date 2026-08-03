@@ -22,7 +22,7 @@ public record ItemResponse(
         String code,
         String description,
         String imageUrl,
-        List<String> images,
+        List<ItemImageResponse> images,
         String badge,
         String barcode,
         BigDecimal price,

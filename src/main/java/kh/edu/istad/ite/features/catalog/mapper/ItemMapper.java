@@ -12,6 +12,9 @@ import kh.edu.istad.ite.features.catalog.entity.Item;
 import kh.edu.istad.ite.features.catalog.entity.ItemAttribute;
 import kh.edu.istad.ite.features.catalog.entity.ItemAttributeValue;
 import kh.edu.istad.ite.features.catalog.entity.ItemVariant;
+import kh.edu.istad.ite.features.catalog.entity.ItemImage;
+import kh.edu.istad.ite.features.catalog.dto.ItemImageResponse;
+import kh.edu.istad.ite.features.minio.MinioService;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -19,10 +22,12 @@ public class ItemMapper {
 
     private final ItemGroupMapper itemGroupMapper;
     private final UnitMapper unitMapper;
+    private final MinioService minioService;
 
-    public ItemMapper(ItemGroupMapper itemGroupMapper, UnitMapper unitMapper) {
+    public ItemMapper(ItemGroupMapper itemGroupMapper, UnitMapper unitMapper, MinioService minioService) {
         this.itemGroupMapper = itemGroupMapper;
         this.unitMapper = unitMapper;
+        this.minioService = minioService;
     }
 
     public ItemResponse toResponse(Item item) {
@@ -37,7 +42,9 @@ public class ItemMapper {
                 item.getCode(),
                 item.getDescription(),
                 item.getImageUrl(),
-                item.getImages(),
+                item.getImages() == null ? null : item.getImages().stream()
+                        .map(this::toItemImageResponse)
+                        .toList(),
                 item.getBadge(),
                 item.getBarcode(),
                 item.getPrice(),
@@ -106,6 +113,14 @@ public class ItemMapper {
                 variant.getVariantName(),
                 variant.getPrice(),
                 variant.getAvailable()
+        );
+    }
+
+    private ItemImageResponse toItemImageResponse(ItemImage image) {
+        return new ItemImageResponse(
+                image.getId(),
+                minioService.getPublicUrl(image.getImageKey()),
+                image.getPosition()
         );
     }
 }

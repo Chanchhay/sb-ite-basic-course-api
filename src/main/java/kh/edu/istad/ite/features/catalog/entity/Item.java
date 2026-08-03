@@ -98,9 +98,9 @@ public class Item extends BasedAuditingEntity {
     @Column(name = "item_type", nullable = false, length = 20)
     private ItemType itemType = ItemType.PHYSICAL;
 
-    @JdbcTypeCode(SqlTypes.JSON)
-    @Column(columnDefinition = "jsonb")
-    private List<String> images = new ArrayList<>();
+    @OneToMany(mappedBy = "item", cascade = CascadeType.ALL, orphanRemoval = true)
+    @OrderBy("position ASC")
+    private List<ItemImage> images = new ArrayList<>();
 
     @Column(length = 40)
     private String badge;

@@ -341,6 +341,6 @@ public class StorefrontCartService {
             return null;
         }
 
-        return toPublicUrl(item.getImages().getFirst());
+        return toPublicUrl(item.getImages().getFirst().getImageKey());
     }
 }
