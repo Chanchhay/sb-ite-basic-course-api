@@ -46,8 +46,16 @@ public class SecurityConfig {
                                 .requestMatchers("/scalar/**").permitAll()
                                 .requestMatchers(HttpMethod.POST, "/api/v1/auth/register").permitAll()
                                 .requestMatchers(HttpMethod.POST, "/api/v1/webhooks/telegram/**").permitAll()
-                                .requestMatchers("/ws/customer-display/**", "/ws/customer-display-sockjs/**")
-                                .permitAll()
+                                .requestMatchers(
+                                        "/ws/customer-display",
+                                        "/ws/customer-display/**",
+                                        "/ws/customer-display-sockjs",
+                                        "/ws/customer-display-sockjs/**",
+                                        "/ws/notifications",
+                                        "/ws/notifications/**",
+                                        "/ws/notifications-sockjs",
+                                        "/ws/notifications-sockjs/**"
+                                ).permitAll()
                                 .requestMatchers(HttpMethod.GET, "/api/v1/public/**").permitAll()
                                 .requestMatchers(HttpMethod.GET, "/api/v1/business-categories",
                                                 "/api/v1/business-categories/**")
