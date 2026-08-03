@@ -12,6 +12,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
+import kh.edu.istad.ite.shared.enums.SessionStatus;
 
 import java.security.Principal;
 import java.util.List;
@@ -28,9 +30,10 @@ public class RegisterSessionController {
             @Valid @RequestBody OpenSessionRequest request) {
 
         String userId = AuthHelper.currentUserId().toString();
+        RegisterSessionResponse response = sessionService.openSession(request, userId);
 
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(sessionService.openSession(request, userId));
+                .body(response);
     }
 
     @PostMapping("/sessions/{sessionId}/close")
@@ -56,5 +59,22 @@ public class RegisterSessionController {
     @GetMapping("/sessions/{sessionId}/cash-movements")
     public ResponseEntity<List<CashMovementResponse>> getCashMovements(@PathVariable Long sessionId) {
         return ResponseEntity.ok(sessionService.getCashMovements(sessionId));
+    }
+
+    @GetMapping("/sessions/current")
+    public ResponseEntity<RegisterSessionResponse> getCurrentSession() {
+        String userId = AuthHelper.currentUserId().toString();
+        RegisterSessionResponse response = sessionService.getCurrentSession(userId);
+        if (response == null) {
+            return ResponseEntity.noContent().build();
+        }
+        return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/sessions/{sessionId}/join")
+    public ResponseEntity<RegisterSessionResponse> joinSession(@PathVariable Long sessionId) {
+        String userId = AuthHelper.currentUserId().toString();
+        RegisterSessionResponse response = sessionService.joinSession(sessionId, userId);
+        return ResponseEntity.ok(response);
     }
 }

@@ -26,7 +26,7 @@ import java.util.UUID;
 @Getter
 @Setter
 @NoArgsConstructor
-@Table(name = "receipts")
+@Table(name = "receipts", uniqueConstraints = @jakarta.persistence.UniqueConstraint(columnNames = "order_id"))
 public class Receipt extends BasedAuditingEntity {
 
     @Id

@@ -2,12 +2,13 @@ package kh.edu.istad.ite.features.catalog.dto;
 
 import kh.edu.istad.ite.shared.enums.ItemStatus;
 import kh.edu.istad.ite.shared.enums.ItemType;
-import lombok.Builder;
 
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+
+import lombok.Builder;
 
 @Builder
 public record ItemResponse(
@@ -20,12 +21,15 @@ public record ItemResponse(
         String sku,
         String code,
         String description,
-        String badge,
+        String imageUrl,
         List<ItemImageResponse> images,
+        String badge,
         String barcode,
         BigDecimal price,
+        BigDecimal compareAtPrice,
         ItemType itemType,
-        Map<String, Object> attributes,
+        List<ItemAttributeResponse> attributes,
+        List<DescriptionBlockResponse> descriptionBlocks,
         List<ItemVariantResponse> variants,
         Integer lowStockDefault,
         ItemStatus status

@@ -14,6 +14,13 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 import java.util.UUID;
+import java.math.BigDecimal;
+import kh.edu.istad.ite.shared.enums.ItemType;
+import kh.edu.istad.ite.shared.enums.ItemStatus;
+import kh.edu.istad.ite.features.catalog.dto.ItemAttributeRequest;
+import kh.edu.istad.ite.features.catalog.dto.DescriptionBlockRequest;
+import kh.edu.istad.ite.features.catalog.dto.ItemVariantRequest;
+import org.springframework.web.multipart.MultipartFile;
 
 @RestController
 @RequestMapping("/api/v1/businesses/{businessId}/items")
@@ -21,14 +28,42 @@ import java.util.UUID;
 public class ItemController {
 
     private final ItemService itemService;
+    private final jakarta.validation.Validator validator;
 
     @ResponseStatus(HttpStatus.CREATED)
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ItemResponse createItem(
             @PathVariable UUID businessId,
-            @Valid @ModelAttribute CreateItemRequest request
+            @RequestParam(required = false) UUID itemGroupId,
+            @RequestParam(required = false) UUID unitId,
+            @RequestParam String name,
+            @RequestParam(required = false) String sku,
+            @RequestParam(required = false) String code,
+            @RequestParam(required = false) String description,
+            @RequestParam(required = false) String imageUrl,
+            @RequestParam(required = false) List<String> images,
+            @RequestParam(required = false) String badge,
+            @RequestParam(required = false) String barcode,
+            @RequestParam(required = false) BigDecimal price,
+            @RequestParam(required = false) BigDecimal compareAtPrice,
+            @RequestParam ItemType itemType,
+            @RequestPart(required = false) List<ItemAttributeRequest> attributes,
+            @RequestPart(required = false) List<DescriptionBlockRequest> descriptionBlocks,
+            @RequestPart(required = false) List<ItemVariantRequest> variants,
+            @RequestParam(required = false) Integer lowStockDefault,
+            @RequestParam(required = false) ItemStatus status,
+            @RequestPart(value = "files", required = false) List<MultipartFile> files
     ) {
-        return itemService.createItem(businessId, request);
+        CreateItemRequest request = new CreateItemRequest(
+                itemGroupId, unitId, name, sku, code, description, imageUrl, images,
+                badge, barcode, price, compareAtPrice, itemType, attributes,
+                descriptionBlocks, variants, lowStockDefault, status
+        );
+        java.util.Set<jakarta.validation.ConstraintViolation<CreateItemRequest>> violations = validator.validate(request);
+        if (!violations.isEmpty()) {
+            throw new jakarta.validation.ConstraintViolationException(violations);
+        }
+        return itemService.createItem(businessId, request, files);
     }
 
     @GetMapping
@@ -48,9 +83,36 @@ public class ItemController {
     public ItemResponse updateItem(
             @PathVariable UUID businessId,
             @PathVariable UUID itemId,
-            @Valid @ModelAttribute UpdateItemRequest request
+            @RequestParam(required = false) UUID itemGroupId,
+            @RequestParam(required = false) UUID unitId,
+            @RequestParam(required = false) String name,
+            @RequestParam(required = false) String sku,
+            @RequestParam(required = false) String code,
+            @RequestParam(required = false) String description,
+            @RequestParam(required = false) String imageUrl,
+            @RequestParam(required = false) List<String> images,
+            @RequestParam(required = false) String badge,
+            @RequestParam(required = false) String barcode,
+            @RequestParam(required = false) BigDecimal price,
+            @RequestParam(required = false) BigDecimal compareAtPrice,
+            @RequestParam(required = false) ItemType itemType,
+            @RequestPart(required = false) List<ItemAttributeRequest> attributes,
+            @RequestPart(required = false) List<DescriptionBlockRequest> descriptionBlocks,
+            @RequestPart(required = false) List<ItemVariantRequest> variants,
+            @RequestParam(required = false) Integer lowStockDefault,
+            @RequestParam(required = false) ItemStatus status,
+            @RequestPart(value = "files", required = false) List<MultipartFile> files
     ) {
-        return itemService.updateItem(businessId, itemId, request);
+        UpdateItemRequest request = new UpdateItemRequest(
+                itemGroupId, unitId, name, sku, code, description, imageUrl, images,
+                badge, barcode, price, compareAtPrice, itemType, attributes,
+                descriptionBlocks, variants, lowStockDefault, status
+        );
+        java.util.Set<jakarta.validation.ConstraintViolation<UpdateItemRequest>> violations = validator.validate(request);
+        if (!violations.isEmpty()) {
+            throw new jakarta.validation.ConstraintViolationException(violations);
+        }
+        return itemService.updateItem(businessId, itemId, request, files);
     }
 
     @PostMapping(value = "/{itemId}/images", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)

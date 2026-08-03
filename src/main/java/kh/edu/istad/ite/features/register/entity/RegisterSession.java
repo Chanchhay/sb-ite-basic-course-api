@@ -54,4 +54,13 @@ public class RegisterSession extends BasedAuditingEntity {
     private SessionStatus status = SessionStatus.OPEN;
 
     private String note;
+
+    @ElementCollection
+    @CollectionTable(
+            name = "register_session_participants",
+            joinColumns = @JoinColumn(name = "session_id"),
+            uniqueConstraints = @UniqueConstraint(columnNames = {"session_id", "user_id"})
+    )
+    @Column(name = "user_id", nullable = false)
+    private java.util.Set<String> participants = new java.util.HashSet<>();
 }
