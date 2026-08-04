@@ -15,6 +15,7 @@ public class CorsConfig {
     @Value("${app.cors.allowed-origin-patterns:http://localhost:[*],http://127.0.0.1:[*],https://www.fluxibiz.store,https://*.fluxibiz.store,https://fluxibiz.store,https://administrator.fluxibiz.store}")
     private List<String> allowedOriginPatterns;
 
+
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();

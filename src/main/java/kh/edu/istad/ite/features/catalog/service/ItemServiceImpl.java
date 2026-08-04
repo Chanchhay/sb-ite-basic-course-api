@@ -13,6 +13,9 @@ import kh.edu.istad.ite.features.catalog.mapper.ItemMapper;
 import kh.edu.istad.ite.features.catalog.repository.ItemGroupRepository;
 import kh.edu.istad.ite.features.catalog.repository.ItemRepository;
 import kh.edu.istad.ite.features.catalog.repository.UnitRepository;
+import kh.edu.istad.ite.features.catalog.entity.ItemImage;
+import kh.edu.istad.ite.features.minio.MinioService;
+import org.springframework.web.multipart.MultipartFile;
 import kh.edu.istad.ite.shared.enums.ItemStatus;
 import kh.edu.istad.ite.shared.helper.BusinessHelper;
 import kh.edu.istad.ite.shared.helper.SlugHelper;
@@ -64,10 +67,11 @@ public class ItemServiceImpl implements ItemService {
     private final FilterSpecification<Item> filterSpecification;
     private final UnitRepository unitRepository;
     private final ItemMapper itemMapper;
+    private final MinioService minioService;
 
     @Override
     @Transactional
-    public ItemResponse createItem(UUID businessId, CreateItemRequest request) {
+    public ItemResponse createItem(UUID businessId, CreateItemRequest request, List<MultipartFile> files) {
         Business business = businessHelper.findOwnedBusiness(businessId);
 
         Item item = new Item();
@@ -87,7 +91,16 @@ public class ItemServiceImpl implements ItemService {
         item.setBarcode(TextHelper.trimToNull(request.barcode()));
         item.setPrice(normalizePrice(request.price()));
         item.setItemType(request.itemType());
-        item.setImages(request.images() == null ? new ArrayList<>() : new ArrayList<>(request.images()));
+        if (files != null && !files.isEmpty()) {
+            for (MultipartFile file : files) {
+                String imageKey = minioService.uploadAsset(file);
+                ItemImage image = new ItemImage();
+                image.setItem(item);
+                image.setImageKey(imageKey);
+                image.setPosition(item.getImages().size());
+                item.getImages().add(image);
+            }
+        }
         item.setBadge(TextHelper.trimToNull(request.badge()));
         item.setCompareAtPrice(normalizePrice(request.compareAtPrice()));
         item.setDescriptionBlocks(mapDescriptionBlocks(request.descriptionBlocks()));
@@ -122,7 +135,7 @@ public class ItemServiceImpl implements ItemService {
 
     @Override
     @Transactional
-    public ItemResponse updateItem(UUID businessId, UUID itemId, UpdateItemRequest request) {
+    public ItemResponse updateItem(UUID businessId, UUID itemId, UpdateItemRequest request, List<MultipartFile> files) {
         businessHelper.findOwnedBusiness(businessId);
         Item item = findItem(itemId, businessId);
 
@@ -168,8 +181,15 @@ public class ItemServiceImpl implements ItemService {
         if (request.itemType() != null) {
             item.setItemType(request.itemType());
         }
-        if (request.images() != null) {
-            item.setImages(new ArrayList<>(request.images()));
+        if (files != null && !files.isEmpty()) {
+            for (MultipartFile file : files) {
+                String imageKey = minioService.uploadAsset(file);
+                ItemImage image = new ItemImage();
+                image.setItem(item);
+                image.setImageKey(imageKey);
+                image.setPosition(item.getImages().size());
+                item.getImages().add(image);
+            }
         }
         if (request.badge() != null) {
             item.setBadge(TextHelper.trimToNull(request.badge()));
@@ -206,23 +226,70 @@ public class ItemServiceImpl implements ItemService {
         businessHelper.findOwnedBusiness(businessId);
         Item item = findItem(itemId, businessId);
 
-        itemRepository.delete(item);
+        for (ItemImage image : item.getImages()) {
+            minioService.deleteAsset(image.getImageKey());
+        }
+
         itemRepository.delete(item);
     }
 
     @Override
+    @Transactional
     public ItemResponse deleteItemImage(UUID businessId, UUID itemId, UUID imageId) {
-        throw new UnsupportedOperationException("Images are now stored as a List<String>, not an entity with an ID. Please use a different method to delete images.");
+        businessHelper.findOwnedBusiness(businessId);
+        Item item = findItem(itemId, businessId);
+        ItemImage imageToRemove = item.getImages().stream()
+                .filter(img -> img.getId().equals(imageId))
+                .findFirst()
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Image not found"));
+        item.getImages().remove(imageToRemove);
+        minioService.deleteAsset(imageToRemove.getImageKey());
+        
+        for (int i = 0; i < item.getImages().size(); i++) {
+            item.getImages().get(i).setPosition(i);
+        }
+        
+        return itemMapper.toResponse(itemRepository.saveAndFlush(item));
     }
 
     @Override
+    @Transactional
     public ItemResponse uploadItemImages(UUID businessId, UUID itemId, kh.edu.istad.ite.features.catalog.dto.UploadItemImagesRequest request) {
-        throw new UnsupportedOperationException("Images are now stored as a List<String>. Image upload via this method is not supported.");
+        businessHelper.findOwnedBusiness(businessId);
+        Item item = findItem(itemId, businessId);
+        if (request.files() != null && !request.files().isEmpty()) {
+            for (MultipartFile file : request.files()) {
+                String imageKey = minioService.uploadAsset(file);
+                ItemImage image = new ItemImage();
+                image.setItem(item);
+                image.setImageKey(imageKey);
+                image.setPosition(item.getImages().size());
+                item.getImages().add(image);
+            }
+            return itemMapper.toResponse(itemRepository.saveAndFlush(item));
+        }
+        return itemMapper.toResponse(item);
     }
 
     @Override
+    @Transactional
     public ItemResponse reorderItemImages(UUID businessId, UUID itemId, kh.edu.istad.ite.features.catalog.dto.ReorderItemImagesRequest request) {
-        throw new UnsupportedOperationException("Images are now stored as a List<String>. Image reordering via this method is not supported.");
+        businessHelper.findOwnedBusiness(businessId);
+        Item item = findItem(itemId, businessId);
+        
+        List<UUID> orderedIds = request.imageIds();
+        for (int i = 0; i < orderedIds.size(); i++) {
+            UUID id = orderedIds.get(i);
+            ItemImage img = item.getImages().stream()
+                    .filter(image -> image.getId().equals(id))
+                    .findFirst()
+                    .orElse(null);
+            if (img != null) {
+                img.setPosition(i);
+            }
+        }
+        
+        return itemMapper.toResponse(itemRepository.saveAndFlush(item));
     }
 
     @Override

@@ -38,10 +38,6 @@ public record RegisterRequest(
 
         @NotBlank(message = "gender cannot be empty")
         @Pattern(regexp = "MALE|FEMALE|OTHER|UNSPECIFIED", message = "Gender must be MALE, FEMALE, OTHER, or UNSPECIFIED")
-        String gender,
-
-        @NotBlank(message = "role cannot be empty")
-        @Pattern(regexp = "GLOBAL_USER|BUSINESS|CUSTOMER", message = "Role must be GLOBAL_USER, BUSINESS, or CUSTOMER")
-        String role
+        String gender
 ) {
 }

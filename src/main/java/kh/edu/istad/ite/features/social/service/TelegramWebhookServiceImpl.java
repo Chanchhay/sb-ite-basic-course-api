@@ -3,6 +3,7 @@ package kh.edu.istad.ite.features.social.service;
 import kh.edu.istad.ite.config.security.CredentialCipher;
 import kh.edu.istad.ite.features.auth.AuthService;
 import kh.edu.istad.ite.features.auth.dto.RegisterRequest;
+import kh.edu.istad.ite.features.auth.dto.RoleEnum;
 import kh.edu.istad.ite.features.cart.entity.Cart;
 import kh.edu.istad.ite.features.cart.entity.CartItem;
 import kh.edu.istad.ite.features.cart.repository.CartItemRepository;
@@ -634,10 +635,10 @@ public class TelegramWebhookServiceImpl implements TelegramWebhookService {
 
         try {
             RegisterRequest request = new RegisterRequest(
-                    username, password, password, email, firstName, lastName, phone, gender, "CUSTOMER"
+                    username, password, password, email, firstName, lastName, phone, gender
             );
 
-            authService.register(request);
+            authService.register(request, RoleEnum.CUSTOMER.name());
             log.info("Successfully registered user {} via internal AuthService with Record DTO", username);
 
             GlobalCustomer globalCustomer = customerIdentityService.resolve(
@@ -838,7 +839,7 @@ public class TelegramWebhookServiceImpl implements TelegramWebhookService {
         String detailText = uiHelper.renderProductDetail(item, setting, availableQuantity);
         Optional<String> imageUrl = item.getImages().stream()
                 .findFirst()
-                .map(image -> minioService.getPublicUrl(image));
+                .map(image -> minioService.getPublicUrl(image.getImageKey()));
         if (imageUrl.isPresent()) telegramBotClient.sendPhoto(botToken, chatId, imageUrl.get(), detailText, keyboard);
         else telegramBotClient.sendMessage(botToken, chatId, detailText, keyboard);
     }
