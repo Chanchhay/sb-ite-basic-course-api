@@ -46,7 +46,7 @@ public class AuthServiceImpl implements AuthService{
 
     @Override
     @Transactional
-    public RegisterResponse register(RegisterRequest registerRequest) {
+    public RegisterResponse register(RegisterRequest registerRequest, String role) {
         if (!registerRequest.password().equals(registerRequest.confirmPassword())){
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Password and confirm password do not match");
         }
@@ -57,12 +57,12 @@ public class AuthServiceImpl implements AuthService{
 
         try {
             UserResource userResource = usersResource.get(createdUserId);
-            assignRoles(userResource, registerRequest.role());
+            assignRoles(userResource, role);
             saveUserProfile(createdUserId, registerRequest);
             sendVerificationEmail(userResource, createdUserId);
 
             UserRepresentation createdUser = userResource.toRepresentation();
-            return authMapper.toRegisterResponse(createdUser, registerRequest.role());
+            return authMapper.toRegisterResponse(createdUser, role);
         } catch (NotFoundException e) {
             cleanupCreatedUser(usersResource, createdUserId);
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Required Keycloak user or role was not found", e);
@@ -136,7 +136,11 @@ public class AuthServiceImpl implements AuthService{
         RolesResource roleResource = keycloak.realm(props.getTargetRealm()).roles();
         Set<String> roleNames = new LinkedHashSet<>();
         roleNames.add(RoleEnum.USER.name());
-        roleNames.add(RoleEnum.valueOf(selectedRole).name());
+        roleNames.add(RoleEnum.GLOBAL_CUSTOMER.name());
+
+        if (!RoleEnum.GLOBAL_CUSTOMER.name().equals(selectedRole)) {
+            roleNames.add(RoleEnum.valueOf(selectedRole).name());
+        }
 
         List<RoleRepresentation> roles = roleNames.stream()
                 .map(roleName -> roleResource.get(roleName).toRepresentation())

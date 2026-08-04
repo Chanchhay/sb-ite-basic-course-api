@@ -19,7 +19,7 @@ repositories {
 }
 
 dependencies {
-    implementation("io.minio:minio:8.6.0")
+    implementation 'io.minio:minio:9.0.3'
     implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
     implementation 'org.springframework.boot:spring-boot-starter-webmvc'
     implementation 'org.springframework.boot:spring-boot-starter-validation'
@@ -38,6 +38,8 @@ dependencies {
     implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:3.0.3'
     implementation 'org.springdoc:springdoc-openapi-starter-webmvc-scalar:3.0.3'
     implementation 'org.springframework.boot:spring-boot-starter-security-oauth2-resource-server'
+    implementation 'org.springframework.boot:spring-boot-starter-flyway'
+    runtimeOnly 'org.flywaydb:flyway-database-postgresql'
 
     compileOnly 'org.projectlombok:lombok'
     compileOnly 'org.mapstruct:mapstruct:1.6.3'

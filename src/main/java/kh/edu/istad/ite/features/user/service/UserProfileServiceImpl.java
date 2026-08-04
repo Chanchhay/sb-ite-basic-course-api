@@ -33,7 +33,7 @@ public class UserProfileServiceImpl implements UserProfileService {
             "SUPER_ADMIN",
             "BUSINESS",
             "CUSTOMER",
-            "GLOBAL_USER",
+            "GLOBAL_CUSTOMER",
             "USER"
     );
 
