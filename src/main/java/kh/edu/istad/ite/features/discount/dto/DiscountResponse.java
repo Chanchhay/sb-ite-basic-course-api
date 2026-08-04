@@ -1,9 +1,6 @@
 package kh.edu.istad.ite.features.discount.dto;
 
-import kh.edu.istad.ite.shared.enums.DiscountRuleType;
-import kh.edu.istad.ite.shared.enums.DiscountScope;
-import kh.edu.istad.ite.shared.enums.DiscountType;
-import kh.edu.istad.ite.shared.enums.RecordStatus;
+import kh.edu.istad.ite.shared.enums.*;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -28,6 +25,8 @@ public record DiscountResponse(
         LocalDateTime startsAt,
         LocalDateTime endsAt,
         List<String> selectedDay,
+        List<OrderChannel> applicableChannels,
+        List<DiscountTargetResponse> targets,
         RecordStatus status
 ) {
 }

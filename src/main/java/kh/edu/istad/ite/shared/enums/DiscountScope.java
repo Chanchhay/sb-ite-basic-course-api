@@ -4,5 +4,8 @@ public enum DiscountScope {
     ALL_ITEMS,
     SPECIFIC_ITEMS,
     SPECIFIC_CATEGORIES,
-    SPECIFIC_MEMBERSHIP
+    SPECIFIC_MEMBERSHIP,
+    ORDER,
+    ITEM,
+    CATEGORY
 }

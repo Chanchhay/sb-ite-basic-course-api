@@ -5,18 +5,10 @@ import kh.edu.istad.ite.features.discount.dto.CreateDiscountRequest;
 import kh.edu.istad.ite.features.discount.dto.DiscountResponse;
 import kh.edu.istad.ite.features.discount.dto.UpdateDiscountRequest;
 import kh.edu.istad.ite.features.discount.service.DiscountService;
+import kh.edu.istad.ite.shared.enums.OrderChannel;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
-import org.springframework.web.bind.annotation.DeleteMapping;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PatchMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.PutMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.ResponseStatus;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 import java.util.UUID;
@@ -48,6 +40,20 @@ public class DiscountController {
             @PathVariable UUID discountId
     ) {
         return discountService.findDiscountById(businessId, discountId);
+    }
+
+    // Used by checkout (POS, website, Telegram/Messenger bot, ...) to ask
+    // "what discounts are actually usable right now for this channel /
+    // item / category". e.g. GET .../discounts/applicable?channel=POS
+    // GET .../discounts/applicable?channel=WEB&itemGroupId=<food-category-id>
+    @GetMapping("/applicable")
+    public List<DiscountResponse> findApplicableDiscounts(
+            @PathVariable UUID businessId,
+            @RequestParam OrderChannel channel,
+            @RequestParam(required = false) UUID itemId,
+            @RequestParam(required = false) UUID itemGroupId
+    ){
+        return discountService.findApplicableDiscounts(businessId, channel, itemId, itemGroupId);
     }
 
     @PutMapping("/{discountId}")
