@@ -18,10 +18,20 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
         registry.addEndpoint("/ws/customer-display-sockjs")
                 .setAllowedOriginPatterns("*")
                 .withSockJS();
+
+        registry.addEndpoint("/ws/notifications")
+                .setAllowedOriginPatterns("*");
+
+        registry.addEndpoint("/ws/notifications-sockjs")
+                .setAllowedOriginPatterns("*")
+                .withSockJS();
     }
 
     @Override
     public void configureMessageBroker(MessageBrokerRegistry registry) {
-        registry.enableSimpleBroker("/topic");
+
+        registry.enableSimpleBroker("/topic", "/queue");
+
+        registry.setUserDestinationPrefix("/user");
     }
 }

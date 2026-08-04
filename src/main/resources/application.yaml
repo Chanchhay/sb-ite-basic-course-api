@@ -11,6 +11,9 @@
 #    username: ${DB_USER}
 #    password: ${DB_PASS}
 
+server:
+  max-http-request-header-size: 64KB
+
 spring:
   profiles:
     active: dev
