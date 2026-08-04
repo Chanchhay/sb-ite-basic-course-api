@@ -44,8 +44,9 @@ public class NotificationController {
     }
 
     @GetMapping("/received/unread-count")
-    public UnreadCountResponse unreadCount(@RequestParam String receiverId) {
-        return new UnreadCountResponse(queryService.getUnreadCount(currentUserId(), receiverId));
+    public UnreadCountResponse unreadCount(@RequestParam(required = false) String receiverId) {
+        String targetReceiverId = (receiverId != null && !receiverId.isBlank()) ? receiverId : currentUserId().toString();
+        return new UnreadCountResponse(queryService.getUnreadCount(currentUserId(), targetReceiverId));
     }
 
     @PatchMapping("/received/{id}/read")
@@ -56,8 +57,9 @@ public class NotificationController {
 
     @PatchMapping("/received/read-all")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void markAllRead(@RequestParam String receiverId) {
-        commandService.markAllAsRead(currentUserId(), receiverId);
+    public void markAllRead(@RequestParam(required = false) String receiverId) {
+        String targetReceiverId = (receiverId != null && !receiverId.isBlank()) ? receiverId : currentUserId().toString();
+        commandService.markAllAsRead(currentUserId(), targetReceiverId);
     }
 
     @PutMapping("/received/{id}")
