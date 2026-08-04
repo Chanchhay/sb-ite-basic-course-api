@@ -11,6 +11,13 @@ import kh.edu.istad.ite.features.auth.dto.RoleEnum;
 import kh.edu.istad.ite.features.auth.mapper.AuthMapper;
 import kh.edu.istad.ite.features.user.entity.UserProfile;
 import kh.edu.istad.ite.features.user.repository.UserProfileRepository;
+import kh.edu.istad.ite.features.business.entity.Business;
+import kh.edu.istad.ite.features.business.entity.BusinessCategory;
+import kh.edu.istad.ite.features.business.entity.BusinessCurrency;
+import kh.edu.istad.ite.features.business.repository.BusinessRepository;
+import kh.edu.istad.ite.features.business.repository.BusinessCategoryRepository;
+import kh.edu.istad.ite.shared.enums.BusinessOwnerStatus;
+import kh.edu.istad.ite.shared.helper.SlugHelper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.keycloak.admin.client.CreatedResponseUtil;
@@ -26,6 +33,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -43,6 +52,8 @@ public class AuthServiceImpl implements AuthService{
     private final KeycloakAdminClientProps props;
     private final AuthMapper authMapper;
     private final UserProfileRepository userProfileRepository;
+    private final BusinessRepository businessRepository;
+    private final BusinessCategoryRepository businessCategoryRepository;
 
     @Override
     @Transactional
@@ -59,6 +70,11 @@ public class AuthServiceImpl implements AuthService{
             UserResource userResource = usersResource.get(createdUserId);
             assignRoles(userResource, role);
             saveUserProfile(createdUserId, registerRequest);
+            
+            if (RoleEnum.BUSINESS.name().equals(role)) {
+                createDefaultBusinessForUser(UUID.fromString(createdUserId), registerRequest);
+            }
+            
             sendVerificationEmail(userResource, createdUserId);
 
             UserRepresentation createdUser = userResource.toRepresentation();
@@ -176,5 +192,79 @@ public class AuthServiceImpl implements AuthService{
         } catch (WebApplicationException | ProcessingException e) {
             log.error("Failed to delete Keycloak user {} after registration failure", createdUserId, e);
         }
+    }
+
+    private void createDefaultBusinessForUser(UUID keycloakUserId, RegisterRequest request) {
+        String bizName = request.businessName();
+        if (bizName == null || bizName.trim().isEmpty()) {
+            bizName = request.firstName() + " " + request.lastName() + "'s Business";
+        }
+
+        String bizAddress = request.businessAddress();
+        if (bizAddress == null || bizAddress.trim().isEmpty()) {
+            bizAddress = "Default Address";
+        }
+
+        BusinessCategory category = null;
+        if (request.businessCategoryId() != null && !request.businessCategoryId().trim().isEmpty()) {
+            try {
+                category = businessCategoryRepository.findById(UUID.fromString(request.businessCategoryId()))
+                        .orElse(null);
+            } catch (Exception e) {
+                log.warn("Invalid business category UUID: {}", request.businessCategoryId());
+            }
+        }
+
+        if (category == null) {
+            List<BusinessCategory> subCategories = businessCategoryRepository.findByParentCategoryIsNotNullOrderByNameAsc();
+            if (!subCategories.isEmpty()) {
+                category = subCategories.get(0);
+            } else {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "No sub-categories available to create business. Please seed categories first.");
+            }
+        }
+
+        if (category.getParentCategory() == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Business category must be a sub category");
+        }
+
+        Business business = new Business();
+        business.setKeycloakUserId(keycloakUserId);
+        business.setDisplayName(bizName.trim());
+        business.setSlug(generateUniqueSlug(bizName.trim()));
+        business.setBusinessEmail(request.email().trim());
+        business.setAddress(bizAddress.trim());
+        business.setBusinessCategory(category);
+        business.setProvisionedAt(LocalDateTime.now());
+        business.setStatus(BusinessOwnerStatus.ACTIVE);
+        business.setIsEnabled(true);
+        business.setIsListing(false);
+        business.setIsClosed(false);
+        business.setBaseCurrency("USD");
+        business.setDisplayCurrency("USD");
+        business.getCurrencies().add(createDefaultCurrency(business));
+
+        businessRepository.save(business);
+        log.info("Automatically created default business profile for Keycloak user: {}", keycloakUserId);
+    }
+
+    private BusinessCurrency createDefaultCurrency(Business business) {
+        BusinessCurrency currency = new BusinessCurrency();
+        currency.setBusiness(business);
+        currency.setCode("USD");
+        currency.setName("United States Dollar");
+        currency.setExchangeRate(BigDecimal.ONE.setScale(8));
+        currency.setSymbol("$");
+        currency.setDecimalPlaces((short) 2);
+        return currency;
+    }
+
+    private String generateUniqueSlug(String name) {
+        return SlugHelper.generateUniqueSlug(
+                name,
+                "business",
+                63,
+                businessRepository::existsBySlug
+        );
     }
 }
