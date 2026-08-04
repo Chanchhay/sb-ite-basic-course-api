@@ -38,6 +38,22 @@ public record RegisterRequest(
 
         @NotBlank(message = "gender cannot be empty")
         @Pattern(regexp = "MALE|FEMALE|OTHER|UNSPECIFIED", message = "Gender must be MALE, FEMALE, OTHER, or UNSPECIFIED")
-        String gender
+        String gender,
+
+        String businessName,
+        String businessAddress,
+        String businessCategoryId
 ) {
+    public RegisterRequest(
+            String username,
+            String password,
+            String confirmPassword,
+            String email,
+            String firstName,
+            String lastName,
+            String phoneNumber,
+            String gender
+    ) {
+        this(username, password, confirmPassword, email, firstName, lastName, phoneNumber, gender, null, null, null);
+    }
 }
