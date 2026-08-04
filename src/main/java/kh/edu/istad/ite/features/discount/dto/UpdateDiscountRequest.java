@@ -3,10 +3,12 @@ package kh.edu.istad.ite.features.discount.dto;
 import jakarta.validation.constraints.Digits;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
+import kh.edu.istad.ite.shared.enums.OrderChannel;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.UUID;
 
 public record UpdateDiscountRequest(
         @Size(max = 150, message = "name must be at most 150 characters")
@@ -47,6 +49,19 @@ public record UpdateDiscountRequest(
         List<String> selectedDays,
 
         @Pattern(regexp = "ACTIVE|INACTIVE", message = "status must be one of: ACTIVE, INACTIVE")
-        String status
+        String status,
+
+        // Null = don't touch channel restriction. Pass an empty list to clear
+        // it back to "all channels".
+        List<OrderChannel> applicableChannels,
+
+        // Null = don't touch item targets. Pass an empty list to clear all
+        // item targets (only meaningful while scope = ITEM).
+        List<UUID> targetItemIds,
+
+        //Null = don't touch category targets. pass an empty list to clear
+        // all category targets (only meaningful while scope = CATEGORY ).
+
+        List<UUID> targetItemGroupIds
 ) {
 }
