@@ -5,13 +5,14 @@ import kh.edu.istad.ite.features.catalog.dto.ItemResponse;
 import kh.edu.istad.ite.features.catalog.dto.ReorderItemImagesRequest;
 import kh.edu.istad.ite.features.catalog.dto.UpdateItemRequest;
 import kh.edu.istad.ite.features.catalog.dto.UploadItemImagesRequest;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 import java.util.UUID;
 
 public interface ItemService {
 
-    ItemResponse createItem(UUID businessId, CreateItemRequest request);
+    ItemResponse createItem(UUID businessId, CreateItemRequest request, List<MultipartFile> files);
 
     ItemResponse uploadItemImages(UUID businessId, UUID itemId, UploadItemImagesRequest request);
 
@@ -23,7 +24,7 @@ public interface ItemService {
 
     ItemResponse findItemById(UUID businessId, UUID itemId);
 
-    ItemResponse updateItem(UUID businessId, UUID itemId, UpdateItemRequest request);
+    ItemResponse updateItem(UUID businessId, UUID itemId, UpdateItemRequest request, List<MultipartFile> files);
 
     void deleteItem(UUID businessId, UUID itemId);
 

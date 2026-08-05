@@ -40,8 +40,20 @@ public record RegisterRequest(
         @Pattern(regexp = "MALE|FEMALE|OTHER|UNSPECIFIED", message = "Gender must be MALE, FEMALE, OTHER, or UNSPECIFIED")
         String gender,
 
-        @NotBlank(message = "role cannot be empty")
-        @Pattern(regexp = "GLOBAL_USER|BUSINESS|CUSTOMER", message = "Role must be GLOBAL_USER, BUSINESS, or CUSTOMER")
-        String role
+        String businessName,
+        String businessAddress,
+        String businessCategoryId
 ) {
+    public RegisterRequest(
+            String username,
+            String password,
+            String confirmPassword,
+            String email,
+            String firstName,
+            String lastName,
+            String phoneNumber,
+            String gender
+    ) {
+        this(username, password, confirmPassword, email, firstName, lastName, phoneNumber, gender, null, null, null);
+    }
 }

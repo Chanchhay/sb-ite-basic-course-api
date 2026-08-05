@@ -21,10 +21,16 @@ import java.util.UUID;
 @NoArgsConstructor
 @Table(
         name = "orders",
-        uniqueConstraints = @UniqueConstraint(
-                name = "uk_orders_business_invoice",
-                columnNames = {"business_owner_id", "invoice_number"}
-        )
+        uniqueConstraints = {
+                @UniqueConstraint(
+                        name = "uk_orders_business_invoice",
+                        columnNames = {"business_owner_id", "invoice_number"}
+                ),
+                @UniqueConstraint(
+                        name = "uk_orders_invoice_number",
+                        columnNames = {"invoice_number"}
+                )
+        }
 )
 public class Order extends BasedAuditingEntity {
 

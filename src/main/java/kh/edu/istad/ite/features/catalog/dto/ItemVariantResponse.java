@@ -7,6 +7,7 @@ public record ItemVariantResponse(
         UUID id,
         String slug,
         String name,
-        BigDecimal price
+        BigDecimal price,
+        Boolean available
 ) {
 }

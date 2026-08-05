@@ -17,64 +17,37 @@ import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 
 public interface ItemRepository extends JpaRepository<Item, UUID>, JpaSpecificationExecutor<Item> {
 
-    boolean existsByUnit_Id(UUID unitId);
+        boolean existsByUnit_Id(UUID unitId);
 
-    List<Item> findAllByBusinessIdOrderByNameAsc(UUID businessId);
+        List<Item> findAllByBusinessIdOrderByNameAsc(UUID businessId);
 
-    Optional<Item> findByIdAndBusinessId(UUID id, UUID businessId);
+        Optional<Item> findByIdAndBusinessId(UUID id, UUID businessId);
 
-    boolean existsByBusinessIdAndNameIgnoreCase(UUID businessId, String name);
+        boolean existsByBusinessIdAndNameIgnoreCase(UUID businessId, String name);
 
-    boolean existsByBusinessIdAndNameIgnoreCaseAndIdNot(UUID businessId, String name, UUID id);
+        boolean existsByBusinessIdAndNameIgnoreCaseAndIdNot(UUID businessId, String name, UUID id);
 
-    boolean existsByBusinessIdAndSlugIgnoreCase(UUID businessId, String slug);
+        boolean existsByBusinessIdAndSlugIgnoreCase(UUID businessId, String slug);
 
-    boolean existsByBusinessIdAndSlugIgnoreCaseAndIdNot(UUID businessId, String slug, UUID id);
+        boolean existsByBusinessIdAndSlugIgnoreCaseAndIdNot(UUID businessId, String slug, UUID id);
 
-    boolean existsByBusinessIdAndItemGroupId(UUID businessId, UUID itemGroupId);
+        boolean existsByBusinessIdAndItemGroupId(UUID businessId, UUID itemGroupId);
 
-    boolean existsByBusiness_Id(UUID businessId);
+        boolean existsByBusiness_Id(UUID businessId);
 
-    Optional<Item> findByBusinessIdAndBarcode(UUID businessId, String barcode);
+        Optional<Item> findByBusinessIdAndBarcode(UUID businessId, String barcode);
 
-    Page<Item> findByBusinessIdAndStatusAndItemGroup_IdOrderByNameAsc(
-            UUID businessId, ItemStatus status, UUID itemGroupId, Pageable pageable);
+        Page<Item> findByBusinessIdAndStatusAndItemGroup_IdOrderByNameAsc(
+                        UUID businessId, ItemStatus status, UUID itemGroupId, Pageable pageable);
 
-    Page<Item> findByBusinessIdAndStatusOrderByNameAsc(
-            UUID businessId, ItemStatus status, Pageable pageable);
+        Page<Item> findByBusinessIdAndStatusOrderByNameAsc(
+                        UUID businessId, ItemStatus status, Pageable pageable);
 
-    Page<Item> findByBusinessIdAndStatusAndNameContainingIgnoreCaseOrderByNameAsc(
-            UUID businessId, ItemStatus status, String name, Pageable pageable);
+        Page<Item> findByBusinessIdAndStatusAndNameContainingIgnoreCaseOrderByNameAsc(
+                        UUID businessId, ItemStatus status, String name, Pageable pageable);
 
-    Page<Item> findByBusinessIdAndStatusAndPriceBetweenOrderByNameAsc(
-            UUID businessId, ItemStatus status, BigDecimal minPrice, BigDecimal maxPrice, Pageable pageable);
+        Page<Item> findByBusinessIdAndStatusAndPriceBetweenOrderByNameAsc(
+                        UUID businessId, ItemStatus status, BigDecimal minPrice, BigDecimal maxPrice,
+                        Pageable pageable);
 
-    @Query("SELECT i FROM Item i WHERE i.business.id = :businessId " +
-            "AND i.status = :status " +
-            "AND (:itemGroupId IS NULL OR i.itemGroup.id = :itemGroupId) " +
-            "AND (:minPrice IS NULL OR i.price >= :minPrice) " +
-            "AND (:maxPrice IS NULL OR i.price <= :maxPrice) " +
-            "ORDER BY i.name ASC")
-    Page<Item> filterTelegramBotItems(
-            @Param("businessId") UUID businessId,
-            @Param("status") ItemStatus status,
-            @Param("itemGroupId") UUID itemGroupId,
-            @Param("minPrice") BigDecimal minPrice,
-            @Param("maxPrice") BigDecimal maxPrice,
-            Pageable pageable
-    );
-
-    @Query("""
-    SELECT i
-    FROM Item i
-    JOIN ItemChannel ic
-        ON ic.item = i
-    JOIN SalesChannel sc
-        ON sc = ic.salesChannel
-    WHERE sc.code = :channelCode
-    AND ic.isEnabled = true
-""")
-    List<Item> findItemsByChannelCode(
-            @Param("channelCode") String channelCode
-    );
 }

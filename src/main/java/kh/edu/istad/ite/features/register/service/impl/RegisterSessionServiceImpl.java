@@ -83,6 +83,11 @@ public class RegisterSessionServiceImpl implements RegisterSessionService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Cash register is already open");
         }
 
+        RegisterSession existingSession = sessionRepository.findByRegisterIdAndStatus(register.getId(), SessionStatus.OPEN).orElse(null);
+        if (existingSession != null) {
+            return joinSession(existingSession.getId(), userId);
+        }
+
         sessionRepository.findByUserIdAndStatus(userId, SessionStatus.OPEN).ifPresent(s -> {
             throw new ResponseStatusException( HttpStatus.BAD_REQUEST, "Cashier already has an active open session");
         });
@@ -98,6 +103,7 @@ public class RegisterSessionServiceImpl implements RegisterSessionService {
                 .openingBalance(request.getOpeningBalance())
                 .status(SessionStatus.OPEN)
                 .note(request.getNote())
+                .participants(new java.util.HashSet<>(java.util.Collections.singletonList(userId)))
                 .build();
 
         session = sessionRepository.save(session);
@@ -143,6 +149,65 @@ public class RegisterSessionServiceImpl implements RegisterSessionService {
         sessionRepository.save(session);
 
         return mapToResponse(session, totalCashSales, totalPaidIn, totalPaidOut);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public RegisterSessionResponse getCurrentSession(String userId) {
+        UUID userUuid = UUID.fromString(userId);
+        Business business = businessRepository.findByKeycloakUserId(userUuid).orElse(null);
+
+        if (business == null) {
+            UserProfile profile = userProfileRepository.findById(userUuid).orElse(null);
+            if (profile != null) {
+                business = profile.getBusiness();
+            }
+        }
+
+        if (business == null) {
+            return null;
+        }
+
+        CashRegister register = registerRepository.findByBusinessId(business.getId()).orElse(null);
+        if (register == null) {
+            return null;
+        }
+
+        RegisterSession session = sessionRepository.findByRegisterIdAndStatus(register.getId(), SessionStatus.OPEN).orElse(null);
+        if (session == null) {
+            return null;
+        }
+
+        return getSessionSummary(session.getId());
+    }
+
+    @Override
+    @Transactional
+    public RegisterSessionResponse joinSession(Long sessionId, String userId) {
+        RegisterSession session = sessionRepository.findById(sessionId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Register session not found"));
+        
+        UUID userUuid = UUID.fromString(userId);
+        Business business = businessRepository.findByKeycloakUserId(userUuid).orElse(null);
+        if (business == null) {
+            UserProfile profile = userProfileRepository.findById(userUuid).orElse(null);
+            if (profile != null) {
+                business = profile.getBusiness();
+            }
+        }
+        
+        if (business == null || !business.getId().equals(session.getBusinessId())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Session does not belong to user's business");
+        }
+
+        if (session.getStatus() != SessionStatus.OPEN) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Session is not open");
+        }
+
+        session.getParticipants().add(userId);
+        session = sessionRepository.save(session);
+        
+        return getSessionSummary(session.getId());
     }
 
     @Override
