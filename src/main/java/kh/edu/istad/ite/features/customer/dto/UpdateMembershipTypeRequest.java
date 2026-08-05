@@ -7,8 +7,13 @@ import java.util.UUID;
 
 public record UpdateMembershipTypeRequest(
         @Size(max = 100, message = "typeName must be at most 100 characters")
+        @Pattern(
+                regexp =  "^[\\p{L}]+(?: [\\p{L}]+)*$",
+                message = "typeName can only contain letters and spaces (no numbers or special characters)"
+        )
         String typeName,
 
+        @Size(max = 500, message = "remark must be at most 500 characters")
         String remark,
 
         UUID discountId,
