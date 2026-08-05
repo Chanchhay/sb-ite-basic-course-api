@@ -15,6 +15,8 @@ import kh.edu.istad.ite.features.catalog.repository.ItemRepository;
 import kh.edu.istad.ite.features.catalog.repository.UnitRepository;
 import kh.edu.istad.ite.features.catalog.entity.ItemImage;
 import kh.edu.istad.ite.features.minio.MinioService;
+import kh.edu.istad.ite.features.channel.repository.ItemChannelRepository;
+import kh.edu.istad.ite.features.channel.entity.ItemChannel;
 import org.springframework.web.multipart.MultipartFile;
 import kh.edu.istad.ite.shared.enums.ItemStatus;
 import kh.edu.istad.ite.shared.helper.BusinessHelper;
@@ -68,6 +70,7 @@ public class ItemServiceImpl implements ItemService {
     private final UnitRepository unitRepository;
     private final ItemMapper itemMapper;
     private final MinioService minioService;
+    private final ItemChannelRepository itemChannelRepository;
 
     @Override
     @Transactional
@@ -226,11 +229,19 @@ public class ItemServiceImpl implements ItemService {
         businessHelper.findOwnedBusiness(businessId);
         Item item = findItem(itemId, businessId);
 
+        List<ItemChannel> itemChannels = itemChannelRepository.findByItemId(itemId);
+        itemChannelRepository.deleteAll(itemChannels);
+
         for (ItemImage image : item.getImages()) {
             minioService.deleteAsset(image.getImageKey());
         }
 
-        itemRepository.delete(item);
+        try {
+            itemRepository.delete(item);
+            itemRepository.flush();
+        } catch (DataIntegrityViolationException e) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Cannot delete item because it has been ordered or is in use", e);
+        }
     }
 
     @Override
