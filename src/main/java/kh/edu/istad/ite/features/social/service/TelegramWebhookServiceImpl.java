@@ -40,6 +40,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.jpa.domain.Specification;
+import kh.edu.istad.ite.features.catalog.specification.ItemSpecifications;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
@@ -848,8 +850,10 @@ public class TelegramWebhookServiceImpl implements TelegramWebhookService {
         String categoryName;
 
         if (CATALOG_TOKEN_ALL.equals(catToken)) {
-            itemsPage = itemRepository.findActiveItemsByBusinessIdAndChannelCodes(
-                    businessId, ItemStatus.ACTIVE, List.of("TELEGRAM", "TELEGRAM_BOT"), pageable);
+            Specification<Item> spec = Specification.where(ItemSpecifications.hasBusinessId(businessId))
+                    .and(ItemSpecifications.hasStatus(ItemStatus.ACTIVE))
+                    .and(ItemSpecifications.isEnabledInChannelCodes(List.of("TELEGRAM", "TELEGRAM_BOT")));
+            itemsPage = itemRepository.findAll(spec, pageable);
             categoryName = "ផលិតផលទាំងអស់";
         } else {
             UUID groupId;
@@ -859,8 +863,11 @@ public class TelegramWebhookServiceImpl implements TelegramWebhookService {
                 showCategories(botToken, chatId, setting, session);
                 return;
             }
-            itemsPage = itemRepository.findActiveItemsByBusinessIdAndStatusAndItemGroup_IdAndChannelCodes(
-                    businessId, ItemStatus.ACTIVE, groupId, List.of("TELEGRAM", "TELEGRAM_BOT"), pageable);
+            Specification<Item> spec = Specification.where(ItemSpecifications.hasBusinessId(businessId))
+                    .and(ItemSpecifications.hasStatus(ItemStatus.ACTIVE))
+                    .and(ItemSpecifications.hasItemGroupId(groupId))
+                    .and(ItemSpecifications.isEnabledInChannelCodes(List.of("TELEGRAM", "TELEGRAM_BOT")));
+            itemsPage = itemRepository.findAll(spec, pageable);
             categoryName = itemGroupRepository.findByIdAndBusinessId(groupId, businessId).map(ItemGroup::getName)
                     .orElse("ប្រភេទផលិតផល");
         }
@@ -948,8 +955,11 @@ public class TelegramWebhookServiceImpl implements TelegramWebhookService {
 
     private void handleSearchKeyword(String botToken, Long chatId, String keyword, BusinessTelegramBot setting,
             BotSession session) {
-        Page<Item> searchResults = itemRepository.findActiveItemsByBusinessIdAndStatusAndNameContainingAndChannelCodes(
-                setting.getBusiness().getId(), ItemStatus.ACTIVE, keyword, List.of("TELEGRAM", "TELEGRAM_BOT"), PageRequest.of(0, 10));
+        Specification<Item> spec = Specification.where(ItemSpecifications.hasBusinessId(setting.getBusiness().getId()))
+                .and(ItemSpecifications.hasStatus(ItemStatus.ACTIVE))
+                .and(ItemSpecifications.nameContainsIgnoreCase(keyword))
+                .and(ItemSpecifications.isEnabledInChannelCodes(List.of("TELEGRAM", "TELEGRAM_BOT")));
+        Page<Item> searchResults = itemRepository.findAll(spec, PageRequest.of(0, 10));
         session.setState(STATE_IDLE);
         if (searchResults.isEmpty()) {
             telegramBotClient.sendMessage(botToken, chatId, "❌ រកមិនឃើញផលិតផលឈ្មោះ *" + keyword + "* ទេ។",

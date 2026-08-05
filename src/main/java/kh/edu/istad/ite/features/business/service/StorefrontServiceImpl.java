@@ -174,8 +174,12 @@ public class StorefrontServiceImpl implements StorefrontService {
         Business business = businessRepository.findOne(spec)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Store has not been found"));
 
-        List<Item> items = itemRepository.findActiveItemsByBusinessIdAndChannelCodes(
-                business.getId(), ItemStatus.ACTIVE, List.of("ONLINE", "WEB", "STOREFRONT"));
+        org.springframework.data.jpa.domain.Specification<Item> specItems = org.springframework.data.jpa.domain.Specification
+                .where(kh.edu.istad.ite.features.catalog.specification.ItemSpecifications.hasBusinessId(business.getId()))
+                .and(kh.edu.istad.ite.features.catalog.specification.ItemSpecifications.hasStatus(ItemStatus.ACTIVE))
+                .and(kh.edu.istad.ite.features.catalog.specification.ItemSpecifications.isEnabledInChannelCodes(List.of("ONLINE", "WEB", "STOREFRONT")));
+
+        List<Item> items = itemRepository.findAll(specItems);
         return items.stream()
                 .map(itemMapper::toResponse)
                 .toList();
