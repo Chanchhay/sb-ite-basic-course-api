@@ -8,4 +8,6 @@ import java.util.UUID;
 
 public interface SalesChannelRepository extends JpaRepository<SalesChannel, UUID> {
     List<SalesChannel> findAllByIsActiveTrueOrderByNameAsc();
+
+    boolean existsByCode(String code);
 }

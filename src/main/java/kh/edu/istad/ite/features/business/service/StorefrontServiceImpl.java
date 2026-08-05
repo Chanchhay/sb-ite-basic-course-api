@@ -73,8 +73,7 @@ public class StorefrontServiceImpl implements StorefrontService {
         if (!unmet.isEmpty()) {
             throw new ResponseStatusException(
                     HttpStatus.CONFLICT,
-                    "Storefront cannot be published yet: " + String.join("; ", unmet)
-            );
+                    "Storefront cannot be published yet: " + String.join("; ", unmet));
         }
 
         business.setIsListing(true);
@@ -118,8 +117,7 @@ public class StorefrontServiceImpl implements StorefrontService {
         return new SlugAvailabilityResponse(
                 normalized,
                 rejection == null,
-                rejection == null ? storefrontMapper.buildStorefrontUrl(normalized) : null
-        );
+                rejection == null ? storefrontMapper.buildStorefrontUrl(normalized) : null);
     }
 
     @Override
@@ -128,8 +126,7 @@ public class StorefrontServiceImpl implements StorefrontService {
             UUID categoryId,
             String cityOrProvince,
             String keyword,
-            Pageable pageable
-    ) {
+            Pageable pageable) {
         var spec = PublicStoreSpecifications.withFilters(categoryId, cityOrProvince, keyword);
         return businessRepository.findAll(spec, pageable).map(storefrontMapper::toPublicResponse);
     }
@@ -145,8 +142,7 @@ public class StorefrontServiceImpl implements StorefrontService {
                         UUID uuid = UUID.fromString(slugOrId);
                         return cb.or(
                                 cb.equal(root.get("slug"), normalized),
-                                cb.equal(root.get("id"), uuid)
-                        );
+                                cb.equal(root.get("id"), uuid));
                     } catch (IllegalArgumentException e) {
                         return cb.equal(root.get("slug"), normalized);
                     }
@@ -169,8 +165,7 @@ public class StorefrontServiceImpl implements StorefrontService {
                         UUID uuid = UUID.fromString(slugOrId);
                         return cb.or(
                                 cb.equal(root.get("slug"), normalized),
-                                cb.equal(root.get("id"), uuid)
-                        );
+                                cb.equal(root.get("id"), uuid));
                     } catch (IllegalArgumentException e) {
                         return cb.equal(root.get("slug"), normalized);
                     }
@@ -179,9 +174,9 @@ public class StorefrontServiceImpl implements StorefrontService {
         Business business = businessRepository.findOne(spec)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Store has not been found"));
 
-        List<Item> items = itemRepository.findAllByBusinessIdOrderByNameAsc(business.getId());
+        List<Item> items = itemRepository.findActiveItemsByBusinessIdAndChannelCodes(
+                business.getId(), ItemStatus.ACTIVE, List.of("ONLINE", "WEB", "STOREFRONT"));
         return items.stream()
-                .filter(item -> item.getStatus() == ItemStatus.ACTIVE)
                 .map(itemMapper::toResponse)
                 .toList();
     }
@@ -202,43 +197,37 @@ public class StorefrontServiceImpl implements StorefrontService {
                 BusinessOwnerStatus.ACTIVE.equals(business.getStatus())
                         && Boolean.TRUE.equals(business.getIsEnabled())
                         && !Boolean.TRUE.equals(business.getIsClosed()),
-                true
-        ));
+                true));
 
         requirements.add(new StorefrontRequirement(
                 "HAS_ITEM",
                 "At least one item must exist",
                 itemRepository.existsByBusiness_Id(business.getId()),
-                true
-        ));
+                true));
 
         requirements.add(new StorefrontRequirement(
                 "VALID_SLUG",
                 "Store address must be a valid, non-reserved slug",
                 rejectionReason(business.getSlug(), business.getId()) == null,
-                true
-        ));
+                true));
 
         requirements.add(new StorefrontRequirement(
                 "HAS_LOGO",
                 "A logo helps customers recognise the store",
                 StringUtils.hasText(business.getLogo()),
-                false
-        ));
+                false));
 
         requirements.add(new StorefrontRequirement(
                 "HAS_ABOUT",
                 "A short description improves the store page",
                 StringUtils.hasText(business.getAbout()),
-                false
-        ));
+                false));
 
         requirements.add(new StorefrontRequirement(
                 "HAS_PHONE",
                 "A contact phone number lets customers reach the store",
                 StringUtils.hasText(business.getPhoneNumber()),
-                false
-        ));
+                false));
 
         return requirements;
     }
@@ -256,8 +245,7 @@ public class StorefrontServiceImpl implements StorefrontService {
                 storefrontMapper.buildStorefrontUrl(business.getSlug()),
                 Boolean.TRUE.equals(business.getIsListing()),
                 readyToPublish,
-                requirements
-        );
+                requirements);
     }
 
     /** Returns null when the slug is usable, otherwise a human readable reason. */
