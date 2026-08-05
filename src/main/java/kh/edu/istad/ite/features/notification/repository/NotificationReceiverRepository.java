@@ -18,14 +18,20 @@ import java.util.UUID;
 public interface NotificationReceiverRepository extends JpaRepository<NotificationReceiver, UUID>, JpaSpecificationExecutor<NotificationReceiver> {
     Optional<NotificationReceiver> findByIdAndUserIdAndDeletedFalse(UUID id, UUID userId);
 
-    long countByUserIdAndReceiverIdAndReadFalseAndDeletedFalse(UUID userId, String receiverId);
+    Optional<NotificationReceiver> findByIdAndDeletedFalse(UUID id);
+
+    @Query("""
+            select count(r) from NotificationReceiver r
+            where (r.userId = :userId or r.receiverId = :receiverId)
+              and r.read = false and r.deleted = false
+            """)
+    long countByUserIdAndReceiverIdAndReadFalseAndDeletedFalse(@Param("userId") UUID userId, @Param("receiverId") String receiverId);
 
     Optional<NotificationReceiver> findByIdAndUserId(UUID id, UUID userId);
     @Query("""
             select r from NotificationReceiver r
             join fetch r.notificationSender s
-            where r.userId = :userId
-              and r.receiverId = :receiverId
+            where (r.userId = :userId or r.receiverId = :receiverId)
               and r.deleted = false
               and s.deleted = false
               and (:type   is null or s.type = :type)
@@ -40,7 +46,7 @@ public interface NotificationReceiverRepository extends JpaRepository<Notificati
     @Query("""
             update NotificationReceiver r
                set r.read = true, r.readAt = :when
-             where r.userId = :userId and r.receiverId = :receiverId
+             where (r.userId = :userId or r.receiverId = :receiverId)
                and r.read = false and r.deleted = false
             """)
     int markAllRead(@Param("userId") UUID userId,

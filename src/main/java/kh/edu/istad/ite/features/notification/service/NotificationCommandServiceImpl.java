@@ -43,7 +43,13 @@ public class NotificationCommandServiceImpl implements NotificationCommandServic
                         request.type(), request.title(), request.content(), request.deepLink()));
 
         List<NotificationReceiver> receivers = recipients.stream()
-                .map(rid -> NotificationReceiver.create(userId, sender, rid))
+                .map(rid -> {
+                    UUID targetUserId = userId;
+                    if (isUuid(rid)) {
+                        targetUserId = UUID.fromString(rid);
+                    }
+                    return NotificationReceiver.create(targetUserId, sender, rid);
+                })
                 .toList();
         List<NotificationReceiver> savedReceivers = receiverRepository.saveAll(receivers);
         receiverRepository.flush();
@@ -105,14 +111,16 @@ public class NotificationCommandServiceImpl implements NotificationCommandServic
     @Transactional
     public void hardDelete(UUID userId, UUID receiverRecordId) {
         NotificationReceiver r = receiverRepository
-                .findByIdAndUserId(receiverRecordId, userId)
+                .findByIdAndDeletedFalse(receiverRecordId)
+                .filter(rec -> rec.getUserId().equals(userId) || rec.getReceiverId().equals(userId.toString()))
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND, "Notification not found: " + receiverRecordId));
         receiverRepository.delete(r);
     }
 
     private NotificationReceiver find(UUID userId, UUID id) {
-        return receiverRepository.findByIdAndUserIdAndDeletedFalse(id, userId)
+        return receiverRepository.findByIdAndDeletedFalse(id)
+                .filter(r -> r.getUserId().equals(userId) || r.getReceiverId().equals(userId.toString()))
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND, "Notification not found: " + id));
     }
