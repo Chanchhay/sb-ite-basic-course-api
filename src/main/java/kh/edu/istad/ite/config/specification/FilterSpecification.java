@@ -28,7 +28,9 @@ public class FilterSpecification<T> {
             } else if (javaType.equals(LocalDateTime.class)) {
                 try {
                     // Try parsing as ZonedDateTime first (handles 'Z' and '+07:00' etc)
-                    return java.time.ZonedDateTime.parse(value).toLocalDateTime();
+                    return java.time.ZonedDateTime.parse(value)
+                            .withZoneSameInstant(java.time.ZoneId.systemDefault())
+                            .toLocalDateTime();
                 } catch (DateTimeParseException e1) {
                     try {
                         // Fallback to standard LocalDateTime
