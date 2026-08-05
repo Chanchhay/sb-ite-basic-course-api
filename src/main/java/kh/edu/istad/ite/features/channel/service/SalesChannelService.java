@@ -11,6 +11,8 @@ import java.util.UUID;
 public interface SalesChannelService {
     List<SalesChannelResponse> findAllActive();
 
+    List<SalesChannelResponse> findAll();
+
     List<SalesChannelItemResponse> findItemsByChannel(
             String channelCode);
 
