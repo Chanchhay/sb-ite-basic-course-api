@@ -22,6 +22,7 @@ import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
 import java.math.BigDecimal;
+import java.time.DayOfWeek;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
@@ -73,7 +74,7 @@ public class Discount extends BasedAuditingEntity {
     private BigDecimal value;
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 30)
+    @Column(name ="scope",nullable = false, length = 30)
     private DiscountScope scope;
 
     @Column(name = "min_order_amount", precision = 12, scale = 2)
@@ -97,7 +98,7 @@ public class Discount extends BasedAuditingEntity {
 
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "selected_days", columnDefinition = "jsonb")
-    private List<String> selectedDays;
+    private List<DayOfWeek> selectedDays;
 
 
     // Which order channels this discount is allowed to apply on

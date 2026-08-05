@@ -3,6 +3,7 @@ package kh.edu.istad.ite.features.discount.dto;
 import kh.edu.istad.ite.shared.enums.*;
 
 import java.math.BigDecimal;
+import java.time.DayOfWeek;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
@@ -24,7 +25,7 @@ public record DiscountResponse(
         Boolean requiresCoupon,
         LocalDateTime startsAt,
         LocalDateTime endsAt,
-        List<String> selectedDay,
+        List<DayOfWeek> selectedDay,
         List<OrderChannel> applicableChannels,
         List<DiscountTargetResponse> targets,
         RecordStatus status

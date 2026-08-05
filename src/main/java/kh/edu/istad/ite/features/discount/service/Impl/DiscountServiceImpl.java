@@ -130,7 +130,7 @@ public class DiscountServiceImpl implements DiscountService {
 
         DiscountType type = request.type() != null ? DiscountType.valueOf(request.type()) : discount.getType();
         DiscountRuleType ruleType = request.ruleType() != null ? DiscountRuleType.valueOf(request.ruleType()) : discount.getRuleType();
-        DiscountScope scope = request.scope() != null ? DiscountScope.valueOf(request.scope()) : discount.getScope();
+        DiscountScope scope = request.scope() != null ? request.scope() : discount.getScope();
 
         Integer buyQuantity = request.buyQuantity() != null ? request.buyQuantity() : discount.getBuyQuantity();
         Integer getQuantity = request.getQuantity() != null ? request.getQuantity() : discount.getGetQuantity();
@@ -400,12 +400,12 @@ public class DiscountServiceImpl implements DiscountService {
     }
 
     private boolean isOnSelectedDay(Discount discount, DayOfWeek today) {
-        List<String> selectedDays = discount.getSelectedDays();
+        List<DayOfWeek> selectedDays = discount.getSelectedDays();
         if (selectedDays == null || selectedDays.isEmpty()) {
             return true;
         }
 
-        return selectedDays.stream().anyMatch(day -> day.equalsIgnoreCase(today.name()));
+        return selectedDays.stream().anyMatch(day -> day == today);
     }
 
     private boolean isChannelAllowed(Discount discount, OrderChannel channel) {
