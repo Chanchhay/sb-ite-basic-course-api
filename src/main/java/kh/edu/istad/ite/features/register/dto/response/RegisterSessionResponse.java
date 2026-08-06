@@ -20,6 +20,8 @@ public class RegisterSessionResponse {
     private Integer orderCount;
     private Instant openedAt;
     private Instant closedAt;
+    /** The currency this session was counted in. */
+    private String currency;
     private BigDecimal openingBalance;
     private BigDecimal totalCashSales;
     private BigDecimal totalPaidIn;

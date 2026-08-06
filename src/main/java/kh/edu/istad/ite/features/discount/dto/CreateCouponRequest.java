@@ -32,11 +32,11 @@ public record CreateCouponRequest(
         @DecimalMin(value = "0.0", inclusive = true, message = "minPurchaseAmount must be at least zero")
         @Digits(integer = 10, fraction = 2, message = "minPurchaseAmount must have at most 10 integer digits and 2 decimal places")
         BigDecimal minPurchaseAmount,
-        @NotBlank(message = "startsAt cannot be empty")
+        @NotNull(message = "startsAt cannot be null")
         LocalDateTime startsAt,
-        @NotBlank(message = "startsAt cannot be empty")
+        @NotNull(message = "endsAt cannot be null")
         LocalDateTime endsAt,
-        @NotBlank(message = "startsAt cannot be empty")
+        @NotNull(message = "status cannot be null")
         CouponStatus status
 ) {
 }

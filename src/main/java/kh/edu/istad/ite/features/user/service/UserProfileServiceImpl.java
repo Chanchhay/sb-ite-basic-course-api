@@ -67,12 +67,12 @@ public class UserProfileServiceImpl implements UserProfileService {
                 userProfile
         );
 
-        if (updateUserProfileRequest.file() != null && !updateUserProfileRequest.file().isEmpty()) {
-            validateImage(updateUserProfileRequest.file());
+        String newProfilePicture = updateUserProfileRequest.profilePicture();
+        if (newProfilePicture != null && !newProfilePicture.isBlank()) {
             String oldKey = userProfile.getProfilePicture();
-            userProfile.setProfilePicture(minioService.uploadAsset(updateUserProfileRequest.file()));
+            userProfile.setProfilePicture(newProfilePicture);
 
-            if (oldKey != null && !oldKey.isBlank() && !oldKey.startsWith("http://") && !oldKey.startsWith("https://")) {
+            if (!newProfilePicture.equals(oldKey) && isManagedAsset(oldKey)) {
                 minioService.deleteAsset(oldKey);
             }
         }
@@ -88,6 +88,35 @@ public class UserProfileServiceImpl implements UserProfileService {
 
     @Override
     @Transactional
+    public UserProfileResponse uploadProfilePicture(MultipartFile file) {
+        validateImage(file);
+
+        String userId = SecurityUtils.extractUserId();
+        UUID userUuid = UUID.fromString(userId);
+
+        UserResource userResource = keycloak
+                .realm(props.getTargetRealm())
+                .users()
+                .get(userId);
+
+        UserProfile userProfile = getOrCreateUserProfile(userUuid);
+        String oldKey = userProfile.getProfilePicture();
+        userProfile.setProfilePicture(minioService.uploadAsset(file));
+        userProfileRepository.save(userProfile);
+
+        if (isManagedAsset(oldKey)) {
+            minioService.deleteAsset(oldKey);
+        }
+
+        return userProfileMapper.toUserProfileResponse(
+                userResource.toRepresentation(),
+                userProfile,
+                resolveRole(userResource)
+        );
+    }
+
+    @Override
+    @Transactional
     public void removeProfilePicture() {
         String userId = SecurityUtils.extractUserId();
         UUID userUuid = UUID.fromString(userId);
@@ -95,7 +124,7 @@ public class UserProfileServiceImpl implements UserProfileService {
         UserProfile userProfile = getOrCreateUserProfile(userUuid);
 
         String oldKey = userProfile.getProfilePicture();
-        if (oldKey != null && !oldKey.isBlank() && !oldKey.startsWith("http://") && !oldKey.startsWith("https://")) {
+        if (isManagedAsset(oldKey)) {
             minioService.deleteAsset(oldKey);
         }
 
@@ -153,5 +182,16 @@ public class UserProfileServiceImpl implements UserProfileService {
         if (contentType == null || !contentType.startsWith("image/")) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Only image files are allowed");
         }
+    }
+
+    /**
+     * A stored picture is only deletable from MinIO when it is an object key we own,
+     * not an absolute URL pointing at an external provider (e.g. Keycloak/social login).
+     */
+    private boolean isManagedAsset(String profilePicture) {
+        return profilePicture != null
+                && !profilePicture.isBlank()
+                && !profilePicture.startsWith("http://")
+                && !profilePicture.startsWith("https://");
     }
 }

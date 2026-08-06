@@ -46,7 +46,7 @@ public class SecurityConfig {
                                                 "/v3/api-docs/**")
                                 .permitAll()
                                 .requestMatchers("/scalar/**").permitAll()
-                                .requestMatchers(HttpMethod.POST, "/api/v1/auth/register").permitAll()
+                                .requestMatchers(HttpMethod.POST, "/api/v1/auth/register", "/api/v1/auth/register/**").permitAll()
                                 .requestMatchers(HttpMethod.POST, "/api/v1/webhooks/telegram/**").permitAll()
                                 .requestMatchers(
                                         "/ws/customer-display",
@@ -118,6 +118,10 @@ public class SecurityConfig {
                                 .requestMatchers(HttpMethod.PUT, "/api/v1/user-profiles/me")
                                 .hasAuthority("SCOPE_profile:update")
                                 .requestMatchers(HttpMethod.PATCH, "/api/v1/user-profiles/me")
+                                .hasAuthority("SCOPE_profile:update")
+                                .requestMatchers(HttpMethod.POST, "/api/v1/user-profiles/me/picture")
+                                .hasAuthority("SCOPE_profile:update")
+                                .requestMatchers(HttpMethod.DELETE, "/api/v1/user-profiles/me/picture")
                                 .hasAuthority("SCOPE_profile:update")
 
                                 // Business

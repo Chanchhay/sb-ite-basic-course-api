@@ -20,6 +20,7 @@ import kh.edu.istad.ite.shared.enums.*;
 import kh.edu.istad.ite.shared.helper.BusinessHelper;
 import kh.edu.istad.ite.shared.helper.TextHelper;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -34,8 +35,8 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
-import java.util.concurrent.ForkJoinPool;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class DiscountServiceImpl implements DiscountService {
@@ -56,14 +57,18 @@ public class DiscountServiceImpl implements DiscountService {
 
         String name = TextHelper.trimRequired(request.name(), "Discount name cannot be empty");
         if (discountRepository.existsByBusinessIdAndNameIgnoreCase(businessId, name)) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "Discount with this name already exists");
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "A discount with this name already exists in your store. Please choose a different name.");
         }
 
-        DiscountType type = request.type();
-        DiscountRuleType ruleType = request.ruleType();
-        DiscountScope scope = request.scope();
+        DiscountType type = request.type() != null ? request.type() : DiscountType.PERCENTAGE;
+        DiscountRuleType ruleType = request.ruleType() != null ? request.ruleType() : DiscountRuleType.NO_CONDITION;
+        DiscountScope scope = normalizeScope(request.scope());
+
         validateRule(ruleType, request.buyQuantity(), request.getQuantity(), request.minQuantity());
-        validateValue(type, request.value());
+        if (request.value() != null) {
+            validateValue(type, request.value());
+        }
+        validateTargetsMatchScope(scope, request.targetItemIds(), request.targetItemGroupIds());
 
         Discount discount = new Discount();
         discount.setBusiness(business);
@@ -74,20 +79,25 @@ public class DiscountServiceImpl implements DiscountService {
         discount.setBuyQuantity(request.buyQuantity());
         discount.setGetQuantity(request.getQuantity());
         discount.setMinQuantity(request.minQuantity());
-        discount.setValue(request.value());
+        discount.setValue(request.value() != null ? request.value() : BigDecimal.ZERO);
         discount.setScope(scope);
         discount.setMinOrderAmount(request.minOrderAmount());
         discount.setMaxDiscountAmount(request.maxDiscountAmount());
         discount.setRequiresCoupon(request.requiresCoupon() != null && request.requiresCoupon());
-        discount.setStartsAt(request.startsAt());
-        discount.setEndsAt(request.endsAt());
+        discount.setStartsAt(request.startsAt() != null ? request.startsAt() : LocalDateTime.now());
+        discount.setEndsAt(request.endsAt() != null ? request.endsAt() : LocalDateTime.now().plusYears(10));
         discount.setSelectedDays(request.selectedDays());
+        discount.setApplicableChannels(normalizeChannels(request.applicableChannels()));
         discount.setStatus(RecordStatus.ACTIVE);
 
         try {
-            return discountMapper.toResponse(discountRepository.saveAndFlush(discount));
+            Discount savedDiscount = discountRepository.saveAndFlush(discount);
+            List<DiscountTarget> targets = replaceTargets(savedDiscount, businessId, request.targetItemIds(), request.targetItemGroupIds());
+            return discountMapper.toResponse(savedDiscount, targets);
         } catch (DataIntegrityViolationException e) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "Discount already exists", e);
+            String rootCause = e.getMostSpecificCause() != null ? e.getMostSpecificCause().getMessage() : e.getMessage();
+            log.error("Failed to save discount rule for business {}: {}", businessId, rootCause, e);
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Database constraint error: " + rootCause, e);
         }
     }
 
@@ -98,7 +108,10 @@ public class DiscountServiceImpl implements DiscountService {
 
         return discountRepository.findAllByBusinessIdOrderByCreatedDateDesc(businessId)
                 .stream()
-                .map(discountMapper::toResponse)
+                .map(discount -> {
+                    List<DiscountTarget> targets = discountTargetRepository.findAllByDiscountId(discount.getId());
+                    return discountMapper.toResponse(discount, targets);
+                })
                 .toList();
     }
 
@@ -106,7 +119,9 @@ public class DiscountServiceImpl implements DiscountService {
     @Transactional(readOnly = true)
     public DiscountResponse findDiscountById(UUID businessId, UUID discountId) {
         businessHelper.findOwnedBusiness(businessId);
-        return discountMapper.toResponse(findDiscount(discountId, businessId));
+        Discount discount = findDiscount(discountId, businessId);
+        List<DiscountTarget> targets = discountTargetRepository.findAllByDiscountId(discount.getId());
+        return discountMapper.toResponse(discount, targets);
     }
 
     @Override
@@ -139,6 +154,7 @@ public class DiscountServiceImpl implements DiscountService {
 
         BigDecimal value = request.value() != null ? request.value() : discount.getValue();
         validateValue(type, value);
+        validateTargetsMatchScope(scope, request.targetItemIds(), request.targetItemGroupIds());
 
         discount.setType(type);
         discount.setRuleType(ruleType);
@@ -166,14 +182,21 @@ public class DiscountServiceImpl implements DiscountService {
         if (request.selectedDays() != null) {
             discount.setSelectedDays(request.selectedDays());
         }
+        if (request.applicableChannels() != null) {
+            discount.setApplicableChannels(normalizeChannels(request.applicableChannels()));
+        }
         if (request.status() != null) {
             discount.setStatus(RecordStatus.valueOf(request.status()));
         }
 
         try {
-            return discountMapper.toResponse(discountRepository.saveAndFlush(discount));
+            Discount savedDiscount = discountRepository.saveAndFlush(discount);
+            List<DiscountTarget> targets = replaceTargets(savedDiscount, businessId, request.targetItemIds(), request.targetItemGroupIds());
+            return discountMapper.toResponse(savedDiscount, targets);
         } catch (DataIntegrityViolationException e) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "Discount already exists", e);
+            String rootCause = e.getMostSpecificCause() != null ? e.getMostSpecificCause().getMessage() : e.getMessage();
+            log.error("Failed to update discount rule {} for business {}: {}", discountId, businessId, rootCause, e);
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Database constraint error: " + rootCause, e);
         }
     }
 
@@ -184,7 +207,9 @@ public class DiscountServiceImpl implements DiscountService {
         Discount discount = findDiscount(discountId, businessId);
 
         discount.setStatus(RecordStatus.ACTIVE);
-        return discountMapper.toResponse(discountRepository.saveAndFlush(discount));
+        Discount saved = discountRepository.saveAndFlush(discount);
+        List<DiscountTarget> targets = discountTargetRepository.findAllByDiscountId(saved.getId());
+        return discountMapper.toResponse(saved, targets);
     }
 
     @Override
@@ -194,7 +219,9 @@ public class DiscountServiceImpl implements DiscountService {
         Discount discount = findDiscount(discountId, businessId);
 
         discount.setStatus(RecordStatus.INACTIVE);
-        return discountMapper.toResponse(discountRepository.saveAndFlush(discount));
+        Discount saved = discountRepository.saveAndFlush(discount);
+        List<DiscountTarget> targets = discountTargetRepository.findAllByDiscountId(saved.getId());
+        return discountMapper.toResponse(saved, targets);
     }
 
     @Override
@@ -209,6 +236,9 @@ public class DiscountServiceImpl implements DiscountService {
         if (membershipTypeRepository.existsByDiscount_Id(discountId)) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Cannot delete discount that is used by membership types");
         }
+
+        discountTargetRepository.findAllByDiscountId(discountId).forEach(discountTargetRepository::delete);
+        discountTargetRepository.flush();
 
         discountRepository.delete(discount);
         discountRepository.flush();
@@ -230,7 +260,7 @@ public class DiscountServiceImpl implements DiscountService {
         List<DiscountResponse> result = new ArrayList<>();
 
         for (Discount discount : candidates) {
-            if (discount.getStatus() == RecordStatus.ACTIVE) {
+            if (discount.getStatus() != RecordStatus.ACTIVE) {
                 continue;
             }
             if (!isWithinWindow(discount, now)){
@@ -300,44 +330,38 @@ public class DiscountServiceImpl implements DiscountService {
         }
     }
 
-    // scope = ITEM must target specific product(s); scope = CATEGORY must
-    // target specific item group(s); scope = ORDER shouldn't target either.
+    private DiscountScope normalizeScope(DiscountScope scope) {
+        if (scope == null || scope == DiscountScope.ORDER || scope == DiscountScope.ALL_ITEMS) {
+            return DiscountScope.ALL_ITEMS;
+        }
+        if (scope == DiscountScope.ITEM || scope == DiscountScope.SPECIFIC_ITEMS) {
+            return DiscountScope.SPECIFIC_ITEMS;
+        }
+        if (scope == DiscountScope.CATEGORY || scope == DiscountScope.SPECIFIC_CATEGORIES) {
+            return DiscountScope.SPECIFIC_CATEGORIES;
+        }
+        return scope;
+    }
+
     private void validateTargetsMatchScope(
             DiscountScope scope,
             List<UUID> targetItemIds,
             List<UUID> targetItemGroupIds
     ) {
+        DiscountScope normalized = normalizeScope(scope);
         boolean hasItemTargets = targetItemIds != null && !targetItemIds.isEmpty();
         boolean hasGroupTargets = targetItemGroupIds != null && !targetItemGroupIds.isEmpty();
 
-        if (scope == DiscountScope.ITEM && !hasItemTargets) {
+        if (normalized == DiscountScope.SPECIFIC_ITEMS && !hasItemTargets) {
             throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST,
-                    "targetItemIds is required when scope is ITEM"
+                    "targetItemIds is required when scope is SPECIFIC_ITEMS"
             );
         }
-        if (scope == DiscountScope.CATEGORY && !hasGroupTargets) {
+        if (normalized == DiscountScope.SPECIFIC_CATEGORIES && !hasGroupTargets) {
             throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST,
-                    "targetItemGroupIds is required when scope is CATEGORY"
-            );
-        }
-        if (scope == DiscountScope.ORDER && (hasItemTargets || hasGroupTargets)) {
-            throw new ResponseStatusException(
-                    HttpStatus.BAD_REQUEST,
-                    "Order-level discounts cannot have item/category targets"
-            );
-        }
-        if (scope == DiscountScope.ITEM && hasGroupTargets) {
-            throw new ResponseStatusException(
-                    HttpStatus.BAD_REQUEST,
-                    "targetItemGroupIds is not allowed when scope is ITEM"
-            );
-        }
-        if (scope == DiscountScope.CATEGORY && hasItemTargets) {
-            throw new ResponseStatusException(
-                    HttpStatus.BAD_REQUEST,
-                    "targetItemIds is not allowed when scope is CATEGORY"
+                    "targetItemGroupIds is required when scope is SPECIFIC_CATEGORIES"
             );
         }
     }
@@ -421,17 +445,18 @@ public class DiscountServiceImpl implements DiscountService {
     }
 
     private boolean matchesTarget(Discount discount, List<DiscountTarget> targets, UUID itemId, UUID itemGroupId) {
-        if (discount.getScope() == DiscountScope.ORDER) {
+        DiscountScope scope = normalizeScope(discount.getScope());
+        if (scope == DiscountScope.ALL_ITEMS) {
             return true;
         }
-        if (discount.getScope() == DiscountScope.ITEM) {
+        if (scope == DiscountScope.SPECIFIC_ITEMS) {
             if (itemId == null) {
                 return false;
             }
             return targets.stream()
                     .anyMatch(target -> target.getItem() != null && target.getItem().getId().equals(itemId));
         }
-        if (discount.getScope() == DiscountScope.CATEGORY) {
+        if (scope == DiscountScope.SPECIFIC_CATEGORIES) {
             if (itemGroupId == null) {
                 return false;
             }
@@ -439,7 +464,7 @@ public class DiscountServiceImpl implements DiscountService {
                     .anyMatch(target -> target.getItemGroup() != null && target.getItemGroup().getId().equals(itemGroupId));
         }
 
-        return false;
+        return true;
     }
 
     private void validateValue(DiscountType type, BigDecimal value) {

@@ -1,6 +1,26 @@
 package kh.edu.istad.ite.features.order.service;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
+import java.util.Optional;
+import java.util.UUID;
+
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
+import org.springframework.http.HttpStatus;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
+import org.springframework.web.server.ResponseStatusException;
+
+import kh.edu.istad.ite.config.filter.RequestDto;
+import kh.edu.istad.ite.config.filter.SearchRequestDto;
 import kh.edu.istad.ite.config.security.CredentialCipher;
+import kh.edu.istad.ite.config.specification.FilterSpecification;
 import kh.edu.istad.ite.features.business.entity.Business;
 import kh.edu.istad.ite.features.catalog.entity.Item;
 import kh.edu.istad.ite.features.catalog.entity.ItemVariant;
@@ -8,7 +28,15 @@ import kh.edu.istad.ite.features.catalog.repository.ItemRepository;
 import kh.edu.istad.ite.features.customer.entity.Customer;
 import kh.edu.istad.ite.features.customer.repository.CustomerRepository;
 import kh.edu.istad.ite.features.inventory.service.StockEntryService;
-import kh.edu.istad.ite.features.order.dto.*;
+import kh.edu.istad.ite.features.order.dto.AddOrderItemRequest;
+import kh.edu.istad.ite.features.order.dto.CreateOrderItemRequest;
+import kh.edu.istad.ite.features.order.dto.CreateOrderRequest;
+import kh.edu.istad.ite.features.order.dto.OrderResponse;
+import kh.edu.istad.ite.features.order.dto.PayOrderRequest;
+import kh.edu.istad.ite.features.order.dto.PaymentStatusResponse;
+import kh.edu.istad.ite.features.order.dto.SaleResponse;
+import kh.edu.istad.ite.features.order.dto.UpdateOrderItemRequest;
+import kh.edu.istad.ite.features.order.dto.UpdateOrderNoteRequest;
 import kh.edu.istad.ite.features.order.entity.Order;
 import kh.edu.istad.ite.features.order.entity.OrderItem;
 import kh.edu.istad.ite.features.order.entity.Sale;
@@ -26,35 +54,18 @@ import kh.edu.istad.ite.features.payment.repository.BusinessPaymentSettingReposi
 import kh.edu.istad.ite.features.payment.repository.PaymentQrCodeRepository;
 import kh.edu.istad.ite.features.payment.service.ReceiptService;
 import kh.edu.istad.ite.features.register.entity.RegisterSession;
-import kh.edu.istad.ite.shared.enums.OrderChannel;
+import kh.edu.istad.ite.shared.dto.PageResponse;
 import kh.edu.istad.ite.shared.enums.BusinessFeature;
+import kh.edu.istad.ite.shared.enums.OrderChannel;
 import kh.edu.istad.ite.shared.enums.OrderStatus;
 import kh.edu.istad.ite.shared.enums.PaymentMethodType;
 import kh.edu.istad.ite.shared.enums.QrStatus;
 import kh.edu.istad.ite.shared.enums.ReceiptType;
+import kh.edu.istad.ite.shared.enums.SessionStatus;
 import kh.edu.istad.ite.shared.helper.AuthHelper;
 import kh.edu.istad.ite.shared.helper.BusinessHelper;
-
-import kh.edu.istad.ite.config.filter.RequestDto;
-import kh.edu.istad.ite.config.specification.FilterSpecification;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.Pageable;
-
+import kh.edu.istad.ite.shared.helper.CurrencyDisplayHelper;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.HttpStatus;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-import org.springframework.util.StringUtils;
-import org.springframework.web.server.ResponseStatusException;
-
-import java.math.BigDecimal;
-import java.math.RoundingMode;
-import java.time.Instant;
-import java.time.LocalDateTime;
-import java.time.ZoneId;
-import java.time.format.DateTimeFormatter;
-import java.util.Optional;
-import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
@@ -65,6 +76,7 @@ public class OrderServiceImpl implements OrderService {
     private static final DateTimeFormatter INVOICE_DATE = DateTimeFormatter.ofPattern("yyyyMMdd");
 
     private final BusinessHelper businessHelper;
+    private final CurrencyDisplayHelper currencyDisplayHelper;
     private final OrderRepository orderRepository;
     private final ItemRepository itemRepository;
     private final CustomerRepository customerRepository;
@@ -92,6 +104,7 @@ public class OrderServiceImpl implements OrderService {
         order.setStatus(OrderStatus.PENDING);
         order.setNote(request.note());
         order.setCurrency(resolveCurrency(request.currency(), business));
+        applyDisplayCurrency(business, order);
         order.setInvoiceNumber(nextInvoiceNumber(business.getId()));
         // Whoever is signed in is the one working the till.
         order.setCashierId(AuthHelper.currentUserId());
@@ -126,7 +139,7 @@ public class OrderServiceImpl implements OrderService {
                 }
             }
         }
-        
+
         for (OrderItem item : order.getItems()) {
             subtotal = subtotal.add(item.getLineTotal());
         }
@@ -234,7 +247,7 @@ public class OrderServiceImpl implements OrderService {
         if (OrderChannel.POS.equals(order.getChannel())) {
             boolean hasOpenSession = false;
             Optional<RegisterSession> sessionOpt =
-                    registerSessionRepository.findByBusinessIdAndStatus(business.getId(), kh.edu.istad.ite.shared.enums.SessionStatus.OPEN);
+                    registerSessionRepository.findByBusinessIdAndStatus(business.getId(), SessionStatus.OPEN);
             if (sessionOpt.isPresent() && sessionOpt.get().getParticipants().contains(AuthHelper.currentUserId().toString())) {
                 hasOpenSession = true;
             }
@@ -371,6 +384,10 @@ public class OrderServiceImpl implements OrderService {
         sale.setChangeAmount(received.subtract(total).setScale(scale, RoundingMode.HALF_UP));
         sale.setTotalCost(totalCost.setScale(2, RoundingMode.HALF_UP));
         sale.setCurrency(order.getCurrency());
+        // Frozen here, not looked up at render time, so a later rate change
+        // cannot alter the figures already printed on this receipt.
+        sale.setDisplayCurrency(order.getDisplayCurrency());
+        sale.setDisplayExchangeRate(order.getDisplayExchangeRate());
         sale.setPaymentMethod(paymentMethod);
         sale.setItemCount(itemCount);
         sale.setNote(note);
@@ -421,6 +438,8 @@ public class OrderServiceImpl implements OrderService {
                 sale.getChangeAmount(),
                 sale.getTotalCost(),
                 sale.getCurrency(),
+                sale.getDisplayCurrency(),
+                sale.getDisplayExchangeRate(),
                 sale.getPaymentMethod(),
                 sale.getItemCount(),
                 sale.getNote(),
@@ -493,6 +512,13 @@ public class OrderServiceImpl implements OrderService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Order has not been found"));
     }
 
+    private void applyDisplayCurrency(Business business, Order order) {
+        currencyDisplayHelper.snapshot(business, order.getCurrency()).ifPresent(snapshot -> {
+            order.setDisplayCurrency(snapshot.currency());
+            order.setDisplayExchangeRate(snapshot.rate());
+        });
+    }
+
     private String resolveCurrency(String requested, Business business) {
         if (StringUtils.hasText(requested)) {
             return requested.trim().toUpperCase();
@@ -508,11 +534,11 @@ public class OrderServiceImpl implements OrderService {
 
     @Override
     @Transactional(readOnly = true)
-    public Page<OrderResponse> filterOrders(UUID businessId, RequestDto requestDto, Pageable pageable) {
+    public PageResponse<OrderResponse> filterOrders(UUID businessId, RequestDto requestDto, Pageable pageable) {
         businessHelper.findAccessibleBusiness(businessId);
-        
+
         // Add businessId filter implicitly
-        kh.edu.istad.ite.config.filter.SearchRequestDto bizFilter = new kh.edu.istad.ite.config.filter.SearchRequestDto();
+        SearchRequestDto bizFilter = new SearchRequestDto();
         bizFilter.setColumn("business.id"); // Wait, FilterSpecification handles nested? No, "business" usually requires join or just "business.id" if it maps to simple property, let's use join.
         bizFilter.setOperation(kh.edu.istad.ite.config.filter.SearchRequestDto.Operation.JOIN);
         bizFilter.setJoinTable("business");
@@ -520,14 +546,15 @@ public class OrderServiceImpl implements OrderService {
         bizFilter.setValue(businessId.toString()); // Wait, FilterSpecification maps string? FilterSpecification uses equal(..., requestDto.getValue()). Value is string. UUID needs to be converted if it doesn't match type.
         // Actually, just fetching by Spec might be tricky if we don't control the UUID type conversion in generic spec.
         // I will use a custom specification combined with FilterSpecification.
-        
-        org.springframework.data.jpa.domain.Specification<Order> spec = filterSpecification.getSearchSpecificationDynamic(
+
+        Specification<Order> spec = filterSpecification.getSearchSpecificationDynamic(
                 requestDto.getSearchRequestDto(), requestDto.getGlobalOperator());
-                
-        org.springframework.data.jpa.domain.Specification<Order> businessSpec = (root, query, cb) -> 
+
+        Specification<Order> businessSpec = (root, query, cb) ->
                 cb.equal(root.get("business").get("id"), businessId);
-                
-        return orderRepository.findAll(businessSpec.and(spec), pageable).map(orderMapper::toResponse);
+
+        return PageResponse.from(
+                orderRepository.findAll(businessSpec.and(spec), pageable).map(orderMapper::toResponse));
     }
 
     @Override
@@ -552,7 +579,7 @@ public class OrderServiceImpl implements OrderService {
         } else {
             CreateOrderItemRequest createReq = new CreateOrderItemRequest(
                     request.itemId(), request.variantId(), request.quantity());
-            
+
             OrderItem item = buildItem(businessId, createReq);
             if (request.discountAmount() != null) {
                 item.setDiscountAmount(request.discountAmount());
@@ -565,7 +592,7 @@ public class OrderServiceImpl implements OrderService {
             item.setLineNumber(maxLine + 1);
             order.addItem(item);
         }
-        
+
         recalculateOrderTotals(order);
         return orderMapper.toResponse(orderRepository.save(order));
     }
@@ -574,24 +601,24 @@ public class OrderServiceImpl implements OrderService {
     @Transactional
     public OrderResponse updateOrderItem(UUID businessId, UUID orderId, UUID orderItemId, UpdateOrderItemRequest request) {
         Order order = validateOrderModification(businessId, orderId);
-        
+
         OrderItem item = order.getItems().stream()
                 .filter(i -> i.getId().equals(orderItemId))
                 .findFirst()
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Order item not found"));
-                
+
         if (request.quantity() != null) {
             item.setQuantity(request.quantity());
         }
-        
+
         if (request.discountAmount() != null) {
             item.setDiscountAmount(request.discountAmount());
         }
-        
+
         // Recalculate line total
         BigDecimal discount = item.getDiscountAmount() != null ? item.getDiscountAmount() : BigDecimal.ZERO;
         item.setLineTotal(item.getUnitPrice().multiply(BigDecimal.valueOf(item.getQuantity())).subtract(discount));
-        
+
         recalculateOrderTotals(order);
         return orderMapper.toResponse(orderRepository.save(order));
     }
@@ -600,16 +627,16 @@ public class OrderServiceImpl implements OrderService {
     @Transactional
     public OrderResponse removeOrderItem(UUID businessId, UUID orderId, UUID orderItemId) {
         Order order = validateOrderModification(businessId, orderId);
-        
+
         boolean removed = order.getItems().removeIf(i -> i.getId().equals(orderItemId));
         if (!removed) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Order item not found");
         }
-        
+
         recalculateOrderTotals(order);
         return orderMapper.toResponse(orderRepository.save(order));
     }
-    
+
     @Override
     @Transactional
     public OrderResponse updateOrderNote(UUID businessId, UUID orderId, UpdateOrderNoteRequest request) {
@@ -617,7 +644,7 @@ public class OrderServiceImpl implements OrderService {
         order.setNote(request.note());
         return orderMapper.toResponse(orderRepository.save(order));
     }
-    
+
     private Order validateOrderModification(UUID businessId, UUID orderId) {
         Order order = findOrder(businessId, orderId);
         if (OrderStatus.PAID.equals(order.getStatus()) || OrderStatus.CANCELLED.equals(order.getStatus())) {
@@ -625,18 +652,18 @@ public class OrderServiceImpl implements OrderService {
         }
         return order;
     }
-    
+
     private void recalculateOrderTotals(Order order) {
         BigDecimal subtotal = BigDecimal.ZERO;
         for (OrderItem item : order.getItems()) {
             subtotal = subtotal.add(item.getLineTotal());
         }
-        
+
         BigDecimal discount = order.getDiscountAmount() == null ? BigDecimal.ZERO : order.getDiscountAmount();
         if (discount.compareTo(subtotal) > 0) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Discount cannot exceed the order subtotal");
         }
-        
+
         int scale = CURRENCY_KHR.equalsIgnoreCase(order.getCurrency()) ? 0 : 2;
         order.setSubtotal(subtotal.setScale(scale, RoundingMode.HALF_UP));
         order.setTotal(subtotal.subtract(discount).setScale(scale, RoundingMode.HALF_UP));

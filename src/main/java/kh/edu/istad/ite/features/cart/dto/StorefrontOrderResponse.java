@@ -26,6 +26,9 @@ public record StorefrontOrderResponse(
         BigDecimal discountAmount,
         BigDecimal total,
         String currency,
+        /** The second currency this order was shown in, frozen at checkout. */
+        String displayCurrency,
+        BigDecimal displayExchangeRate,
         int itemCount,
         LocalDateTime createdDate,
         LocalDateTime paidAt,

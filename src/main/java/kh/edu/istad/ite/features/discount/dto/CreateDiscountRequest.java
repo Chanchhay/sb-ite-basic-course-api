@@ -15,10 +15,6 @@ import java.util.UUID;
 public record CreateDiscountRequest(
         @NotBlank(message = "name cannot be empty")
         @Size(max = 150, message = "name must be at most 150 characters")
-        @Pattern(
-                regexp = "^[\\p{L}]+(?: [\\p{L}]+)*$",
-                message = "name can only contain letters and spaces (no numbers or special characters)"
-        )
         String name,
 
         @Size( max = 2000 ,message = "description must be at ost 2000 characters" )
@@ -60,19 +56,19 @@ public record CreateDiscountRequest(
         @Digits(integer = 10, fraction = 2)
         BigDecimal maxDiscountAmount,
 
-        @NotBlank(message = "requiresCoupon cannot be empty")
+        @NotNull(message = "requiresCoupon cannot be null")
         Boolean requiresCoupon,
 
-        @NotBlank
+        @NotNull(message = "startsAt cannot be null")
         LocalDateTime startsAt,
 
-        @NotBlank
+        @NotNull(message = "endsAt cannot be null")
         LocalDateTime endsAt,
 
         @Size(max = 7, message = "selectedDays cannot contain more than  7 entries")
         List<DayOfWeek> selectedDays ,
 
-        @NotBlank(message = "Input like ACTIVE || INACTIVE")
+        @NotNull(message = "status cannot be null")
         String status,
 
 

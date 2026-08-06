@@ -4,6 +4,7 @@ import jakarta.validation.Valid;
 import kh.edu.istad.ite.features.business.dto.BusinessCurrencyConfigurationResponse;
 import kh.edu.istad.ite.features.business.dto.BusinessCurrencyResponse;
 import kh.edu.istad.ite.features.business.dto.CreateBusinessCurrencyRequest;
+import kh.edu.istad.ite.features.business.dto.UpdateBusinessCurrencyConfigurationRequest;
 import kh.edu.istad.ite.features.business.dto.UpdateBusinessCurrencyRequest;
 import kh.edu.istad.ite.features.business.service.BusinessCurrencyService;
 import lombok.RequiredArgsConstructor;
@@ -39,6 +40,19 @@ public class BusinessCurrencyController {
     @GetMapping
     public BusinessCurrencyConfigurationResponse findAllCurrencies(@PathVariable UUID businessId) {
         return businessCurrencyService.findAllCurrencies(businessId);
+    }
+
+    /**
+     * Replaces the whole configuration in one transaction. Prefer this over
+     * driving the per-currency endpoints in sequence, which leaves a partly
+     * applied configuration behind if one of the calls fails.
+     */
+    @PutMapping("/configuration")
+    public BusinessCurrencyConfigurationResponse replaceConfiguration(
+            @PathVariable UUID businessId,
+            @Valid @RequestBody UpdateBusinessCurrencyConfigurationRequest request
+    ) {
+        return businessCurrencyService.replaceConfiguration(businessId, request);
     }
 
     @GetMapping("/{code}")
