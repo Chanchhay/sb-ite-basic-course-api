@@ -33,7 +33,8 @@
       "displayName": "User Profile",
       "attributes": {},
       "uris": [
-        "/api/v1/user-profiles/me"
+        "/api/v1/user-profiles/me",
+        "/api/v1/user-profiles/me/picture"
       ],
       "scopes": [
         {

@@ -3,8 +3,6 @@ import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import lombok.Builder;
 
-import org.springframework.web.multipart.MultipartFile;
-
 @Builder
 public record UpdateUserProfileRequest(
         @Size(max = 255)
@@ -22,6 +20,7 @@ public record UpdateUserProfileRequest(
 
         String address,
 
-        MultipartFile file
+        @Size(max = 1024)
+        String profilePicture
 ) {
 }
