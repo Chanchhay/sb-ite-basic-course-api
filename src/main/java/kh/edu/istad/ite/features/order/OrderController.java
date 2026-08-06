@@ -89,7 +89,7 @@ public class OrderController {
     }
 
     @PostMapping("/filter")
-    public org.springframework.data.domain.Page<OrderResponse> filterOrders(
+    public kh.edu.istad.ite.shared.dto.PageResponse<OrderResponse> filterOrders(
             @PathVariable UUID businessId,
             @RequestBody kh.edu.istad.ite.config.filter.RequestDto request,
             org.springframework.data.domain.Pageable pageable
