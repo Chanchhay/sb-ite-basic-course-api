@@ -10,6 +10,7 @@ public record TelegramBotSettingResponse(
         String welcomeMessage,
         boolean botTokenConfigured,
         boolean active,
-        String webhookUrl
+        String webhookUrl,
+        String notificationChatId
 ) {
 }

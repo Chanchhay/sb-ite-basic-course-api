@@ -38,6 +38,7 @@ public class TelegramPaymentPoller {
     private final TelegramCheckoutService telegramCheckoutService;
     private final TelegramBotClient telegramBotClient;
     private final CredentialCipher credentialCipher;
+    private final TelegramAlertService telegramAlertService;
 
     private final AtomicBoolean hasPendingQr = new AtomicBoolean(false);
 
@@ -134,6 +135,9 @@ public class TelegramPaymentPoller {
         }
 
         log.info("Auto-confirmed Telegram order {} ({})", order.getId(), invoiceNumber);
+        
+        // Alert the business owner
+        telegramAlertService.sendQrPaymentAlert(order);
     }
 
     private void notifyExpired(UUID businessId, Order order) {

@@ -63,6 +63,9 @@ import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import kh.edu.istad.ite.features.social.service.TelegramAlertService;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
 @Service
 @Slf4j
@@ -90,8 +93,8 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
     private final CredentialCipher credentialCipher;
     private final StockEntryService stockEntryService;
     private final ReceiptService receiptService;
+    private final TelegramAlertService telegramAlertService;
 
-    // ---------------------------------------------------------------- create
 
     @Override
     @Transactional
@@ -104,9 +107,7 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
         requireShoppable(business);
         businessHelper.requireFeature(business.getId(), BusinessFeature.KHQR_PAYMENT);
 
-        // ONE STORE AT A TIME. If the shopper already has a web order awaiting
-        // payment, only the very same store may continue; anything else is
-        // refused until that order is paid or cancelled.
+
         Order openOrder = findOpenOrder(shopper).orElse(null);
 
         if (openOrder != null && !openOrder.getBusiness().getId().equals(business.getId())) {
@@ -189,7 +190,6 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
         return issueQrFor(business, saved);
     }
 
-    // ---------------------------------------------------------------- active
 
     @Override
     @Transactional(readOnly = true)
@@ -222,7 +222,6 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
                 qrCode == null ? null : qrCode.getExpiresAt()));
     }
 
-    // ---------------------------------------------------------------- status
 
     @Override
     @Transactional
@@ -305,6 +304,8 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
         settle(business, order);
         closeCart(order);
 
+        telegramAlertService.sendQrPaymentAlert(order);
+
         log.info("Storefront order {} ({}) confirmed paid by Bakong, hash {}",
                 order.getId(), order.getInvoiceNumber(), result.hash());
 
@@ -312,7 +313,6 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
                 "Payment confirmed by Bakong", qrCode.getExpiresAt(), paidAt);
     }
 
-    // ---------------------------------------------------------------- cancel
 
     @Override
     @Transactional
@@ -341,7 +341,6 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
         return status(order, QrStatus.CANCELLED, false, "Order cancelled", null, null);
     }
 
-    // --------------------------------------------------------------- helpers
 
     /** Voids any stale QR for the order and mints a fresh 5-minute KHQR. */
     private StorefrontCheckoutResponse issueQrFor(Business business, Order order) {
@@ -453,7 +452,6 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
         receiptService.createForOrder(business, order, ReceiptType.DIGITAL);
     }
 
-    /** The cart is only closed once the money has actually landed. */
     private void closeCart(Order order) {
         if (order.getCustomer() == null) {
             return;
