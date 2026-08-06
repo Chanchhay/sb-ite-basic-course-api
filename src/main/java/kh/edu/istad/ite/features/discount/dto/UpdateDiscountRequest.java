@@ -12,16 +12,11 @@ import java.util.UUID;
 
 public record UpdateDiscountRequest(
         @Size(max = 150, message = "name must be at most 150 characters")
-        @Pattern(
-                regexp = "^[\\\\p{L}]+(?: [\\\\p{L}]+)*$",
-                message = "name can only contain Letters and spaces " +
-                        "(no numbers or special characters)"
-        )
         String name,
         @Size(max = 2000, message = "description must be at most 2000 characters")
         String description,
 
-        @Pattern(regexp = "PERCENTAGE|FIXED_AMOUNT|BUY_X_GET_Y", message = "type must be one of: PERCENTAGE, FIXED_AMOUNT, BUY_X_GET_Y")
+        @Pattern(regexp = "PERCENTAGE|FIXED_AMOUNT", message = "type must be one of: PERCENTAGE, FIXED_AMOUNT")
         String type,
 
         @Pattern(regexp = "NO_CONDITION|MIN_QUANTITY|MIN_ORDER_AMOUNT|BUY_X_GET_Y", message = "ruleType must be one of: NO_CONDITION, MIN_QUANTITY, MIN_ORDER_AMOUNT, BUY_X_GET_Y")
@@ -43,7 +38,6 @@ public record UpdateDiscountRequest(
         @Digits(integer = 10, fraction = 2, message = "value must have at most 10 integer digits and 2 decimal places")
         BigDecimal value,
 
-        @Pattern(regexp = "ALL_ITEMS|SPECIFIC_ITEMS|SPECIFIC_CATEGORIES|SPECIFIC_MEMBERSHIP", message = "scope must be one of: ALL_ITEMS, SPECIFIC_ITEMS, SPECIFIC_CATEGORIES, SPECIFIC_MEMBERSHIP")
         DiscountScope scope,
 
         @DecimalMin(value = "0.0", inclusive = true,message = "minOrderAmount must be at least zero")
