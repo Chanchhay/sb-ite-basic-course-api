@@ -43,6 +43,7 @@ import kh.edu.istad.ite.shared.enums.QrStatus;
 import kh.edu.istad.ite.shared.enums.ReceiptType;
 import kh.edu.istad.ite.shared.helper.AuthHelper;
 import kh.edu.istad.ite.shared.helper.BusinessHelper;
+import kh.edu.istad.ite.shared.helper.CurrencyDisplayHelper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -77,6 +78,7 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
 
     private final BusinessRepository businessRepository;
     private final BusinessHelper businessHelper;
+    private final CurrencyDisplayHelper currencyDisplayHelper;
     private final CartRepository cartRepository;
     private final CustomerRepository customerRepository;
     private final CustomerIdentityService customerIdentityService;
@@ -157,6 +159,10 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
         order.setChannel(OrderChannel.WEB);
         order.setStatus(OrderStatus.PENDING);
         order.setCurrency(resolveCurrency(business));
+        currencyDisplayHelper.snapshot(business, order.getCurrency()).ifPresent(snapshot -> {
+            order.setDisplayCurrency(snapshot.currency());
+            order.setDisplayExchangeRate(snapshot.rate());
+        });
         order.setInvoiceNumber(nextInvoiceNumber(business.getId()));
         // The shopper rang this up themselves, so there is no cashier.
         order.setCashierId(null);
@@ -443,6 +449,8 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
         sale.setChangeAmount(BigDecimal.ZERO.setScale(scale, RoundingMode.HALF_UP));
         sale.setTotalCost(totalCost.setScale(2, RoundingMode.HALF_UP));
         sale.setCurrency(order.getCurrency());
+        sale.setDisplayCurrency(order.getDisplayCurrency());
+        sale.setDisplayExchangeRate(order.getDisplayExchangeRate());
         sale.setPaymentMethod(PaymentMethodType.DIGITAL);
         sale.setItemCount(itemCount);
         sale.setNote("Paid via Bakong KHQR on the web storefront");
@@ -680,6 +688,8 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
                 order.getDiscountAmount() != null ? order.getDiscountAmount() : BigDecimal.ZERO,
                 order.getTotal() != null ? order.getTotal() : BigDecimal.ZERO,
                 order.getCurrency() != null ? order.getCurrency() : "USD",
+                order.getDisplayCurrency(),
+                order.getDisplayExchangeRate(),
                 order.getItems().stream().mapToInt(i -> i.getQuantity() != null ? i.getQuantity() : 1).sum(),
                 order.getCreatedDate(),
                 OrderStatus.PAID.equals(order.getStatus()) ? order.getLastModifiedDate() : null,

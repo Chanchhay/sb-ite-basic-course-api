@@ -100,6 +100,11 @@ public class RegisterSessionServiceImpl implements RegisterSessionService {
                 .userId(userId)
                 .businessId(businessId)
                 .openedAt(Instant.now())
+                // Fixed now: the drawer holds physical notes, so a later
+                // base-currency change must not restate this session.
+                .currency(businessRepository.findById(businessId)
+                        .map(kh.edu.istad.ite.features.business.entity.Business::getBaseCurrency)
+                        .orElse(null))
                 .openingBalance(request.getOpeningBalance())
                 .status(SessionStatus.OPEN)
                 .note(request.getNote())
@@ -247,6 +252,7 @@ public class RegisterSessionServiceImpl implements RegisterSessionService {
         return CashMovementResponse.builder()
                 .id(movement.getId())
                 .sessionId(sessionId)
+                .currency(session.getCurrency())
                 .type(movement.getType())
                 .amount(movement.getAmount())
                 .reason(movement.getReason())
@@ -259,6 +265,7 @@ public class RegisterSessionServiceImpl implements RegisterSessionService {
     public List<CashMovementResponse> getCashMovements(Long sessionId) {
         return movementRepository.findBySessionId(sessionId).stream()
                 .map(m -> CashMovementResponse.builder()
+                        .currency(m.getSession() == null ? null : m.getSession().getCurrency())
                         .id(m.getId())
                         .sessionId(sessionId)
                         .type(m.getType())
@@ -317,6 +324,7 @@ public class RegisterSessionServiceImpl implements RegisterSessionService {
                 .orderCount(orderCount)
                 .openedAt(session.getOpenedAt())
                 .closedAt(session.getClosedAt())
+                .currency(session.getCurrency())
                 .openingBalance(session.getOpeningBalance())
                 .totalCashSales(totalCashSales)
                 .totalPaidIn(totalPaidIn)

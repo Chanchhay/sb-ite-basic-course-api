@@ -72,6 +72,14 @@ public class Order extends BasedAuditingEntity {
     @Column(nullable = false, length = 10)
     private String currency = "USD";
 
+    /** The second currency shown at the time of sale, if the business had one. */
+    @Column(name = "display_currency", length = 10)
+    private String displayCurrency;
+
+    /** Units of the display currency per one unit of {@link #currency}, frozen at sale time. */
+    @Column(name = "display_exchange_rate", precision = 20, scale = 8)
+    private BigDecimal displayExchangeRate;
+
     @Column(columnDefinition = "text")
     private String note;
 

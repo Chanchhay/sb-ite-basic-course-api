@@ -19,6 +19,9 @@ public record OrderResponse(
         BigDecimal discountAmount,
         BigDecimal total,
         String currency,
+        /** The second currency this order was shown in, frozen at creation. */
+        String displayCurrency,
+        BigDecimal displayExchangeRate,
         String note,
         List<OrderItemResponse> items,
         LocalDateTime createdDate
