@@ -10,17 +10,10 @@ import java.util.UUID;
 public record CreateMembershipTypeRequest(
         @NotBlank(message = "typeName cannot be empty")
         @Size(max = 100, message = "typeName must be at most 100 characters")
-        @Pattern(
-                regexp = "^[\\p{L}]+(?: [\\p{L}]+)*$",
-                message = "TypeName can only contain letters and spaces (no number or special characters)"
-        )
         String typeName,
-        @NotBlank(message = "remark cannot be empty")
         @Size(max = 150, message = "remark must be at most 150 characters")
         String remark,
-        @NotBlank(message = "discountID cannot be empty")
         UUID discountId,
-        @NotBlank(message = "status cannot be empty")
         RecordStatus status
 ) {
 }
