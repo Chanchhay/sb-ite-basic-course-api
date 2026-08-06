@@ -15,7 +15,7 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 @RestController
-@RequestMapping({"/api/v1/public/business-categories", "/api/v1/business-categories"})
+@RequestMapping( "/api/v1/business-categories")
 @RequiredArgsConstructor
 public class PublicBusinessCategoryController {
 

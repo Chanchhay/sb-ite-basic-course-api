@@ -21,10 +21,9 @@ public class SalesChannelController {
     private final SalesChannelService salesChannelService;
 
     @GetMapping
-    public List<SalesChannelResponse> findAll() {
-
-        return salesChannelService.findAllActive();
-
+    public List<SalesChannelResponse> findAll(
+            @RequestParam(required = false, defaultValue = "false") boolean all) {
+        return all ? salesChannelService.findAll() : salesChannelService.findAllActive();
     }
 
     @GetMapping("/{channelCode}/items")

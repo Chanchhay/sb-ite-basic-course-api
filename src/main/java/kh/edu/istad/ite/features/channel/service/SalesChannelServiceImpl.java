@@ -47,6 +47,15 @@ public class SalesChannelServiceImpl
         }
 
         @Override
+        public List<SalesChannelResponse> findAll() {
+                return salesChannelRepository
+                                .findAll()
+                                .stream()
+                                .map(this::mapToResponse)
+                                .toList();
+        }
+
+        @Override
         public List<SalesChannelItemResponse> findItemsByChannel(String channelCode) {
                 UUID currentUserId = UUID.fromString(SecurityUtils.extractUserId());
                 UUID businessId = businessRepository.findByKeycloakUserId(currentUserId)
