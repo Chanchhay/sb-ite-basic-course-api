@@ -31,7 +31,7 @@ spring:
 
   datasource:
     driver-class-name: org.postgresql.Driver
-    url: jdbc:postgresql://${PGHOST:localhost}:${PGPORT:5432}/${PGDATABASE:fluxibix}
+    url: jdbc:postgresql://${PGHOST:localhost}:${PGPORT:1681}/${PGDATABASE:fluxibix}
     username: ${DB_USER}
     password: ${DB_PASS}
 

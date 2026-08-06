@@ -61,6 +61,7 @@ public class BusinessTelegramBotServiceImpl implements BusinessTelegramBotServic
         setting.setTelegramBotId(identity.id());
         setting.setBotUsername(identity.username());
         setting.setWelcomeMessage(trimToNull(request.welcomeMessage()));
+        setting.setNotificationChatId(trimToNull(request.notificationChatId()));
 
         telegramBotClient.setWebhook(botToken, buildWebhookUrl(setting.getWebhookSecret()), setting.getWebhookSecret());
         setting.setIsActive(true);
@@ -135,7 +136,8 @@ public class BusinessTelegramBotServiceImpl implements BusinessTelegramBotServic
                 setting.getWelcomeMessage(),
                 StringUtils.hasText(setting.getBotTokenEncrypted()),
                 Boolean.TRUE.equals(setting.getIsActive()),
-                buildWebhookUrl(setting.getWebhookSecret())
+                buildWebhookUrl(setting.getWebhookSecret()),
+                setting.getNotificationChatId()
         );
     }
 

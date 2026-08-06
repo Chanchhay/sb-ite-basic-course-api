@@ -65,6 +65,7 @@ import kh.edu.istad.ite.shared.enums.SessionStatus;
 import kh.edu.istad.ite.shared.helper.AuthHelper;
 import kh.edu.istad.ite.shared.helper.BusinessHelper;
 import kh.edu.istad.ite.shared.helper.CurrencyDisplayHelper;
+import kh.edu.istad.ite.features.social.service.TelegramAlertService;
 import lombok.RequiredArgsConstructor;
 
 @Service
@@ -92,6 +93,7 @@ public class OrderServiceImpl implements OrderService {
     private final ReceiptService receiptService;
     private final FilterSpecification<Order> filterSpecification;
     private final kh.edu.istad.ite.features.register.repository.RegisterSessionRepository registerSessionRepository;
+    private final TelegramAlertService telegramAlertService;
 
     @Override
     @Transactional
@@ -323,6 +325,8 @@ public class OrderServiceImpl implements OrderService {
         qrCode.setPaidAt(paidAt);
 
         settle(business, order, PaymentMethodType.DIGITAL, order.getTotal(), null);
+
+        telegramAlertService.sendQrPaymentAlert(order);
 
         return new PaymentStatusResponse(
                 order.getId(), OrderStatus.PAID, QrStatus.PAID, true,
