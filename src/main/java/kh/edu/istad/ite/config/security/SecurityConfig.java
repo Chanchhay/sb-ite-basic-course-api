@@ -119,6 +119,10 @@ public class SecurityConfig {
                                 .hasAuthority("SCOPE_profile:update")
                                 .requestMatchers(HttpMethod.PATCH, "/api/v1/user-profiles/me")
                                 .hasAuthority("SCOPE_profile:update")
+                                .requestMatchers(HttpMethod.POST, "/api/v1/user-profiles/me/picture")
+                                .hasAuthority("SCOPE_profile:update")
+                                .requestMatchers(HttpMethod.DELETE, "/api/v1/user-profiles/me/picture")
+                                .hasAuthority("SCOPE_profile:update")
 
                                 // Business
                                 .requestMatchers(HttpMethod.GET, "/api/v1/businesses/me", "/api/v1/businesses")
