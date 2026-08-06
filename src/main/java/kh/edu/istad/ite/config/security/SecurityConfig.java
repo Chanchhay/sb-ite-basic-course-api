@@ -38,6 +38,8 @@ public class SecurityConfig {
                 http.sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS));
                 http.authorizeHttpRequests(endpoints -> endpoints
                                 // Public endpoints
+                        .requestMatchers(HttpMethod.GET, "/api/v1/storefronts/*").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/storefronts/*/items").permitAll()
                                 .requestMatchers(
                                                 "/swagger-ui.html",
                                                 "/swagger-ui/**",
