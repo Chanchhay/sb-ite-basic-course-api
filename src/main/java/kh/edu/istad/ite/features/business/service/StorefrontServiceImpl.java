@@ -177,7 +177,10 @@ public class StorefrontServiceImpl implements StorefrontService {
         org.springframework.data.jpa.domain.Specification<Item> specItems = org.springframework.data.jpa.domain.Specification
                 .where(kh.edu.istad.ite.features.catalog.specification.ItemSpecifications.hasBusinessId(business.getId()))
                 .and(kh.edu.istad.ite.features.catalog.specification.ItemSpecifications.hasStatus(ItemStatus.ACTIVE))
-                .and(kh.edu.istad.ite.features.catalog.specification.ItemSpecifications.isEnabledInChannelCodes(List.of("ONLINE", "WEB", "STOREFRONT")));
+                // Show the same items the till sells — whatever is published
+                // to the "POS" channel — instead of gating on channel codes
+                // ("WEB"/"STOREFRONT") that are never seeded and so never match.
+                .and(kh.edu.istad.ite.features.catalog.specification.ItemSpecifications.isEnabledInChannelCodes(List.of("POS")));
 
         List<Item> items = itemRepository.findAll(specItems);
         return items.stream()

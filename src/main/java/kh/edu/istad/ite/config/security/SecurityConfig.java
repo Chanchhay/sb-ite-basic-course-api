@@ -26,10 +26,10 @@ import java.util.Map;
 public class SecurityConfig {
         @Bean
         public SecurityFilterChain configureApiSecurity(HttpSecurity http,
-                        JwtAuthenticationConverter jwtAuthenticationConverter) throws Exception {
+                                                        JwtAuthenticationConverter jwtAuthenticationConverter) throws Exception {
 
                 http.oauth2ResourceServer(oauth2 -> oauth2.jwt(jwt -> jwt.jwtAuthenticationConverter(
-                                jwtAuthenticationConverter)));
+                        jwtAuthenticationConverter)));
 
                 http.cors(Customizer.withDefaults());
                 http.csrf(AbstractHttpConfigurer::disable);
@@ -38,27 +38,26 @@ public class SecurityConfig {
                 http.sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS));
                 http.authorizeHttpRequests(endpoints -> endpoints
                                 // Public endpoints
-                                .requestMatchers(HttpMethod.GET, "/api/v1/storefronts/*").permitAll()
-                                .requestMatchers(HttpMethod.GET, "/api/v1/storefronts/*/items").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/storefronts/*").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/storefronts/*/items").permitAll()
                                 .requestMatchers(
                                                 "/swagger-ui.html",
                                                 "/swagger-ui/**",
                                                 "/v3/api-docs/**")
                                 .permitAll()
                                 .requestMatchers("/scalar/**").permitAll()
-                                .requestMatchers(HttpMethod.POST, "/api/v1/auth/register", "/api/v1/auth/register/**")
-                                .permitAll()
+                                .requestMatchers(HttpMethod.POST, "/api/v1/auth/register", "/api/v1/auth/register/**").permitAll()
                                 .requestMatchers(HttpMethod.POST, "/api/v1/webhooks/telegram/**").permitAll()
                                 .requestMatchers(
-                                                "/ws/customer-display",
-                                                "/ws/customer-display/**",
-                                                "/ws/customer-display-sockjs",
-                                                "/ws/customer-display-sockjs/**",
-                                                "/ws/notifications",
-                                                "/ws/notifications/**",
-                                                "/ws/notifications-sockjs",
-                                                "/ws/notifications-sockjs/**")
-                                .permitAll()
+                                        "/ws/customer-display",
+                                        "/ws/customer-display/**",
+                                        "/ws/customer-display-sockjs",
+                                        "/ws/customer-display-sockjs/**",
+                                        "/ws/notifications",
+                                        "/ws/notifications/**",
+                                        "/ws/notifications-sockjs",
+                                        "/ws/notifications-sockjs/**"
+                                ).permitAll()
                                 .requestMatchers(HttpMethod.GET, "/api/v1/public/**").permitAll()
                                 .requestMatchers(HttpMethod.GET, "/api/v1/business-categories",
                                                 "/api/v1/business-categories/**")
@@ -303,29 +302,29 @@ public class SecurityConfig {
                         Map<String, Object> realmAccess = jwt.getClaim("realm_access");
 
                         if (realmAccess != null
-                                        && realmAccess.get("roles") instanceof Collection<?> roles) {
+                                && realmAccess.get("roles") instanceof Collection<?> roles) {
 
                                 roles.stream()
-                                                .filter(String.class::isInstance)
-                                                .map(String.class::cast)
-                                                .map(role -> new SimpleGrantedAuthority(
-                                                                "ROLE_" + role))
-                                                .forEach(authorities::add);
+                                        .filter(String.class::isInstance)
+                                        .map(String.class::cast)
+                                        .map(role -> new SimpleGrantedAuthority(
+                                                "ROLE_" + role))
+                                        .forEach(authorities::add);
                         }
 
                         // Endpoint permissions
                         Map<String, Object> resourceAccess = jwt.getClaim("resource_access");
 
                         if (resourceAccess != null
-                                        && resourceAccess.get("fluxipos-backend") instanceof Map<?, ?> backendAccess
-                                        && backendAccess.get("roles") instanceof Collection<?> permissions) {
+                                && resourceAccess.get("fluxipos-backend") instanceof Map<?, ?> backendAccess
+                                && backendAccess.get("roles") instanceof Collection<?> permissions) {
 
                                 permissions.stream()
-                                                .filter(String.class::isInstance)
-                                                .map(String.class::cast)
-                                                .map(permission -> new SimpleGrantedAuthority(
-                                                                "SCOPE_" + permission))
-                                                .forEach(authorities::add);
+                                        .filter(String.class::isInstance)
+                                        .map(String.class::cast)
+                                        .map(permission -> new SimpleGrantedAuthority(
+                                                "SCOPE_" + permission))
+                                        .forEach(authorities::add);
                         }
 
                         return authorities;
@@ -334,7 +333,7 @@ public class SecurityConfig {
                 JwtAuthenticationConverter converter = new JwtAuthenticationConverter();
 
                 converter.setJwtGrantedAuthoritiesConverter(
-                                authoritiesConverter);
+                        authoritiesConverter);
 
                 return converter;
         }
