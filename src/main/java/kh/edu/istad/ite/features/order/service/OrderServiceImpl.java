@@ -64,6 +64,7 @@ import kh.edu.istad.ite.shared.enums.ReceiptType;
 import kh.edu.istad.ite.shared.enums.SessionStatus;
 import kh.edu.istad.ite.shared.helper.AuthHelper;
 import kh.edu.istad.ite.shared.helper.BusinessHelper;
+import kh.edu.istad.ite.shared.helper.CurrencyDisplayHelper;
 import kh.edu.istad.ite.features.social.service.TelegramAlertService;
 import lombok.RequiredArgsConstructor;
 
@@ -76,6 +77,7 @@ public class OrderServiceImpl implements OrderService {
     private static final DateTimeFormatter INVOICE_DATE = DateTimeFormatter.ofPattern("yyyyMMdd");
 
     private final BusinessHelper businessHelper;
+    private final CurrencyDisplayHelper currencyDisplayHelper;
     private final OrderRepository orderRepository;
     private final ItemRepository itemRepository;
     private final CustomerRepository customerRepository;
@@ -104,6 +106,7 @@ public class OrderServiceImpl implements OrderService {
         order.setStatus(OrderStatus.PENDING);
         order.setNote(request.note());
         order.setCurrency(resolveCurrency(request.currency(), business));
+        applyDisplayCurrency(business, order);
         order.setInvoiceNumber(nextInvoiceNumber(business.getId()));
         // Whoever is signed in is the one working the till.
         order.setCashierId(AuthHelper.currentUserId());
@@ -385,6 +388,10 @@ public class OrderServiceImpl implements OrderService {
         sale.setChangeAmount(received.subtract(total).setScale(scale, RoundingMode.HALF_UP));
         sale.setTotalCost(totalCost.setScale(2, RoundingMode.HALF_UP));
         sale.setCurrency(order.getCurrency());
+        // Frozen here, not looked up at render time, so a later rate change
+        // cannot alter the figures already printed on this receipt.
+        sale.setDisplayCurrency(order.getDisplayCurrency());
+        sale.setDisplayExchangeRate(order.getDisplayExchangeRate());
         sale.setPaymentMethod(paymentMethod);
         sale.setItemCount(itemCount);
         sale.setNote(note);
@@ -435,6 +442,8 @@ public class OrderServiceImpl implements OrderService {
                 sale.getChangeAmount(),
                 sale.getTotalCost(),
                 sale.getCurrency(),
+                sale.getDisplayCurrency(),
+                sale.getDisplayExchangeRate(),
                 sale.getPaymentMethod(),
                 sale.getItemCount(),
                 sale.getNote(),
@@ -505,6 +514,13 @@ public class OrderServiceImpl implements OrderService {
     private Order findOrder(UUID businessId, UUID orderId) {
         return orderRepository.findByIdAndBusinessId(orderId, businessId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Order has not been found"));
+    }
+
+    private void applyDisplayCurrency(Business business, Order order) {
+        currencyDisplayHelper.snapshot(business, order.getCurrency()).ifPresent(snapshot -> {
+            order.setDisplayCurrency(snapshot.currency());
+            order.setDisplayExchangeRate(snapshot.rate());
+        });
     }
 
     private String resolveCurrency(String requested, Business business) {

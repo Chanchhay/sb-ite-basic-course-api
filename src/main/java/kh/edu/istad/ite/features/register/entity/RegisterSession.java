@@ -37,6 +37,14 @@ public class RegisterSession extends BasedAuditingEntity {
 
     private Instant closedAt;
 
+    /**
+     * The currency this till is counted in, fixed when it opens. Cash is
+     * physical, so a later base-currency change must not restate these
+     * balances — it reads back in the currency it was actually counted in.
+     */
+    @Column(length = 10)
+    private String currency;
+
     @Column(nullable = false, precision = 12, scale = 2)
     private BigDecimal openingBalance;
 

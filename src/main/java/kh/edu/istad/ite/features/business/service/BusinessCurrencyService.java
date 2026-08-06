@@ -3,6 +3,7 @@ package kh.edu.istad.ite.features.business.service;
 import kh.edu.istad.ite.features.business.dto.BusinessCurrencyConfigurationResponse;
 import kh.edu.istad.ite.features.business.dto.BusinessCurrencyResponse;
 import kh.edu.istad.ite.features.business.dto.CreateBusinessCurrencyRequest;
+import kh.edu.istad.ite.features.business.dto.UpdateBusinessCurrencyConfigurationRequest;
 import kh.edu.istad.ite.features.business.dto.UpdateBusinessCurrencyRequest;
 
 import java.util.UUID;
@@ -10,6 +11,12 @@ import java.util.UUID;
 public interface BusinessCurrencyService {
 
     BusinessCurrencyConfigurationResponse createCurrency(UUID businessId, CreateBusinessCurrencyRequest request);
+
+    /** Applies the whole configuration in one transaction. */
+    BusinessCurrencyConfigurationResponse replaceConfiguration(
+            UUID businessId,
+            UpdateBusinessCurrencyConfigurationRequest request
+    );
 
     BusinessCurrencyConfigurationResponse findAllCurrencies(UUID businessId);
 

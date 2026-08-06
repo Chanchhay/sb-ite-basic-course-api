@@ -20,6 +20,9 @@ public record SaleResponse(
         BigDecimal changeAmount,
         BigDecimal totalCost,
         String currency,
+        /** The second currency this sale was shown in, frozen at sale time. */
+        String displayCurrency,
+        BigDecimal displayExchangeRate,
         PaymentMethodType paymentMethod,
         Integer itemCount,
         String note,

@@ -32,6 +32,8 @@ public class OrderMapper {
                 order.getDiscountAmount(),
                 order.getTotal(),
                 order.getCurrency(),
+                order.getDisplayCurrency(),
+                order.getDisplayExchangeRate(),
                 order.getNote(),
                 items,
                 order.getCreatedDate()
