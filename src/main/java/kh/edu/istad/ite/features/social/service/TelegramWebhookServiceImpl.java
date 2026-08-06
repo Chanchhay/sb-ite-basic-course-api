@@ -248,6 +248,11 @@ public class TelegramWebhookServiceImpl implements TelegramWebhookService {
                     "🤖 *ពាក្យបញ្ជាដែលមាន៖*\n/start - បើកម៉ឺនុយដើម\n/help - មើលជំនួយ");
             return;
         }
+        if ("/getid".equalsIgnoreCase(text) || "/myid".equalsIgnoreCase(text)) {
+            telegramBotClient.sendMessage(botToken, chatId,
+                    "🔑 *Chat ID របស់អ្នកគឺ៖* `" + chatId + "`\n\nសូមចម្លងលេខខាងលើនេះយកទៅបញ្ចូលក្នុងកន្លែងកំណត់ Setting របស់ហាងអ្នក។");
+            return;
+        }
         sendMainMenu(botToken, chatId, session, setting);
     }
 
