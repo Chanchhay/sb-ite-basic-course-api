@@ -14,6 +14,7 @@ import kh.edu.istad.ite.shared.enums.CouponStatus;
 import kh.edu.istad.ite.shared.helper.BusinessHelper;
 import kh.edu.istad.ite.shared.helper.TextHelper;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -23,6 +24,7 @@ import org.springframework.web.server.ResponseStatusException;
 import java.util.List;
 import java.util.UUID;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class CouponServiceImpl implements CouponService {
@@ -40,7 +42,7 @@ public class CouponServiceImpl implements CouponService {
 
         String code = TextHelper.trimRequired(request.code(), "Coupon code cannot be empty").toUpperCase();
         if (couponRepository.existsByBusinessIdAndCodeIgnoreCase(businessId, code)) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "Coupon with this code already exists");
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "A coupon with code '" + code + "' already exists in your store.");
         }
         validateDateRange(request.startsAt(), request.endsAt());
 
@@ -59,7 +61,9 @@ public class CouponServiceImpl implements CouponService {
         try {
             return couponMapper.toResponse(couponRepository.saveAndFlush(coupon));
         } catch (DataIntegrityViolationException e) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "Coupon already exists", e);
+            String rootCause = e.getMostSpecificCause() != null ? e.getMostSpecificCause().getMessage() : e.getMessage();
+            log.error("Failed to save coupon for business {}: {}", businessId, rootCause, e);
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Database constraint error: " + rootCause, e);
         }
     }
 
