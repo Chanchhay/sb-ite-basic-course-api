@@ -53,4 +53,7 @@ public class BusinessTelegramBot extends BasedAuditingEntity {
 
     @Column(name = "is_active", nullable = false)
     private Boolean isActive = false;
+
+    @Column(name = "notification_chat_id", length = 100)
+    private String notificationChatId;
 }
