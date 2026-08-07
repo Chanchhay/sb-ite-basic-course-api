@@ -36,6 +36,8 @@ public class Business extends BasedAuditingEntity {
     @Column(name = "display_name", nullable = false, length = 200)
     private String displayName;
 
+    private String businessName;
+
     @Enumerated(EnumType.STRING)
     @Column(
             nullable = false,
