@@ -251,7 +251,7 @@ public class DiscountServiceImpl implements DiscountService {
             UUID itemId,
             UUID itemGroupId
     ) {
-        businessHelper.findOwnedBusiness(businessId);
+        businessHelper.findBusiness(businessId);
 
         List<Discount> candidates = discountRepository.findAllByBusinessIdOrderByCreatedDateDesc(businessId);
         LocalDateTime now = LocalDateTime.now();
