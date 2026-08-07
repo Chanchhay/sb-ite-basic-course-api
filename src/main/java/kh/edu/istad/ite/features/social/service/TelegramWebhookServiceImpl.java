@@ -260,7 +260,9 @@ public class TelegramWebhookServiceImpl implements TelegramWebhookService {
 
     private void sendMainMenu(String botToken, Long chatId, BotSession session, BusinessTelegramBot setting) {
         boolean registered = session.getCustomer() != null;
-        String customerName = registered ? session.getCustomer().getGlobalCustomer().getFullName() : null;
+        String customerName = registered && session.getCustomer().getGlobalCustomer() != null 
+                ? session.getCustomer().getGlobalCustomer().getFullName() 
+                : null;
         String welcomeText = uiHelper.renderWelcomeMessage(setting, customerName);
         telegramBotClient.sendMessage(botToken, chatId, welcomeText, TelegramKeyboards.mainMenu(registered));
     }
@@ -784,7 +786,9 @@ public class TelegramWebhookServiceImpl implements TelegramWebhookService {
                     TelegramKeyboards.backToMenu());
             return;
         }
-        String customerName = session.getCustomer().getGlobalCustomer().getFullName();
+        String customerName = session.getCustomer().getGlobalCustomer() != null 
+                ? session.getCustomer().getGlobalCustomer().getFullName() 
+                : "អតិថិជន";
 
         try {
             customerChannelIdentityRepository
@@ -1159,8 +1163,13 @@ public class TelegramWebhookServiceImpl implements TelegramWebhookService {
         keyboard.add(List.of(new InlineKeyboardButton("🛍️ ទិញទំនិញបន្ត", "menu:catalog")));
         keyboard.add(List.of(new InlineKeyboardButton("💳 គិតលុយ (Checkout Now)", "menu:checkout")));
         keyboard.add(List.of(new InlineKeyboardButton("⬅️ ម៉ឺនុយដើម", "menu:main")));
+        
+        String customerName = session.getCustomer() != null && session.getCustomer().getGlobalCustomer() != null
+                ? session.getCustomer().getGlobalCustomer().getFullName()
+                : "អតិថិជន";
+                
         telegramBotClient.sendMessage(botToken, chatId,
-                uiHelper.renderCartReceipt(cart, setting, session.getCustomer().getGlobalCustomer().getFullName()),
+                uiHelper.renderCartReceipt(cart, setting, customerName),
                 keyboard);
     }
 
