@@ -66,6 +66,9 @@ public class PaymentQrCode {
     @Column(name = "paid_at")
     private LocalDateTime paidAt;
 
+    @Column(name = "telegram_message_id")
+    private Integer telegramMessageId;
+
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
 }

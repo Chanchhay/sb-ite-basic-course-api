@@ -113,13 +113,13 @@ public class TelegramPaymentPoller {
         }
 
         if (result.paid()) {
-            notifyPaid(businessId, order, result.invoiceNumber(), result.receiptText());
+            notifyPaid(businessId, order, result.invoiceNumber(), result.receiptText(), qrCode.getTelegramMessageId());
         } else if (result.expired()) {
-            notifyExpired(businessId, order);
+            notifyExpired(businessId, order, qrCode.getTelegramMessageId());
         }
     }
 
-    private void notifyPaid(UUID businessId, Order order, String invoiceNumber, String receiptText) {
+    private void notifyPaid(UUID businessId, Order order, String invoiceNumber, String receiptText, Integer qrMessageId) {
         send(businessId, order,
                 "🎉 *ការទូទាត់ជោគជ័យ!*\n"
                         + "━━━━━━━━━━━━━━━━━━━━\n"
@@ -127,11 +127,11 @@ public class TelegramPaymentPoller {
                         + "✅ ប្រព័ន្ធបានទទួលប្រាក់របស់អ្នករួចរាល់។\n\n"
                         + "អរគុណសម្រាប់ការបញ្ជាទិញ! ហាងកំពុងរៀបចំទំនិញជូនអ្នក។",
                 List.of(List.of(new InlineKeyboardButton("🛍️ ទិញទំនិញបន្ត", "menu:catalog")),
-                        List.of(new InlineKeyboardButton("⬅️ ម៉ឺនុយដើម", "menu:main"))));
+                        List.of(new InlineKeyboardButton("⬅️ ម៉ឺនុយដើម", "menu:main"))), qrMessageId);
 
         // The actual receipt, as its own message so it stays easy to screenshot/forward.
         if (receiptText != null) {
-            send(businessId, order, receiptText, null);
+            send(businessId, order, receiptText, null, null);
         }
 
         log.info("Auto-confirmed Telegram order {} ({})", order.getId(), invoiceNumber);
@@ -140,18 +140,18 @@ public class TelegramPaymentPoller {
         telegramAlertService.sendQrPaymentAlert(order);
     }
 
-    private void notifyExpired(UUID businessId, Order order) {
+    private void notifyExpired(UUID businessId, Order order, Integer qrMessageId) {
         send(businessId, order,
                 "⏰ *កូដ KHQR បានផុតកំណត់*\n"
                         + "━━━━━━━━━━━━━━━━━━━━\n"
                         + "🧾 លេខវិក្កយបត្រ ៖ `" + order.getInvoiceNumber() + "`\n\n"
                         + "ទំនិញនៅតែរក្សាទុកក្នុងកន្ត្រករបស់អ្នក។ សូមចុច គិតលុយ ដើម្បីបង្កើតកូដថ្មី។",
                 List.of(List.of(new InlineKeyboardButton("🛒 មើលកន្ត្រក", "menu:cart")),
-                        List.of(new InlineKeyboardButton("⬅️ ម៉ឺនុយដើម", "menu:main"))));
+                        List.of(new InlineKeyboardButton("⬅️ ម៉ឺនុយដើម", "menu:main"))), qrMessageId);
     }
 
     private void send(UUID businessId, Order order, String message,
-                      List<List<InlineKeyboardButton>> keyboard) {
+                      List<List<InlineKeyboardButton>> keyboard, Integer messageIdToDelete) {
         if (order.getCustomer() == null) {
             return;
         }
@@ -176,6 +176,11 @@ public class TelegramPaymentPoller {
 
         try {
             String botToken = credentialCipher.decrypt(botSetting.get().getBotTokenEncrypted());
+            
+            if (messageIdToDelete != null) {
+                telegramBotClient.deleteMessageAsync(botToken, Long.parseLong(chatId.get()), messageIdToDelete);
+            }
+            
             telegramBotClient.sendMessage(botToken, Long.parseLong(chatId.get()), message, keyboard);
         } catch (NumberFormatException exception) {
             log.warn("Telegram external id {} is not a numeric chat id", chatId.get());

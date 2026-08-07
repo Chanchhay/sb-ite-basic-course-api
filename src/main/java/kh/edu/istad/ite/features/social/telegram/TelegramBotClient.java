@@ -227,11 +227,11 @@ public class TelegramBotClient {
     }
 
 
-    public void sendPhotoBytes(String botToken, Long chatId, byte[] photo, String filename,
+    public Integer sendPhotoBytes(String botToken, Long chatId, byte[] photo, String filename,
                                String caption, List<List<InlineKeyboardButton>> keyboard) {
         if (photo == null || photo.length == 0) {
             sendMessage(botToken, chatId, caption, keyboard);
-            return;
+            return null;
         }
 
         String safeCaption = truncate(nullSafe(caption, ""), MAX_CAPTION_LENGTH);
@@ -250,24 +250,33 @@ public class TelegramBotClient {
 
             Map<String, Object> replyMarkup = buildReplyMarkup(keyboard);
             if (replyMarkup != null) {
-                // In multipart, reply_markup must be a JSON-encoded string.
                 form.add("reply_markup", objectMapper.writeValueAsString(replyMarkup));
             }
 
-            restClient.post()
+            Map<String, Object> response = restClient.post()
                     .uri("/bot{token}/sendPhoto", botToken)
                     .contentType(MediaType.MULTIPART_FORM_DATA)
                     .body(form)
                     .retrieve()
-                    .toBodilessEntity();
+                    .body(new ParameterizedTypeReference<Map<String, Object>>() {});
+
+            if (response != null && Boolean.TRUE.equals(response.get("ok"))) {
+                if (response.get("result") instanceof Map<?, ?> result) {
+                    Number messageId = (Number) result.get("message_id");
+                    return messageId != null ? messageId.intValue() : null;
+                }
+            }
+            return null;
         } catch (HttpStatusCodeException exception) {
             log.warn("Telegram sendPhotoBytes failed for chat {}: {} -> {}. Falling back to text.",
                     chatId, exception.getStatusCode(), exception.getResponseBodyAsString());
             sendMessage(botToken, chatId, caption, keyboard);
+            return null;
         } catch (Exception exception) {
             log.warn("Telegram sendPhotoBytes failed for chat {}: {}. Falling back to text.",
                     chatId, exception.getMessage());
             sendMessage(botToken, chatId, caption, keyboard);
+            return null;
         }
     }
 
