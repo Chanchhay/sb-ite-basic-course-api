@@ -407,8 +407,12 @@ public class TelegramWebhookServiceImpl implements TelegramWebhookService {
                 List.of(new InlineKeyboardButton("❌ បោះបង់ការបញ្ជាទិញ", "order:cancel:" + draft.orderId())),
                 List.of(new InlineKeyboardButton("⬅️ ម៉ឺនុយដើម", "menu:main")));
 
-        telegramBotClient.sendPhotoBytes(botToken, chatId, draft.qrPng(),
+        Integer messageId = telegramBotClient.sendPhotoBytes(botToken, chatId, draft.qrPng(),
                 "khqr-" + draft.invoiceNumber() + ".png", caption, keyboard);
+
+        if (messageId != null) {
+            telegramCheckoutService.updateQrMessageId(draft.qrCodeId(), messageId);
+        }
     }
 
     private void handleOrderCancel(String botToken, Long chatId,

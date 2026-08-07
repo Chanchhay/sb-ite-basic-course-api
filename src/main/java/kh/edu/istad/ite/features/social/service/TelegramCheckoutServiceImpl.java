@@ -202,7 +202,8 @@ public class TelegramCheckoutServiceImpl implements TelegramCheckoutService {
                 result.qr(),
                 result.md5(),
                 png,
-                expiresAtLocal
+                expiresAtLocal,
+                qrCode.getId()
         );
     }
 
@@ -290,6 +291,15 @@ public class TelegramCheckoutServiceImpl implements TelegramCheckoutService {
                             qr.setStatus(QrStatus.CANCELLED);
                         }
                     });
+        });
+    }
+
+    @Override
+    @Transactional
+    public void updateQrMessageId(UUID qrCodeId, Integer messageId) {
+        paymentQrCodeRepository.findById(qrCodeId).ifPresent(qr -> {
+            qr.setTelegramMessageId(messageId);
+            paymentQrCodeRepository.save(qr);
         });
     }
 
