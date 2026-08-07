@@ -8,6 +8,7 @@ import kh.edu.istad.ite.features.discount.entity.Discount;
 import kh.edu.istad.ite.features.discount.repository.DiscountRepository;
 import kh.edu.istad.ite.features.minio.MinioService;
 import kh.edu.istad.ite.shared.enums.DiscountRuleType;
+import kh.edu.istad.ite.shared.enums.DiscountScope;
 import kh.edu.istad.ite.shared.enums.DiscountType;
 import kh.edu.istad.ite.shared.enums.RecordStatus;
 import lombok.RequiredArgsConstructor;
@@ -57,7 +58,9 @@ public class StorefrontMapper {
                 business.getId(),
                 RecordStatus.ACTIVE,
                 LocalDateTime.now()
-        );
+        ).stream()
+         .filter(d -> d.getScope() == DiscountScope.ORDER || d.getScope() == DiscountScope.ALL_ITEMS)
+         .toList();
         if (activeDiscounts == null || activeDiscounts.isEmpty()) {
             return null;
         }
