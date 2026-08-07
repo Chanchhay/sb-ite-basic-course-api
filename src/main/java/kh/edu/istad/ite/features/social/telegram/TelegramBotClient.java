@@ -58,7 +58,7 @@ public class TelegramBotClient {
     public TelegramBotIdentity getMe(String botToken) {
         try {
             Map<String, Object> body = restClient.get()
-                    .uri("/bot{token}/getMe", botToken)
+                    .uri("/bot" + botToken + "/getMe")
                     .retrieve()
                     .body(new ParameterizedTypeReference<Map<String, Object>>() {});
 
@@ -91,7 +91,7 @@ public class TelegramBotClient {
             );
 
             Map<String, Object> body = restClient.post()
-                    .uri("/bot{token}/setWebhook", botToken)
+                    .uri("/bot" + botToken + "/setWebhook")
                     .contentType(MediaType.APPLICATION_JSON)
                     .body(requestBody)
                     .retrieve()
@@ -109,7 +109,7 @@ public class TelegramBotClient {
     public void deleteWebhook(String botToken) {
         try {
             restClient.get()
-                    .uri("/bot{token}/deleteWebhook", botToken)
+                    .uri("/bot" + botToken + "/deleteWebhook")
                     .retrieve()
                     .toBodilessEntity();
         } catch (RestClientException exception) {
@@ -156,7 +156,7 @@ public class TelegramBotClient {
             }
 
             restClient.post()
-                    .uri("/bot{token}/sendMessage", botToken)
+                    .uri("/bot" + botToken + "/sendMessage")
                     .contentType(MediaType.APPLICATION_JSON)
                     .body(requestBody)
                     .retrieve()
@@ -182,7 +182,7 @@ public class TelegramBotClient {
             }
 
             restClient.post()
-                    .uri("/bot{token}/answerCallbackQuery", botToken)
+                    .uri("/bot" + botToken + "/answerCallbackQuery")
                     .contentType(MediaType.APPLICATION_JSON)
                     .body(requestBody)
                     .retrieve()
@@ -210,7 +210,7 @@ public class TelegramBotClient {
             }
 
             restClient.post()
-                    .uri("/bot{token}/sendPhoto", botToken)
+                    .uri("/bot" + botToken + "/sendPhoto")
                     .contentType(MediaType.APPLICATION_JSON)
                     .body(requestBody)
                     .retrieve()
@@ -254,7 +254,7 @@ public class TelegramBotClient {
             }
 
             Map<String, Object> response = restClient.post()
-                    .uri("/bot{token}/sendPhoto", botToken)
+                    .uri("/bot" + botToken + "/sendPhoto")
                     .contentType(MediaType.MULTIPART_FORM_DATA)
                     .body(form)
                     .retrieve()
@@ -291,7 +291,7 @@ public class TelegramBotClient {
             );
 
             restClient.post()
-                    .uri("/bot{token}/deleteMessage", botToken)
+                    .uri("/bot" + botToken + "/deleteMessage")
                     .contentType(MediaType.APPLICATION_JSON)
                     .body(requestBody)
                     .retrieve()
