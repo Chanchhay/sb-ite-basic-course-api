@@ -102,6 +102,7 @@ public class TelegramWebhookServiceImpl implements TelegramWebhookService {
     private final TelegramCheckoutService telegramCheckoutService;
     private final TelegramCustomerScreenService screenService;
     private final MinioService minioService;
+    private final kh.edu.istad.ite.features.discount.service.DiscountService discountService;
 
     @Override
     @Transactional
@@ -951,7 +952,15 @@ public class TelegramWebhookServiceImpl implements TelegramWebhookService {
         }
         keyboard.add(List.of(new InlineKeyboardButton("⬅️ ត្រលប់ក្រោយ", "itemback")));
 
-        String detailText = uiHelper.renderProductDetail(item, setting, availableQuantity);
+        List<kh.edu.istad.ite.features.discount.dto.DiscountResponse> applicable = discountService.findApplicableDiscounts(
+                setting.getBusiness().getId(),
+                kh.edu.istad.ite.shared.enums.OrderChannel.TELEGRAM,
+                item.getId(),
+                item.getItemGroup() != null ? item.getItemGroup().getId() : null
+        );
+        kh.edu.istad.ite.features.discount.dto.DiscountResponse discount = applicable.isEmpty() ? null : applicable.get(0);
+
+        String detailText = uiHelper.renderProductDetail(item, setting, availableQuantity, discount);
         Optional<String> imageUrl = item.getImages().stream()
                 .findFirst()
                 .map(image -> minioService.getPublicUrl(image.getImageKey()));

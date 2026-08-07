@@ -36,6 +36,12 @@ import kh.edu.istad.ite.features.catalog.entity.Item;
 import kh.edu.istad.ite.features.catalog.mapper.ItemMapper;
 import kh.edu.istad.ite.shared.enums.ItemStatus;
 
+import kh.edu.istad.ite.features.discount.service.DiscountService;
+import kh.edu.istad.ite.features.discount.dto.DiscountResponse;
+import kh.edu.istad.ite.shared.enums.OrderChannel;
+import kh.edu.istad.ite.shared.enums.DiscountType;
+import java.math.BigDecimal;
+
 @Service
 @RequiredArgsConstructor
 public class StorefrontServiceImpl implements StorefrontService {
@@ -48,6 +54,7 @@ public class StorefrontServiceImpl implements StorefrontService {
     private final ItemMapper itemMapper;
     private final StorefrontMapper storefrontMapper;
     private final StorefrontProps storefrontProps;
+    private final DiscountService discountService;
 
     @Override
     @Transactional(readOnly = true)
@@ -184,7 +191,53 @@ public class StorefrontServiceImpl implements StorefrontService {
 
         List<Item> items = itemRepository.findAll(specItems);
         return items.stream()
-                .map(itemMapper::toResponse)
+                .map(item -> {
+                    ItemResponse base = itemMapper.toResponse(item);
+                    if (base.price() == null) return base;
+                    
+                    try {
+                        List<DiscountResponse> applicable = discountService.findApplicableDiscounts(
+                                business.getId(),
+                                OrderChannel.WEB,
+                                item.getId(),
+                                item.getItemGroup() != null ? item.getItemGroup().getId() : null
+                        );
+                        
+                        if (!applicable.isEmpty()) {
+                            // Apply the first/best discount for display
+                            DiscountResponse best = applicable.get(0);
+                            BigDecimal originalPrice = base.price();
+                            BigDecimal discountAmount = BigDecimal.ZERO;
+                            
+                            if (best.type() == DiscountType.PERCENTAGE && best.value() != null) {
+                                discountAmount = originalPrice.multiply(best.value()).divide(new BigDecimal("100"));
+                            } else if (best.type() == DiscountType.FIXED_AMOUNT && best.value() != null) {
+                                discountAmount = best.value();
+                            }
+                            
+                            BigDecimal newPrice = originalPrice.subtract(discountAmount);
+                            if (newPrice.compareTo(BigDecimal.ZERO) < 0) {
+                                newPrice = BigDecimal.ZERO;
+                            }
+                            
+                            // Prevent overwriting if already discounted or if new price is not actually cheaper
+                            if (newPrice.compareTo(originalPrice) < 0) {
+                                String computedBadge = best.type() == DiscountType.PERCENTAGE ? 
+                                    best.value().stripTrailingZeros().toPlainString() + "% OFF" : 
+                                    best.name();
+                                    
+                                return base.toBuilder()
+                                    .price(newPrice)
+                                    .compareAtPrice(originalPrice)
+                                    .badge(base.badge() != null && !base.badge().isBlank() ? base.badge() : computedBadge)
+                                    .build();
+                            }
+                        }
+                    } catch (Exception e) {
+                        // Ignore discount errors for storefront display
+                    }
+                    return base;
+                })
                 .toList();
     }
 
