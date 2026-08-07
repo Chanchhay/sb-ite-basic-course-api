@@ -43,6 +43,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.jpa.domain.Specification;
 import kh.edu.istad.ite.features.catalog.specification.ItemSpecifications;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
@@ -103,6 +104,7 @@ public class TelegramWebhookServiceImpl implements TelegramWebhookService {
     private final MinioService minioService;
 
     @Override
+    @Transactional
     public void handleUpdate(String webhookSecret, String secretTokenHeader, TelegramUpdate update) {
         try {
             BusinessTelegramBot setting = telegramBotRepository.findByWebhookSecret(webhookSecret).orElse(null);
