@@ -25,7 +25,7 @@ public class Customer extends BasedAuditingEntity {
     private UUID id;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "business_id", nullable = false)
+    @JoinColumn(name = "business_owner_id", nullable = false)
     private Business business;
 
     @ManyToOne(fetch = FetchType.LAZY)
