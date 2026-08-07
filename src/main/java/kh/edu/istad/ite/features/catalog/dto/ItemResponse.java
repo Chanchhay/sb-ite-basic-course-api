@@ -10,7 +10,7 @@ import java.util.UUID;
 
 import lombok.Builder;
 
-@Builder
+@Builder(toBuilder = true)
 public record ItemResponse(
         UUID id,
         UUID businessId,

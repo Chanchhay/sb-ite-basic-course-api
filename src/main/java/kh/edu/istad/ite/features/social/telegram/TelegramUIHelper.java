@@ -53,10 +53,26 @@ public class TelegramUIHelper {
     }
 
 
-    public String renderProductDetail(Item item, BusinessTelegramBot setting, Optional<BigDecimal> availableQuantity) {
+    public String renderProductDetail(Item item, BusinessTelegramBot setting, Optional<BigDecimal> availableQuantity, kh.edu.istad.ite.features.discount.dto.DiscountResponse discount) {
         StringBuilder sb = new StringBuilder();
         sb.append(header("🏷️", item.getName()));
-        sb.append("💵 តម្លៃទំនិញ ៖  ").append(formatPrice(item.getPrice(), setting)).append("\n");
+        
+        if (discount != null) {
+            BigDecimal discountAmount = BigDecimal.ZERO;
+            if (discount.type() == kh.edu.istad.ite.shared.enums.DiscountType.PERCENTAGE && discount.value() != null) {
+                discountAmount = item.getPrice().multiply(discount.value()).divide(new BigDecimal("100"));
+            } else if (discount.type() == kh.edu.istad.ite.shared.enums.DiscountType.FIXED_AMOUNT && discount.value() != null) {
+                discountAmount = discount.value();
+            }
+            BigDecimal newPrice = item.getPrice().subtract(discountAmount);
+            if (newPrice.compareTo(BigDecimal.ZERO) < 0) {
+                newPrice = BigDecimal.ZERO;
+            }
+            sb.append("💵 តម្លៃទំនិញ ៖  ").append(formatPrice(newPrice, setting))
+              .append(" (បញ្ចុះពី ~").append(formatPrice(item.getPrice(), setting)).append("~)\n");
+        } else {
+            sb.append("💵 តម្លៃទំនិញ ៖  ").append(formatPrice(item.getPrice(), setting)).append("\n");
+        }
 
         if (item.getItemGroup() != null) {
             sb.append("🗂️ ប្រភេទ    ៖  `").append(item.getItemGroup().getName()).append("`\n");
