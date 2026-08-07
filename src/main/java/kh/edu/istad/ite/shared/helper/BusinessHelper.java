@@ -87,7 +87,7 @@ public class BusinessHelper {
         return platformFeatureFlagRepository.existsByFeatureAndEnabledFalse(feature);
     }
 
-    private Business findBusiness(UUID businessId) {
+    public Business findBusiness(UUID businessId) {
         return businessRepository.findById(businessId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Business has not been found"));
     }
