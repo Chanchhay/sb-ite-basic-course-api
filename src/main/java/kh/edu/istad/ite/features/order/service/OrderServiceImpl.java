@@ -658,19 +658,43 @@ public class OrderServiceImpl implements OrderService {
     }
 
     private void recalculateOrderTotals(Order order) {
-        BigDecimal subtotal = BigDecimal.ZERO;
+        BigDecimal grossSubtotal = BigDecimal.ZERO;
+        BigDecimal itemDiscount = BigDecimal.ZERO;
+
         for (OrderItem item : order.getItems()) {
-            subtotal = subtotal.add(item.getLineTotal());
+            BigDecimal unitPrice = item.getUnitPrice() != null ? item.getUnitPrice() : BigDecimal.ZERO;
+            int qty = item.getQuantity() != null ? item.getQuantity() : 0;
+            BigDecimal itemGross = unitPrice.multiply(BigDecimal.valueOf(qty));
+            BigDecimal itemDisc = item.getDiscountAmount() != null ? item.getDiscountAmount() : BigDecimal.ZERO;
+            BigDecimal itemNet = itemGross.subtract(itemDisc);
+            if (itemNet.compareTo(BigDecimal.ZERO) < 0) {
+                itemNet = BigDecimal.ZERO;
+            }
+            item.setLineTotal(itemNet);
+
+            grossSubtotal = grossSubtotal.add(itemGross);
+            itemDiscount = itemDiscount.add(itemDisc);
         }
 
-        BigDecimal discount = order.getDiscountAmount() == null ? BigDecimal.ZERO : order.getDiscountAmount();
-        if (discount.compareTo(subtotal) > 0) {
+        BigDecimal subtotal = grossSubtotal.subtract(itemDiscount);
+        if (subtotal.compareTo(BigDecimal.ZERO) < 0) {
+            subtotal = BigDecimal.ZERO;
+        }
+        BigDecimal orderDiscount = order.getDiscountAmount() == null ? BigDecimal.ZERO : order.getDiscountAmount();
+
+        if (orderDiscount.compareTo(subtotal) > 0) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Discount cannot exceed the order subtotal");
         }
 
         int scale = CURRENCY_KHR.equalsIgnoreCase(order.getCurrency()) ? 0 : 2;
         order.setSubtotal(subtotal.setScale(scale, RoundingMode.HALF_UP));
-        order.setTotal(subtotal.subtract(discount).setScale(scale, RoundingMode.HALF_UP));
+        order.setDiscountAmount(orderDiscount.setScale(scale, RoundingMode.HALF_UP));
+
+        BigDecimal total = subtotal.subtract(orderDiscount).setScale(scale, RoundingMode.HALF_UP);
+        if (total.compareTo(BigDecimal.ZERO) < 0) {
+            total = BigDecimal.ZERO;
+        }
+        order.setTotal(total);
     }
 
 }
