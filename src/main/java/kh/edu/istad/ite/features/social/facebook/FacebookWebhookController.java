@@ -2,6 +2,7 @@ package kh.edu.istad.ite.features.social.facebook;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import kh.edu.istad.ite.config.props.FacebookProps;
+import kh.edu.istad.ite.features.social.entity.BotSession;
 import kh.edu.istad.ite.features.social.entity.BusinessFacebookPage;
 import kh.edu.istad.ite.features.social.service.BusinessFacebookPageService;
 import lombok.RequiredArgsConstructor;
@@ -27,6 +28,10 @@ public class FacebookWebhookController {
     private final FacebookProps facebookProps;
     private final BusinessFacebookPageService pageService;
     private final FacebookCatalogService catalogService;
+    private final FacebookCustomerService customerService;
+    private final FacebookCartService cartService;
+    private final FacebookCheckoutService checkoutService;
+    private final FacebookGraphClient graphClient;
 
 
     @GetMapping
@@ -128,6 +133,9 @@ public class FacebookWebhookController {
     private void handlePostback(BusinessFacebookPage page, String psid, String payload) {
         if (payload == null) return;
 
+        // Auto-register/fetch customer and bot session for any postback
+        BotSession session = customerService.getOrCreateSession(page, psid);
+
         if (payload.startsWith("ITEM:")) {
             try {
                 UUID itemId = UUID.fromString(payload.substring("ITEM:".length()));
@@ -135,6 +143,73 @@ public class FacebookWebhookController {
             } catch (IllegalArgumentException e) {
                 log.warn("Invalid ITEM postback payload: {}", payload);
             }
+            return;
+        }
+
+        if (payload.startsWith("CART_ADD:")) {
+            try {
+                UUID itemId = UUID.fromString(payload.substring("CART_ADD:".length()));
+                cartService.handleAddToCart(page, session, psid, itemId);
+            } catch (IllegalArgumentException e) {
+                log.warn("Invalid CART_ADD payload: {}", payload);
+            }
+            return;
+        }
+
+        if ("CART_VIEW".equals(payload)) {
+            cartService.handleViewCart(page, session, psid);
+            return;
+        }
+
+        if ("CART_CHECKOUT".equals(payload)) {
+            checkoutService.handleCheckout(page, session, psid);
+            return;
+        }
+
+        if (payload.startsWith("ORDER_CANCEL:")) {
+            try {
+                UUID orderId = UUID.fromString(payload.substring("ORDER_CANCEL:".length()));
+                checkoutService.cancelCheckout(page.getBusiness().getId(), orderId);
+                graphClient.sendTextMessage(page.getPageId(), page.getPageAccessTokenEncrypted(), psid, "✅ ការបញ្ជាទិញត្រូវបានលុបចោល។");
+                cartService.handleViewCart(page, session, psid);
+            } catch (Exception e) {
+                log.warn("Invalid ORDER_CANCEL payload or error: {}", e.getMessage());
+            }
+            return;
+        }
+
+        if (payload.startsWith("CART_INC:")) {
+            try {
+                UUID itemId = UUID.fromString(payload.substring("CART_INC:".length()));
+                cartService.handleIncrementCartItem(page, session, psid, itemId);
+            } catch (IllegalArgumentException e) {
+                log.warn("Invalid CART_INC payload: {}", payload);
+            }
+            return;
+        }
+
+        if (payload.startsWith("CART_DEC:")) {
+            try {
+                UUID itemId = UUID.fromString(payload.substring("CART_DEC:".length()));
+                cartService.handleDecrementCartItem(page, session, psid, itemId);
+            } catch (IllegalArgumentException e) {
+                log.warn("Invalid CART_DEC payload: {}", payload);
+            }
+            return;
+        }
+
+        if (payload.startsWith("CART_RM:")) {
+            try {
+                UUID itemId = UUID.fromString(payload.substring("CART_RM:".length()));
+                cartService.handleRemoveCartItem(page, session, psid, itemId);
+            } catch (IllegalArgumentException e) {
+                log.warn("Invalid CART_RM payload: {}", payload);
+            }
+            return;
+        }
+
+        if ("ORDER_HISTORY".equals(payload)) {
+            customerService.handleOrderHistory(page, session, psid);
             return;
         }
 

@@ -8,6 +8,7 @@ public record TelegramMessage(
         @JsonProperty("message_id") Integer messageId,
         TelegramChat chat,
         TelegramFrom from,
+        TelegramContact contact,
         String text
 ) {
 }

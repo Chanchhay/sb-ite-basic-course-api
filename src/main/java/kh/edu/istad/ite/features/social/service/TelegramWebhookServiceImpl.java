@@ -30,6 +30,7 @@ import kh.edu.istad.ite.features.social.telegram.TelegramBotClient;
 import kh.edu.istad.ite.features.social.telegram.TelegramCallbackQuery;
 import kh.edu.istad.ite.features.social.telegram.TelegramKeyboards;
 import kh.edu.istad.ite.features.social.telegram.TelegramUIHelper;
+import kh.edu.istad.ite.features.social.telegram.TelegramFrom;
 import kh.edu.istad.ite.features.social.telegram.TelegramUpdate;
 import kh.edu.istad.ite.shared.enums.BusinessFeature;
 import kh.edu.istad.ite.shared.enums.CartStatus;
@@ -154,7 +155,7 @@ public class TelegramWebhookServiceImpl implements TelegramWebhookService {
                 if (callbackQuery.message() != null) {
                     messageId = callbackQuery.message().messageId();
                 }
-                handleCallback(botToken, chatId, messageId, callbackQuery.data(), setting, session);
+                handleCallback(update, botToken, chatId, messageId, callbackQuery.data(), setting, session);
             } else {
                 String text = update.message().text() == null ? "" : update.message().text().trim();
                 handleText(botToken, chatId, text, setting, session);
@@ -221,6 +222,53 @@ public class TelegramWebhookServiceImpl implements TelegramWebhookService {
         }
     }
 
+    private void autoAuthenticateTelegramUser(TelegramUpdate update, BusinessTelegramBot setting, BotSession session) {
+        if (update == null) {
+            return;
+        }
+
+        TelegramFrom from = null;
+        String phoneNumber = null;
+
+        if (update.message() != null) {
+            if (update.message().from() != null) {
+                from = update.message().from();
+            }
+            if (update.message().contact() != null && update.message().contact().phoneNumber() != null) {
+                phoneNumber = update.message().contact().phoneNumber();
+            }
+        } else if (update.callbackQuery() != null && update.callbackQuery().from() != null) {
+            from = update.callbackQuery().from();
+        }
+
+        if (from == null || from.id() == null) {
+            return;
+        }
+
+        try {
+            Long tgId = from.id();
+            String firstName = from.firstName();
+            String username = from.username();
+
+            KeycloakBotAuthService.KeycloakUserInfo userInfo = keycloakAuthService
+                    .findOrCreateTelegramKeycloakUser(tgId, firstName, null, username, phoneNumber);
+
+            GlobalCustomer globalCustomer = customerIdentityService.resolve(
+                    CustomerIdentityService.parseKeycloakId(userInfo.id()),
+                    userInfo.email(),
+                    userInfo.phoneNumber(),
+                    userInfo.getFullName());
+
+            Customer customer = findOrCreateCustomer(setting, globalCustomer);
+            linkTelegramIdentity(setting, session, customer);
+
+            session.setCustomer(customer);
+            log.info("Auto-registered/synced Telegram user {} (@{}) into Keycloak & attached to session", tgId, username);
+        } catch (Exception e) {
+            log.error("Failed to auto-authenticate Telegram user {}: {}", from.id(), e.getMessage(), e);
+        }
+    }
+
     private void handleText(String botToken, Long chatId, String text, BusinessTelegramBot setting,
             BotSession session) {
         String state = session.getState() == null ? STATE_IDLE : session.getState();
@@ -268,19 +316,10 @@ public class TelegramWebhookServiceImpl implements TelegramWebhookService {
         telegramBotClient.sendMessage(botToken, chatId, welcomeText, TelegramKeyboards.mainMenu(registered));
     }
 
-    private void handleCallback(String botToken, Long chatId, Integer messageId, String data,
+    private void handleCallback(TelegramUpdate update, String botToken, Long chatId, Integer messageId, String data,
             BusinessTelegramBot setting, BotSession session) {
         if (data == null)
             return;
-
-        if (REQUIRES_REGISTRATION.contains(data) && session.getCustomer() == null) {
-            telegramBotClient.sendMessage(botToken, chatId,
-                    "🔐 សូមធ្វើការចូលគណនី ឬចុះឈ្មោះជាមុនសិន ដើម្បីប្រើប្រាស់មុខងារនេះ។",
-                    List.of(List.of(
-                            new InlineKeyboardButton("📝 ចុះឈ្មោះថ្មី", "auth:register:start"),
-                            new InlineKeyboardButton("🔑 ចូលគណនី", "auth:login:start"))));
-            return;
-        }
 
         if (data.equals("menu:catalog") || data.equals("catback")) {
             showCategories(botToken, chatId, setting, session);
@@ -359,8 +398,7 @@ public class TelegramWebhookServiceImpl implements TelegramWebhookService {
 
         switch (data) {
             case "menu:main" -> sendMainMenu(botToken, chatId, session, setting);
-            case "auth:register:start" -> startRegistration(botToken, chatId, session);
-            case "auth:login:start" -> startLogin(botToken, chatId, session);
+            case "auth:signin", "auth:register:start", "auth:login:start" -> handleSignIn(update, botToken, chatId, setting, session);
             case "auth:logout" -> handleLogout(botToken, chatId, setting, session);
             case "menu:profile" -> showProfile(botToken, chatId, session);
             case "menu:search" -> startSearch(botToken, chatId, session);
@@ -485,17 +523,28 @@ public class TelegramWebhookServiceImpl implements TelegramWebhookService {
         telegramBotClient.sendMessage(botToken, chatId, screen.text(), screen.keyboard());
     }
 
-    /** ត្រឡប់ true បើអ្នកប្រើមិនទាន់ចូលគណនី (ហើយបានផ្ញើសារប្រាប់រួច)។ */
     private boolean requireLogin(String botToken, Long chatId, BotSession session) {
         if (session.getCustomer() != null) {
             return false;
         }
         telegramBotClient.sendMessage(botToken, chatId,
-                "🔐 សូមចូលគណនី ឬចុះឈ្មោះជាមុនសិន។",
-                List.of(List.of(
-                        new InlineKeyboardButton("📝 ចុះឈ្មោះថ្មី", "auth:register:start"),
-                        new InlineKeyboardButton("🔑 ចូលគណនី", "auth:login:start"))));
+                "🔐 សូមចូលគណនីជាមុនសិន ដើម្បីប្រើប្រាស់មុខងារនេះ។",
+                List.of(List.of(new InlineKeyboardButton("🔑 ចូលគណនី (Sign in)", "auth:signin"))));
         return true;
+    }
+
+    private void handleSignIn(TelegramUpdate update, String botToken, Long chatId, BusinessTelegramBot setting, BotSession session) {
+        autoAuthenticateTelegramUser(update, setting, session);
+        if (session.getCustomer() != null) {
+            String name = session.getCustomer().getGlobalCustomer() != null ? session.getCustomer().getGlobalCustomer().getFullName() : "";
+            telegramBotClient.sendMessage(botToken, chatId,
+                    "🎉 *ចូលគណនីជាមួយ Telegram ជោគជ័យ!*\nសូមស្វាគមន៍ " + name + "!",
+                    TelegramKeyboards.mainMenu(true));
+        } else {
+            telegramBotClient.sendMessage(botToken, chatId,
+                    "❌ មិនអាចភ្ជាប់គណនី Telegram បានទេ។ សូមព្យាយាមម្ដងទៀត។",
+                    TelegramKeyboards.mainMenu(false));
+        }
     }
 
     private int parsePage(String raw) {
@@ -780,7 +829,6 @@ public class TelegramWebhookServiceImpl implements TelegramWebhookService {
 
         List<List<InlineKeyboardButton>> keyboard = List.of(
                 List.of(new InlineKeyboardButton("🧾 ប្រវត្តិការទិញ", "menu:history")),
-                List.of(new InlineKeyboardButton("🚪 ចាកចេញពីគណនី (Logout)", "auth:logout")),
                 List.of(new InlineKeyboardButton("⬅️ ម៉ឺនុយដើម (Main Menu)", "menu:main")));
         telegramBotClient.sendMessage(botToken, chatId, message, keyboard);
     }
@@ -1167,10 +1215,10 @@ public class TelegramWebhookServiceImpl implements TelegramWebhookService {
         for (CartItem ci : cart.getItems()) {
             String shortName = ci.getItem().getName().length() > 15 ? ci.getItem().getName().substring(0, 12) + "..."
                     : ci.getItem().getName();
-            keyboard.add(List.of(new InlineKeyboardButton("➖", "cart:minus:" + ci.getId()),
+            keyboard.add(List.of(new InlineKeyboardButton("🔴 ➖", "cart:minus:" + ci.getId()),
                     new InlineKeyboardButton("▫️ " + shortName + " (" + ci.getQuantity() + ")",
                             "item:" + ci.getItem().getId()),
-                    new InlineKeyboardButton("➕", "cart:plus:" + ci.getId()),
+                    new InlineKeyboardButton("🟢 ➕", "cart:plus:" + ci.getId()),
                     new InlineKeyboardButton("🗑️", "cart:rm:" + ci.getId())));
         }
         keyboard.add(List.of(new InlineKeyboardButton("🛍️ ទិញទំនិញបន្ត", "menu:catalog")));

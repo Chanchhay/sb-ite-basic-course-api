@@ -49,11 +49,7 @@ public class FacebookCatalogService {
     private final TelegramStockHelper stockHelper;
     private final FacebookGraphClient graphClient;
 
-    /**
-     * Sends the welcome/main-menu message — this is what fires when the customer taps
-     * "Get Started" or opens the chat for the first time. Equivalent of Telegram's
-     * sendMainMenu() on /start, but as a Button Template instead of an inline keyboard.
-     */
+
     public void sendWelcomeMenu(BusinessFacebookPage page, String psid) {
         String storeName = page.getBusiness().getDisplayName();
         String text = "👋 សូមស្វាគមន៍មកកាន់ " + storeName + "!\n\nសូមចុចប៊ូតុងខាងក្រោម ដើម្បីមើលផលិតផលរបស់យើង។";
@@ -71,8 +67,7 @@ public class FacebookCatalogService {
         Specification<Item> spec = Specification.where(ItemSpecifications.hasBusinessId(businessId))
                 .and(ItemSpecifications.hasStatus(ItemStatus.ACTIVE))
                 .and(ItemSpecifications.isEnabledInChannelCodes(List.of("MESSENGER")));
-//
-//                .and(ItemSpecifications.hasStatus(ItemStatus.ACTIVE));
+
         Page<Item> itemsPage = itemRepository.findAll(spec, PageRequest.of(0, CATALOG_PAGE_SIZE));
 
         if (itemsPage.isEmpty()) {

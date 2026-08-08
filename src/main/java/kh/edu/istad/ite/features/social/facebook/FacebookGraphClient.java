@@ -12,6 +12,7 @@ import java.net.http.HttpClient;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import org.springframework.http.client.MultipartBodyBuilder;
 
 @Component
 @Slf4j
@@ -61,12 +62,7 @@ public class FacebookGraphClient {
             throw new RuntimeException("Failed to send message via Graph API", e);
         }
     }
-
-    /**
-     * Sends a Generic Template (product card): image + title + subtitle + buttons.
-     * Used to show item image/title/price when the customer views the catalog or one item.
-     * See: https://developers.facebook.com/docs/messenger-platform/send-messages/template/generic
-     */
+    
     public void sendGenericTemplate(String pageId, String pageAccessToken, String psid,
                                     List<Map<String, Object>> elements) {
         try {
@@ -137,6 +133,49 @@ public class FacebookGraphClient {
         }
     }
 
+    public void sendImage(String pageId, String pageAccessToken, String psid, byte[] imageBytes) {
+        try {
+            MultipartBodyBuilder bodyBuilder = new MultipartBodyBuilder();
+            bodyBuilder.part("recipient", "{\"id\":\"" + psid + "\"}").contentType(MediaType.APPLICATION_JSON);
+            bodyBuilder.part("message", "{\"attachment\":{\"type\":\"image\", \"payload\":{\"is_reusable\":false}}}")
+                    .contentType(MediaType.APPLICATION_JSON);
+            bodyBuilder.part("filedata", imageBytes, MediaType.IMAGE_PNG).filename("khqr.png");
+
+            restClient.post()
+                    .uri(uriBuilder -> uriBuilder
+                            .path("/{apiVersion}/{pageId}/messages")
+                            .queryParam("access_token", pageAccessToken)
+                            .build(apiVersion, pageId))
+                    .contentType(MediaType.MULTIPART_FORM_DATA)
+                    .body(bodyBuilder.build())
+                    .retrieve()
+                    .toBodilessEntity();
+
+            log.info("Sent Messenger image to PSID {}", psid);
+        } catch (Exception e) {
+            log.error("Failed to send Messenger image to PSID {}: {}", psid, e.getMessage());
+            throw new RuntimeException("Failed to send image via Graph API", e);
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    public Map<String, Object> getUserProfile(String pageAccessToken, String psid) {
+        try {
+            Map<String, Object> response = restClient.get()
+                    .uri(uriBuilder -> uriBuilder
+                            .path("/{apiVersion}/{psid}")
+                            .queryParam("fields", "first_name,last_name,profile_pic")
+                            .queryParam("access_token", pageAccessToken)
+                            .build(apiVersion, psid))
+                    .retrieve()
+                    .body(Map.class);
+            return response;
+        } catch (Exception e) {
+            log.error("Failed to fetch user profile for PSID {}: {}", psid, e.getMessage());
+            return Map.of("first_name", "Customer"); // Fallback
+        }
+    }
+
 
 
     public void setupMessengerProfile(String pageAccessToken) {
@@ -147,7 +186,10 @@ public class FacebookGraphClient {
                             "locale", "default",
                             "composer_input_disabled", false,
                             "call_to_actions", List.of(
-                                    Map.of("type", "postback", "title", "🗂️ មើលផលិតផល", "payload", "CATALOG")
+                                    Map.of("type", "postback", "title", "🗂️ មើលផលិតផល", "payload", "CATALOG"),
+                                    Map.of("type", "postback", "title", "🛒 មើលកន្ត្រក", "payload", "CART_VIEW"),
+                                    Map.of("type", "postback", "title", "💳 គិតលុយ", "payload", "CART_CHECKOUT"),
+                                    Map.of("type", "postback", "title", "📝 ប្រវត្តិបញ្ជាទិញ", "payload", "ORDER_HISTORY")
                             )
                     ))
             );
@@ -169,7 +211,6 @@ public class FacebookGraphClient {
         }
     }
 
-//     Step 1 of Facebook Login: exchange the OAuth "code" for a short-lived user access token.
     @SuppressWarnings("unchecked")
     public String exchangeCodeForUserToken(String code, String redirectUri, String appId, String appSecret) {
         try {
@@ -190,7 +231,6 @@ public class FacebookGraphClient {
         }
     }
 
-//    Step 2: exchange the short-lived user token for a long-lived one (~60 days).
     @SuppressWarnings("unchecked")
     public String exchangeForLongLivedUserToken(String shortLivedToken, String appId, String appSecret) {
         try {
