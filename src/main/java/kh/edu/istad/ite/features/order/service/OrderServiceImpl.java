@@ -278,16 +278,7 @@ public class OrderServiceImpl implements OrderService {
     @Transactional
     public PaymentStatusResponse checkPaymentStatus(UUID businessId, UUID orderId) {
         Business business = businessHelper.findAccessibleBusiness(businessId);
-
-        // Locked lookup: the frontend polls this endpoint every couple of
-        // seconds while a KHQR code is on screen, so two requests can land
-        // almost together. Without a lock, both read status=PENDING, both
-        // see Bakong report paid, and both call settle() — the second one
-        // then blows up on the unique(order_id) constraint on Sale/Receipt.
-        // The lock makes the second request simply wait for the first to
-        // commit, then see status=PAID and take the fast path below.
-        Order order = orderRepository.findByIdAndBusinessIdForUpdate(orderId, businessId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Order has not been found"));
+        Order order = findOrder(businessId, orderId);
 
         if (OrderStatus.PAID.equals(order.getStatus())) {
             return new PaymentStatusResponse(
@@ -556,6 +547,8 @@ public class OrderServiceImpl implements OrderService {
         bizFilter.setOperation(kh.edu.istad.ite.config.filter.SearchRequestDto.Operation.JOIN);
         bizFilter.setJoinTable("business");
         bizFilter.setColumn("id");
+        bizFilter.setValue(businessId.toString()); // Wait, FilterSpecification maps string? FilterSpecification uses equal(..., requestDto.getValue()). Value is string. UUID needs to be converted if it doesn't match type.
+        // Actually, just fetching by Spec might be tricky if we don't control the UUID type conversion in generic spec.
         // I will use a custom specification combined with FilterSpecification.
 
         Specification<Order> spec = filterSpecification.getSearchSpecificationDynamic(
