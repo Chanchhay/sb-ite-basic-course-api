@@ -34,6 +34,7 @@ public class SalesChannelServiceImpl
         private final ItemChannelRepository itemChannelRepository;
         private final ItemMapper itemMapper;
         private final BusinessRepository businessRepository;
+        private final ChannelPriceResolver channelPriceResolver;
 
         @Override
         public List<SalesChannelResponse> findAllActive() {
@@ -66,7 +67,10 @@ public class SalesChannelServiceImpl
                                 .stream()
                                 .map(ic -> new SalesChannelItemResponse(
                                                 ic.getId(),
-                                                itemMapper.toResponse(ic.getItem())))
+                                                channelPriceResolver.atChannelPrices(
+                                                                itemMapper.toResponse(ic.getItem()),
+                                                                businessId,
+                                                                channelCode)))
                                 .toList();
         }
 

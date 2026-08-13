@@ -38,7 +38,10 @@ public class AdminUnitServiceImpl implements AdminUnitService {
         String trimmedName = request.name().trim();
 
         Unit unit = new Unit();
+        // Left with no business: units created here belong to the platform.
         unit.setName(trimmedName);
+        unit.setSymbol(StringUtils.hasText(request.symbol()) ? request.symbol().trim() : null);
+        unit.setCategory(request.category());
         unit.setNote(StringUtils.hasText(request.note()) ? request.note().trim() : null);
         unit.setSlug(generateUniqueSlug(trimmedName, null));
 
@@ -67,6 +70,8 @@ public class AdminUnitServiceImpl implements AdminUnitService {
             unit.setSlug(generateUniqueSlug(trimmedName, unit.getId()));
         }
 
+        unit.setSymbol(StringUtils.hasText(request.symbol()) ? request.symbol().trim() : null);
+        unit.setCategory(request.category());
         unit.setNote(StringUtils.hasText(request.note()) ? request.note().trim() : null);
 
         Unit saved = unitRepository.save(unit);
@@ -133,10 +138,10 @@ public class AdminUnitServiceImpl implements AdminUnitService {
 
     private boolean slugExists(String slug, UUID excludedUnitId) {
         if (excludedUnitId == null) {
-            return unitRepository.existsBySlug(slug);
+            return unitRepository.existsByBusinessIsNullAndSlugIgnoreCase(slug);
         }
 
-        return unitRepository.existsBySlugAndIdNot(slug, excludedUnitId);
+        return unitRepository.existsByBusinessIsNullAndSlugIgnoreCaseAndIdNot(slug, excludedUnitId);
     }
 
     private String toSlugBase(String value) {

@@ -12,5 +12,7 @@ public interface SalesChannelRepository extends JpaRepository<SalesChannel, UUID
 
     Optional<SalesChannel> findByIdAndIsActiveTrue(UUID id);
 
+    Optional<SalesChannel> findByCode(String code);
+
     boolean existsByCode(String code);
 }

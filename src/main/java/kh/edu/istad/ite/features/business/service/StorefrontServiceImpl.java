@@ -40,13 +40,26 @@ import kh.edu.istad.ite.features.discount.service.DiscountService;
 import kh.edu.istad.ite.features.discount.dto.DiscountResponse;
 import kh.edu.istad.ite.shared.enums.OrderChannel;
 import kh.edu.istad.ite.shared.enums.DiscountType;
+import kh.edu.istad.ite.shared.enums.ItemType;
+import kh.edu.istad.ite.features.catalog.dto.ItemVariantResponse;
+import kh.edu.istad.ite.features.catalog.entity.ItemVariant;
+import kh.edu.istad.ite.features.channel.service.ChannelPriceResolver;
+import kh.edu.istad.ite.features.channel.service.ItemChannelStockService;
+import kh.edu.istad.ite.features.inventory.dto.StockSummaryResponse;
+import kh.edu.istad.ite.features.inventory.service.StockEntryService;
 import java.math.BigDecimal;
+import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
 public class StorefrontServiceImpl implements StorefrontService {
 
     private static final Pattern DNS_LABEL = Pattern.compile("^[a-z0-9]([a-z0-9-]{1,61}[a-z0-9])?$");
+
+    /** The seeded channel the online store trades as. Matches {@link OrderChannel#WEB}. */
+    private static final String WEB_CHANNEL_CODE = OrderChannel.WEB.name();
 
     private final BusinessRepository businessRepository;
     private final BusinessHelper businessHelper;
@@ -55,6 +68,9 @@ public class StorefrontServiceImpl implements StorefrontService {
     private final StorefrontMapper storefrontMapper;
     private final StorefrontProps storefrontProps;
     private final DiscountService discountService;
+    private final ChannelPriceResolver channelPriceResolver;
+    private final ItemChannelStockService itemChannelStockService;
+    private final StockEntryService stockEntryService;
 
     @Override
     @Transactional(readOnly = true)
@@ -184,17 +200,28 @@ public class StorefrontServiceImpl implements StorefrontService {
         org.springframework.data.jpa.domain.Specification<Item> specItems = org.springframework.data.jpa.domain.Specification
                 .where(kh.edu.istad.ite.features.catalog.specification.ItemSpecifications.hasBusinessId(business.getId()))
                 .and(kh.edu.istad.ite.features.catalog.specification.ItemSpecifications.hasStatus(ItemStatus.ACTIVE))
-                // Show the same items the till sells — whatever is published
-                // to the "POS" channel — instead of gating on channel codes
-                // ("WEB"/"STOREFRONT") that are never seeded and so never match.
-                .and(kh.edu.istad.ite.features.catalog.specification.ItemSpecifications.isEnabledInChannelCodes(List.of("POS")));
+                // What the shop published to its Online Store, and nothing
+                // else. WEB is seeded like every other channel, so the toggle
+                // in the back office is what decides this — listing the till's
+                // items instead made that toggle decoration and let a shop's
+                // counter-only lines leak onto the web.
+                .and(kh.edu.istad.ite.features.catalog.specification.ItemSpecifications
+                        .isEnabledInChannelCodes(List.of(WEB_CHANNEL_CODE)));
 
         List<Item> items = itemRepository.findAll(specItems);
         return items.stream()
                 .map(item -> {
-                    ItemResponse base = itemMapper.toResponse(item);
+                    // What the web charges, not what the business charges: the
+                    // checkout prices every line the same way, and quoting one
+                    // number while billing another is the bug this avoids.
+                    ItemResponse base = withWebAvailability(
+                            channelPriceResolver.atChannelPrices(
+                                    itemMapper.toResponse(item), business.getId(), WEB_CHANNEL_CODE),
+                            item,
+                            business.getId());
+
                     if (base.price() == null) return base;
-                    
+
                     try {
                         List<DiscountResponse> applicable = discountService.findApplicableDiscounts(
                                 business.getId(),
@@ -246,6 +273,67 @@ public class StorefrontServiceImpl implements StorefrontService {
     public Page<PublicStoreResponse> getRecommendedStores(UUID categoryId, Pageable pageable) {
         return businessRepository.findRecommendedStores(categoryId, pageable)
                 .map(storefrontMapper::toPublicResponse);
+    }
+
+    /**
+     * How many of each thing the web may still sell.
+     *
+     * Counted per option, because that is how stock is counted: ten Smalls on
+     * the shelf says nothing about the Large. The item's own figure is the sum
+     * of its options, so a shopper looking at the card sees what the whole
+     * listing can supply and the picker inside it sees which sizes are gone.
+     *
+     * Left null when there is nothing to report — a service the shop does not
+     * count, or an item it records no stock for. Zero means sold out, and the
+     * two must stay distinguishable or every untracked item reads as empty.
+     */
+    private ItemResponse withWebAvailability(ItemResponse response, Item item, UUID businessId) {
+        if (!ItemType.PHYSICAL.equals(item.getItemType())) {
+            return response;
+        }
+
+        List<ItemVariantResponse> variants = response.variants();
+
+        if (variants == null || variants.isEmpty()) {
+            return response.toBuilder()
+                    .availableQuantity(webAvailability(businessId, item, null))
+                    .build();
+        }
+
+        Map<UUID, ItemVariant> byId = item.getVariants().stream()
+                .collect(Collectors.toMap(ItemVariant::getId, Function.identity(), (a, b) -> a));
+
+        BigDecimal total = null;
+        List<ItemVariantResponse> answered = new ArrayList<>(variants.size());
+
+        for (ItemVariantResponse variant : variants) {
+            BigDecimal available = webAvailability(businessId, item, byId.get(variant.id()));
+            answered.add(variant.toBuilder().availableQuantity(available).build());
+
+            if (available != null) {
+                total = (total == null ? BigDecimal.ZERO : total).add(available);
+            }
+        }
+
+        return response.toBuilder().variants(answered).availableQuantity(total).build();
+    }
+
+    /** Null when the shop keeps no stock record for this option — no ceiling to report. */
+    private BigDecimal webAvailability(UUID businessId, Item item, ItemVariant variant) {
+        StockSummaryResponse summary = stockEntryService.findAvailableStock(
+                businessId, item.getId(), variant == null ? null : variant.getId());
+
+        if (summary == null || summary.lastEntryId() == null) {
+            return null;
+        }
+
+        BigDecimal onHand = summary.quantityOnHand() == null ? BigDecimal.ZERO : summary.quantityOnHand();
+
+        // An oversold shelf or a spent allocation can both go negative; the
+        // storefront has no use for "minus two" and would print it.
+        return itemChannelStockService
+                .availableFor(item, variant, OrderChannel.WEB, onHand)
+                .max(BigDecimal.ZERO);
     }
 
     private List<StorefrontRequirement> evaluateRequirements(Business business) {

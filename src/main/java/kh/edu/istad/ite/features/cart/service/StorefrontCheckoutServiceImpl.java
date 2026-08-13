@@ -18,9 +18,11 @@ import kh.edu.istad.ite.features.customer.entity.GlobalCustomer;
 import kh.edu.istad.ite.features.customer.repository.CustomerRepository;
 import kh.edu.istad.ite.features.customer.service.CustomerIdentityService;
 import kh.edu.istad.ite.features.inventory.dto.StockSummaryResponse;
+import kh.edu.istad.ite.features.channel.service.ItemChannelStockService;
 import kh.edu.istad.ite.features.inventory.service.StockEntryService;
 import kh.edu.istad.ite.features.order.entity.Order;
 import kh.edu.istad.ite.features.order.entity.OrderItem;
+import kh.edu.istad.ite.features.order.entity.OrderItemSelection;
 import kh.edu.istad.ite.features.order.entity.Sale;
 import kh.edu.istad.ite.features.order.repository.OrderRepository;
 import kh.edu.istad.ite.features.order.repository.SaleRepository;
@@ -94,6 +96,9 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
     private final BakongTransactionClient bakongTransactionClient;
     private final CredentialCipher credentialCipher;
     private final StockEntryService stockEntryService;
+
+    private final ItemChannelStockService itemChannelStockService;
+    private final kh.edu.istad.ite.features.channel.service.ChannelPriceResolver channelPriceResolver;
     private final ReceiptService receiptService;
     private final TelegramAlertService telegramAlertService;
 
@@ -146,11 +151,19 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
 
         // Check stock BEFORE money moves, never after Bakong confirms.
         for (CartItem line : cart.getItems()) {
-            int quantity = line.getQuantity() == null ? 1 : line.getQuantity();
-            if (!hasEnoughStock(business.getId(), line.getItem(), quantity)) {
+            // What the shelf must hold: a case of twenty-four needs
+            // twenty-four, not one.
+            if (!hasEnoughStock(
+                    business.getId(), line.getItem(), line.getVariant(), line.baseQuantity())) {
+                // Named by the option, or the customer is told the item is out
+                // while the shop is full of the size they did not ask for.
+                String name = line.getVariant() == null
+                        ? line.getItem().getName()
+                        : line.getItem().getName() + " (" + line.getVariant().getVariantName() + ")";
+
                 throw new ResponseStatusException(
                         HttpStatus.CONFLICT,
-                        "\"" + line.getItem().getName() + "\" does not have enough stock left");
+                        "\"" + name + "\" does not have enough stock left");
             }
         }
 
@@ -410,20 +423,33 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
         int itemCount = 0;
 
         for (OrderItem line : order.getItems()) {
-            stockEntryService.recordSale(
+            // Costed from the batches the sale emptied, not from what is left.
+            BigDecimal unitCost = stockEntryService.recordSale(
                     business,
                     line.getItem(),
+                    line.getVariant(),
+                    // A case of twenty-four takes twenty-four off the shelf;
+                    // the ledger still reads back as the one case that sold.
+                    line.baseQuantity(),
                     BigDecimal.valueOf(line.getQuantity()),
+                    line.getUnit(),
                     order.getId(),
-                    order.getInvoiceNumber());
-
-            BigDecimal unitCost = stockEntryService.findLatestUnitCost(business.getId(), line.getItem().getId());
+                    order.getInvoiceNumber()).getUnitCost();
 
             if (unitCost == null) {
                 unitCost = BigDecimal.ZERO;
             }
 
             line.setUnitCost(unitCost.setScale(2, RoundingMode.HALF_UP));
+
+            // The sale uses up the channel's share of the shelf as well as the
+            // shelf itself. Does nothing for an item whose stock is shared,
+            // which is most of them.
+            itemChannelStockService.consume(
+                    line.getItem(),
+                    line.getVariant(),
+                    order.getChannel(),
+                    line.baseQuantity());
 
             totalCost = totalCost.add(unitCost.multiply(BigDecimal.valueOf(line.getQuantity())));
             itemCount += line.getQuantity();
@@ -526,23 +552,39 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
         }
 
         businessHelper.requireFeature(business.getId(), BusinessFeature.STOREFRONT);
+        // The shop's own online hours, enforced before money moves.
+        channelPriceResolver.requireOpen(business.getId(), TERMINAL_LABEL);
     }
 
-    private boolean hasEnoughStock(UUID businessId, Item item, int requestedQuantity) {
+    /**
+     * Whether the option in this basket line can still be sold.
+     *
+     * The option is counted on its own, so the item's total cannot answer it —
+     * ten Smalls in stock says nothing about the Large being bought.
+     *
+     * And what is on the shelf is not always what this channel may sell: a
+     * shop that has given the web four of its ten has said the other six are
+     * for the counter, so the basket must stop at four.
+     */
+    private boolean hasEnoughStock(
+            UUID businessId, Item item, ItemVariant variant, BigDecimal requestedBaseQuantity) {
         if (item.getItemType() != ItemType.PHYSICAL) {
             return true;
         }
 
-        StockSummaryResponse summary = stockEntryService.findAvailableStock(businessId, item.getId());
+        StockSummaryResponse summary = stockEntryService.findAvailableStock(
+                businessId, item.getId(), variant == null ? null : variant.getId());
 
         // No stock entries at all means the shop is not tracking this item.
         if (summary.lastEntryId() == null) {
             return true;
         }
 
-        BigDecimal available = summary.quantityOnHand() == null ? BigDecimal.ZERO : summary.quantityOnHand();
+        BigDecimal onHand = summary.quantityOnHand() == null ? BigDecimal.ZERO : summary.quantityOnHand();
+        BigDecimal available = itemChannelStockService.availableFor(
+                item, variant, OrderChannel.WEB, onHand);
 
-        return available.compareTo(BigDecimal.valueOf(requestedQuantity)) >= 0;
+        return available.compareTo(requestedBaseQuantity) >= 0;
     }
 
     private OrderItem toOrderItem(CartItem cartItem) {
@@ -567,10 +609,28 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
                 ? item.getName() + " (" + variant.getVariantName() + ")"
                 : item.getName());
         orderItem.setQuantity(quantity);
+        // The basket already agreed which unit it was buying, and at what
+        // factor; the order keeps both rather than working them out again.
+        orderItem.setUnit(cartItem.getUnit());
+        orderItem.setUnitFactor(
+                cartItem.getUnitFactor() == null ? BigDecimal.ONE : cartItem.getUnitFactor());
         orderItem.setUnitPrice(unitPrice);
         orderItem.setUnitCost(BigDecimal.ZERO);
         orderItem.setDiscountAmount(BigDecimal.ZERO);
         orderItem.setLineTotal(unitPrice.multiply(BigDecimal.valueOf(quantity)));
+
+        // The basket is emptied once this settles, so the order takes its own
+        // copy of what was chosen — otherwise the only record of "50% sugar"
+        // disappears at the moment it starts to matter.
+        if (cartItem.getSelections() != null) {
+            cartItem.getSelections().forEach(chosen -> {
+                OrderItemSelection selection = new OrderItemSelection();
+                selection.setAttributeName(chosen.getAttributeName());
+                selection.setValue(chosen.getValue());
+                selection.setLabel(chosen.getLabel());
+                orderItem.addSelection(selection);
+            });
+        }
 
         return orderItem;
     }
@@ -663,7 +723,11 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
                         item.getItemName(),
                         item.getQuantity() != null ? item.getQuantity() : 1,
                         item.getUnitPrice() != null ? item.getUnitPrice() : BigDecimal.ZERO,
-                        item.getLineTotal() != null ? item.getLineTotal() : BigDecimal.ZERO
+                        item.getLineTotal() != null ? item.getLineTotal() : BigDecimal.ZERO,
+                        item.getSelections() == null ? List.of() : item.getSelections().stream()
+                                .map(selection ->
+                                        selection.getAttributeName() + ": " + selection.display())
+                                .toList()
                 ))
                 .toList();
 
