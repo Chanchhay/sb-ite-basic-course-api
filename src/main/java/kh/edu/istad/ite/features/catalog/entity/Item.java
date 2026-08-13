@@ -10,6 +10,8 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
+import jakarta.persistence.JoinTable;
+import jakarta.persistence.ManyToMany;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.OneToMany;
 import jakarta.persistence.OrderBy;
@@ -27,7 +29,9 @@ import org.hibernate.type.SqlTypes;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.Map;
 import java.util.UUID;
 
@@ -116,6 +120,24 @@ public class Item extends BasedAuditingEntity {
     @OneToMany(mappedBy = "item", cascade = CascadeType.ALL, orphanRemoval = true)
     @OrderBy("variantName ASC")
     private List<ItemVariant> variants = new ArrayList<>();
+
+    /**
+     * Larger units this item is bought or sold in, each expressed in base
+     * units. They belong to the item, not to the unit — see
+     * {@link ItemUomConversion}.
+     */
+    @OneToMany(mappedBy = "item", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<ItemUomConversion> uomConversions = new ArrayList<>();
+
+    /**
+     * Extras this item offers, and whether each is currently on sale here.
+     *
+     * The add-ons themselves belong to the business library, so the cascade
+     * covers only the link: taking one off this item must never delete it out
+     * from under every other item using it.
+     */
+    @OneToMany(mappedBy = "item", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<ItemAddOn> addOns = new ArrayList<>();
 
     @Column(name = "low_stock_default", nullable = false, columnDefinition = "int default 20")
     private Integer lowStockDefault = 20;

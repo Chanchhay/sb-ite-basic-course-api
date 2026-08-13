@@ -2,6 +2,8 @@ package kh.edu.istad.ite.features.catalog;
 
 import jakarta.validation.Valid;
 import kh.edu.istad.ite.features.catalog.dto.CreateItemRequest;
+import kh.edu.istad.ite.features.catalog.dto.ItemAddOnAvailabilityRequest;
+import kh.edu.istad.ite.features.catalog.dto.ItemAddOnsRequest;
 import kh.edu.istad.ite.features.catalog.dto.ItemResponse;
 import kh.edu.istad.ite.features.catalog.dto.ReorderItemImagesRequest;
 import kh.edu.istad.ite.features.catalog.dto.UpdateItemRequest;
@@ -19,6 +21,7 @@ import kh.edu.istad.ite.shared.enums.ItemType;
 import kh.edu.istad.ite.shared.enums.ItemStatus;
 import kh.edu.istad.ite.features.catalog.dto.ItemAttributeRequest;
 import kh.edu.istad.ite.features.catalog.dto.DescriptionBlockRequest;
+import kh.edu.istad.ite.features.catalog.dto.ItemUomConversionRequest;
 import kh.edu.istad.ite.features.catalog.dto.ItemVariantRequest;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -50,6 +53,8 @@ public class ItemController {
             @RequestPart(required = false) List<ItemAttributeRequest> attributes,
             @RequestPart(required = false) List<DescriptionBlockRequest> descriptionBlocks,
             @RequestPart(required = false) List<ItemVariantRequest> variants,
+            @RequestPart(required = false) List<UUID> addOnIds,
+            @RequestPart(required = false) List<ItemUomConversionRequest> uomConversions,
             @RequestParam(required = false) Integer lowStockDefault,
             @RequestParam(required = false) ItemStatus status,
             @RequestPart(value = "files", required = false) List<MultipartFile> files
@@ -57,7 +62,7 @@ public class ItemController {
         CreateItemRequest request = new CreateItemRequest(
                 itemGroupId, unitId, name, sku, code, description, imageUrl, images,
                 badge, barcode, price, compareAtPrice, itemType, attributes,
-                descriptionBlocks, variants, lowStockDefault, status
+                descriptionBlocks, variants, addOnIds, uomConversions, lowStockDefault, status
         );
         java.util.Set<jakarta.validation.ConstraintViolation<CreateItemRequest>> violations = validator.validate(request);
         if (!violations.isEmpty()) {
@@ -99,6 +104,8 @@ public class ItemController {
             @RequestPart(required = false) List<ItemAttributeRequest> attributes,
             @RequestPart(required = false) List<DescriptionBlockRequest> descriptionBlocks,
             @RequestPart(required = false) List<ItemVariantRequest> variants,
+            @RequestPart(required = false) List<UUID> addOnIds,
+            @RequestPart(required = false) List<ItemUomConversionRequest> uomConversions,
             @RequestParam(required = false) Integer lowStockDefault,
             @RequestParam(required = false) ItemStatus status,
             @RequestPart(value = "files", required = false) List<MultipartFile> files
@@ -106,7 +113,7 @@ public class ItemController {
         UpdateItemRequest request = new UpdateItemRequest(
                 itemGroupId, unitId, name, sku, code, description, imageUrl, images,
                 badge, barcode, price, compareAtPrice, itemType, attributes,
-                descriptionBlocks, variants, lowStockDefault, status
+                descriptionBlocks, variants, addOnIds, uomConversions, lowStockDefault, status
         );
         java.util.Set<jakarta.validation.ConstraintViolation<UpdateItemRequest>> violations = validator.validate(request);
         if (!violations.isEmpty()) {
@@ -140,6 +147,28 @@ public class ItemController {
             @PathVariable UUID imageId
     ) {
         return itemService.deleteItemImage(businessId, itemId, imageId);
+    }
+
+    /** Attach or detach add-ons without touching the rest of the item. */
+    @PutMapping("/{itemId}/add-ons")
+    public ItemResponse updateItemAddOns(
+            @PathVariable UUID businessId,
+            @PathVariable UUID itemId,
+            @Valid @RequestBody ItemAddOnsRequest request
+    ) {
+        return itemService.updateItemAddOns(businessId, itemId, request.addOnIds());
+    }
+
+    /** Take one add-on off this item's menu, or put it back, without unlinking. */
+    @PutMapping("/{itemId}/add-ons/{addOnId}")
+    public ItemResponse updateItemAddOnAvailability(
+            @PathVariable UUID businessId,
+            @PathVariable UUID itemId,
+            @PathVariable UUID addOnId,
+            @Valid @RequestBody ItemAddOnAvailabilityRequest request
+    ) {
+        return itemService.updateItemAddOnAvailability(
+                businessId, itemId, addOnId, request.available());
     }
 
     @ResponseStatus(HttpStatus.NO_CONTENT)

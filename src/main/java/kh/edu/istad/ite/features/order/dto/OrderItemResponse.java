@@ -1,16 +1,31 @@
 package kh.edu.istad.ite.features.order.dto;
 
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.UUID;
 
 public record OrderItemResponse(
         UUID id,
         UUID itemId,
         UUID variantId,
+        /** The option chosen, so a line can say which one it is. */
+        String variantName,
         String itemName,
+        /** The unit sold, and how many base units one of them holds. */
+        UUID unitId,
+        String unitName,
+        BigDecimal unitFactor,
         Integer quantity,
         BigDecimal unitPrice,
         BigDecimal discountAmount,
-        BigDecimal lineTotal
+        BigDecimal lineTotal,
+        /** Extras chosen on this line, priced as they were when rung up. */
+        List<OrderItemAddOnResponse> addOns
 ) {
+    public record OrderItemAddOnResponse(
+            UUID addOnId,
+            String name,
+            BigDecimal unitPrice
+    ) {
+    }
 }

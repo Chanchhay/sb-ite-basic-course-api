@@ -45,11 +45,22 @@ public class OrderMapper {
                 item.getId(),
                 item.getItem().getId(),
                 item.getVariant() == null ? null : item.getVariant().getId(),
+                item.getVariant() == null ? null : item.getVariant().getVariantName(),
                 item.getItemName(),
+                item.getUnit() == null ? null : item.getUnit().getId(),
+                item.getUnit() == null ? null : item.getUnit().getName(),
+                item.getUnitFactor(),
                 item.getQuantity(),
                 item.getUnitPrice(),
                 item.getDiscountAmount(),
-                item.getLineTotal()
+                item.getLineTotal(),
+                item.getAddOns() == null ? List.of() : item.getAddOns().stream()
+                        .map(addOn -> new OrderItemResponse.OrderItemAddOnResponse(
+                                addOn.getAddOn() == null ? null : addOn.getAddOn().getId(),
+                                addOn.getAddOnName(),
+                                addOn.getUnitPrice()
+                        ))
+                        .toList()
         );
     }
 }

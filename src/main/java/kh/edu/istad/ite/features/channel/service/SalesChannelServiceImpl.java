@@ -1,6 +1,8 @@
 package kh.edu.istad.ite.features.channel.service;
 
 import kh.edu.istad.ite.features.catalog.dto.ItemResponse;
+import kh.edu.istad.ite.features.catalog.dto.ItemUomConversionResponse;
+import kh.edu.istad.ite.features.catalog.dto.ItemVariantResponse;
 import kh.edu.istad.ite.features.channel.dto.CreateSalesChannelRequest;
 import kh.edu.istad.ite.features.channel.dto.UpdateSalesChannelRequest;
 import kh.edu.istad.ite.features.channel.dto.SalesChannelItemResponse;
@@ -34,6 +36,7 @@ public class SalesChannelServiceImpl
         private final ItemChannelRepository itemChannelRepository;
         private final ItemMapper itemMapper;
         private final BusinessRepository businessRepository;
+        private final ChannelPriceResolver channelPriceResolver;
 
         @Override
         public List<SalesChannelResponse> findAllActive() {
@@ -66,8 +69,83 @@ public class SalesChannelServiceImpl
                                 .stream()
                                 .map(ic -> new SalesChannelItemResponse(
                                                 ic.getId(),
-                                                itemMapper.toResponse(ic.getItem())))
+                                                atChannelPrices(
+                                                                itemMapper.toResponse(ic.getItem()),
+                                                                businessId,
+                                                                channelCode)))
                                 .toList();
+        }
+
+        /**
+         * The same item, priced the way this channel charges for it.
+         *
+         * The till builds its menu from this endpoint, while the order path
+         * prices every line through {@link ChannelPriceResolver} — so handing
+         * back business prices here would show the customer one number and
+         * bill them another. Every way the item sells is resolved: on its own,
+         * as an option, and by the pack.
+         *
+         * An unpriced line stays unpriced: the resolver marks a price up, it
+         * does not invent one.
+         */
+        private ItemResponse atChannelPrices(
+                        ItemResponse item,
+                        UUID businessId,
+                        String channelCode) {
+
+                UUID baseUnitId = item.unit() == null ? null : item.unit().id();
+
+                return item.toBuilder()
+                                .price(channelPriceResolver.priceFor(
+                                                businessId, channelCode, item.price(),
+                                                item.id(), null, null))
+                                .variants(item.variants() == null ? null
+                                                : item.variants().stream()
+                                                                .map(variant -> new ItemVariantResponse(
+                                                                                variant.id(),
+                                                                                variant.slug(),
+                                                                                variant.name(),
+                                                                                variant.sku(),
+                                                                                variant.barcode(),
+                                                                                variant.imageUrl(),
+                                                                                channelPriceResolver.priceFor(
+                                                                                                businessId, channelCode,
+                                                                                                variant.price(),
+                                                                                                item.id(), variant.id(),
+                                                                                                null),
+                                                                                variant.available()))
+                                                                .toList())
+                                .uomConversions(item.uomConversions() == null ? null
+                                                : item.uomConversions().stream()
+                                                                .map(conversion -> new ItemUomConversionResponse(
+                                                                                conversion.id(),
+                                                                                conversion.unit(),
+                                                                                conversion.variantId(),
+                                                                                conversion.variantName(),
+                                                                                conversion.factor(),
+                                                                                channelPriceResolver.priceFor(
+                                                                                                businessId, channelCode,
+                                                                                                conversion.price(),
+                                                                                                item.id(),
+                                                                                                conversion.variantId(),
+                                                                                                overrideUnitId(conversion,
+                                                                                                                baseUnitId))))
+                                                                .toList())
+                                .build();
+        }
+
+        /**
+         * Which unit an exception is keyed under.
+         *
+         * A conversion on the item's own base unit is the item sold plainly,
+         * and that line is stored with no unit at all — keying it by the base
+         * unit would look past the exception the shop actually set. Mirrors
+         * how the order path asks the same question.
+         */
+        private UUID overrideUnitId(ItemUomConversionResponse conversion, UUID baseUnitId) {
+                UUID unitId = conversion.unit() == null ? null : conversion.unit().id();
+
+                return unitId == null || unitId.equals(baseUnitId) ? null : unitId;
         }
 
         private ItemResponse mapToResponse(Item item) {

@@ -10,8 +10,17 @@ import java.util.Map;
 import java.util.UUID;
 
 public record CreateStockEntryRequest(
-        @NotNull(message = "itemId cannot be null")
+        /** Exactly one of itemId and addOnId. */
         UUID itemId,
+
+        UUID addOnId,
+
+        /**
+         * Which option of the item moved. Only ever set alongside an itemId,
+         * and only on an item that has options. Left out, the movement is
+         * against the item as a whole.
+         */
+        UUID variantId,
 
         @NotNull(message = "entryType cannot be null")
         @Pattern(regexp = "OPENING_STOCK|STOCK_IN|STOCK_OUT|ADJUSTMENT|SALE|RETURN", message = "Entry type must be one of: OPENING_STOCK, STOCK_IN, STOCK_OUT, ADJUSTMENT, SALE, RETURN")
@@ -23,6 +32,14 @@ public record CreateStockEntryRequest(
 
         @Digits(integer = 16, fraction = 2, message = "unitCost must have at most 16 integer digits and 2 decimal places")
         BigDecimal unitCost,
+
+        @Digits(integer = 16, fraction = 2, message = "unitSalePrice must have at most 16 integer digits and 2 decimal places")
+        BigDecimal unitSalePrice,
+
+        @Digits(integer = 15, fraction = 3, message = "enteredQuantity must have at most 15 integer digits and 3 decimal places")
+        BigDecimal enteredQuantity,
+
+        UUID unitId,
 
         Map<String, Object> batchData,
 

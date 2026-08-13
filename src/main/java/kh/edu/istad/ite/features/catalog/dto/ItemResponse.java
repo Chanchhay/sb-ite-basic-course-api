@@ -31,6 +31,8 @@ public record ItemResponse(
         List<ItemAttributeResponse> attributes,
         List<DescriptionBlockResponse> descriptionBlocks,
         List<ItemVariantResponse> variants,
+        List<AddOnResponse> addOns,
+        List<ItemUomConversionResponse> uomConversions,
         Integer lowStockDefault,
         ItemStatus status
 ) {

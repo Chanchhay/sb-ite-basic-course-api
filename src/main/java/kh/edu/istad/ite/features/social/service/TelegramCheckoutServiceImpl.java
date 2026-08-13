@@ -103,7 +103,8 @@ public class TelegramCheckoutServiceImpl implements TelegramCheckoutService {
         // BEFORE a KHQR is generated, not after Bakong confirms the money moved.
         for (CartItem cartItem : cart.getItems()) {
             int quantity = cartItem.getQuantity() == null ? 1 : cartItem.getQuantity();
-            if (!stockHelper.hasEnoughStock(businessId, cartItem.getItem(), quantity)) {
+            if (!stockHelper.hasEnoughStock(
+                    businessId, cartItem.getItem(), cartItem.getVariant(), cartItem.baseQuantity())) {
                 throw new TelegramCheckoutException(
                         "⚠️ ស្តុកមិនគ្រប់គ្រាន់សម្រាប់ \"" + cartItem.getItem().getName()
                                 + "\" ទេ។ សូមកែសម្រួលកន្ត្រកទំនិញរបស់អ្នកមុននឹងទូទាត់ប្រាក់។");
@@ -308,16 +309,19 @@ public class TelegramCheckoutServiceImpl implements TelegramCheckoutService {
         int itemCount = 0;
 
         for (OrderItem line : order.getItems()) {
-            stockEntryService.recordSale(
+            // Costed from the batches the sale emptied, not from what is left.
+            BigDecimal unitCost = stockEntryService.recordSale(
                     business,
                     line.getItem(),
+                    line.getVariant(),
+                    // A case of twenty-four takes twenty-four off the shelf;
+                    // the ledger still reads back as the one case that sold.
+                    line.baseQuantity(),
                     BigDecimal.valueOf(line.getQuantity()),
+                    line.getUnit(),
                     order.getId(),
                     order.getInvoiceNumber()
-            );
-
-            BigDecimal unitCost = stockEntryService.findLatestUnitCost(
-                    business.getId(), line.getItem().getId());
+            ).getUnitCost();
 
             if (unitCost == null) {
                 unitCost = BigDecimal.ZERO;

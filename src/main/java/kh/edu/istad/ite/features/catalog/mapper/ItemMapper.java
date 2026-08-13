@@ -5,28 +5,39 @@ import kh.edu.istad.ite.features.catalog.dto.DescriptionColumnResponse;
 import kh.edu.istad.ite.features.catalog.dto.ItemAttributeResponse;
 import kh.edu.istad.ite.features.catalog.dto.ItemAttributeValueResponse;
 import kh.edu.istad.ite.features.catalog.dto.ItemResponse;
+import kh.edu.istad.ite.features.catalog.dto.ItemUomConversionResponse;
 import kh.edu.istad.ite.features.catalog.dto.ItemVariantResponse;
 import kh.edu.istad.ite.features.catalog.entity.DescriptionBlock;
 import kh.edu.istad.ite.features.catalog.entity.DescriptionColumn;
 import kh.edu.istad.ite.features.catalog.entity.Item;
 import kh.edu.istad.ite.features.catalog.entity.ItemAttribute;
 import kh.edu.istad.ite.features.catalog.entity.ItemAttributeValue;
+import kh.edu.istad.ite.features.catalog.entity.ItemUomConversion;
 import kh.edu.istad.ite.features.catalog.entity.ItemVariant;
 import kh.edu.istad.ite.features.catalog.entity.ItemImage;
 import kh.edu.istad.ite.features.catalog.dto.ItemImageResponse;
 import kh.edu.istad.ite.features.minio.MinioService;
 import org.springframework.stereotype.Component;
 
+import java.util.List;
+
 @Component
 public class ItemMapper {
 
     private final ItemGroupMapper itemGroupMapper;
     private final UnitMapper unitMapper;
+    private final AddOnMapper addOnMapper;
     private final MinioService minioService;
 
-    public ItemMapper(ItemGroupMapper itemGroupMapper, UnitMapper unitMapper, MinioService minioService) {
+    public ItemMapper(
+            ItemGroupMapper itemGroupMapper,
+            UnitMapper unitMapper,
+            AddOnMapper addOnMapper,
+            MinioService minioService
+    ) {
         this.itemGroupMapper = itemGroupMapper;
         this.unitMapper = unitMapper;
+        this.addOnMapper = addOnMapper;
         this.minioService = minioService;
     }
 
@@ -58,6 +69,12 @@ public class ItemMapper {
                         .toList(),
                 item.getVariants().stream()
                         .map(this::toVariantResponse)
+                        .toList(),
+                item.getAddOns() == null ? List.of() : item.getAddOns().stream()
+                        .map(addOnMapper::toResponse)
+                        .toList(),
+                item.getUomConversions() == null ? List.of() : item.getUomConversions().stream()
+                        .map(this::toUomConversionResponse)
                         .toList(),
                 item.getLowStockDefault(),
                 item.getStatus()
@@ -111,8 +128,22 @@ public class ItemMapper {
                 variant.getId(),
                 variant.getSlug(),
                 variant.getVariantName(),
+                variant.getSku(),
+                variant.getBarcode(),
+                variant.getImageUrl(),
                 variant.getPrice(),
                 variant.getAvailable()
+        );
+    }
+
+    private ItemUomConversionResponse toUomConversionResponse(ItemUomConversion conversion) {
+        return new ItemUomConversionResponse(
+                conversion.getId(),
+                unitMapper.toResponse(conversion.getUnit()),
+                conversion.getVariant() == null ? null : conversion.getVariant().getId(),
+                conversion.getVariant() == null ? null : conversion.getVariant().getVariantName(),
+                conversion.getFactor(),
+                conversion.getPrice()
         );
     }
 

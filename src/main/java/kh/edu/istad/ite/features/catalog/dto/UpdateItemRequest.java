@@ -58,6 +58,10 @@ public record UpdateItemRequest(
 
         List<@Valid ItemVariantRequest> variants,
 
+        List<UUID> addOnIds,
+
+        List<@Valid ItemUomConversionRequest> uomConversions,
+
         @Min(value = 0, message = "lowStockDefault must be at least 0")
         Integer lowStockDefault,
 

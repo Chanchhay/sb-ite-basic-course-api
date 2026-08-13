@@ -1167,7 +1167,8 @@ public class TelegramWebhookServiceImpl implements TelegramWebhookService {
 
         String displayName = variant != null ? item.getName() + " (" + variant.getVariantName() + ")" : item.getName();
 
-        if (!stockHelper.hasEnoughStock(setting.getBusiness().getId(), item, quantityAlreadyInCart + 1)) {
+        if (!stockHelper.hasEnoughStock(
+                setting.getBusiness().getId(), item, variant, quantityAlreadyInCart + 1)) {
             telegramBotClient.sendMessage(botToken, chatId,
                     "❌ ស្តុកមិនគ្រប់គ្រាន់សម្រាប់ *" + displayName + "* ទេ។ សូមកាត់បន្ថយចំនួន ឬជ្រើសរើសទំនិញផ្សេង។",
                     List.of(List.of(new InlineKeyboardButton("🛍️ ទិញទំនិញបន្ត", "menu:catalog")),
@@ -1244,7 +1245,8 @@ public class TelegramWebhookServiceImpl implements TelegramWebhookService {
                 if (newQty <= 0) {
                     cartItemRepository.delete(item);
                 } else if (delta > 0
-                        && !stockHelper.hasEnoughStock(setting.getBusiness().getId(), item.getItem(), newQty)) {
+                        && !stockHelper.hasEnoughStock(
+                                setting.getBusiness().getId(), item.getItem(), item.getVariant(), newQty)) {
                     telegramBotClient.sendMessage(botToken, chatId,
                             "❌ ស្តុកមិនគ្រប់គ្រាន់សម្រាប់ *" + item.getItem().getName() + "* ទេ។");
                 } else {

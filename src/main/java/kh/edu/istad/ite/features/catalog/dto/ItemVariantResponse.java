@@ -7,6 +7,9 @@ public record ItemVariantResponse(
         UUID id,
         String slug,
         String name,
+        String sku,
+        String barcode,
+        String imageUrl,
         BigDecimal price,
         Boolean available
 ) {

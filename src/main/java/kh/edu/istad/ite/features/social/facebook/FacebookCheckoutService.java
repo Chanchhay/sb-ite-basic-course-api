@@ -359,16 +359,19 @@ public class FacebookCheckoutService {
         int itemCount = 0;
 
         for (OrderItem line : order.getItems()) {
-            stockEntryService.recordSale(
+            // Costed from the batches the sale emptied, not from what is left.
+            BigDecimal unitCost = stockEntryService.recordSale(
                     business,
                     line.getItem(),
+                    line.getVariant(),
+                    // A case of twenty-four takes twenty-four off the shelf;
+                    // the ledger still reads back as the one case that sold.
+                    line.baseQuantity(),
                     BigDecimal.valueOf(line.getQuantity()),
+                    line.getUnit(),
                     order.getId(),
                     order.getInvoiceNumber()
-            );
-
-            BigDecimal unitCost = stockEntryService.findLatestUnitCost(
-                    business.getId(), line.getItem().getId());
+            ).getUnitCost();
 
             if (unitCost == null) {
                 unitCost = BigDecimal.ZERO;

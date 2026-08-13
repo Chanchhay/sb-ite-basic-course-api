@@ -16,8 +16,12 @@ import java.util.Map;
 import java.util.UUID;
 
 public record CreateItemRequest(
+        // An item is filed under a category and counted in a unit. Neither is
+        // optional: without them it cannot be stocked or found again.
+        @NotNull(message = "itemGroupId cannot be null")
         UUID itemGroupId,
 
+        @NotNull(message = "unitId cannot be null")
         UUID unitId,
 
         @NotBlank(message = "name cannot be empty")
@@ -61,6 +65,10 @@ public record CreateItemRequest(
         List<@Valid DescriptionBlockRequest> descriptionBlocks,
 
         List<@Valid ItemVariantRequest> variants,
+
+        List<UUID> addOnIds,
+
+        List<@Valid ItemUomConversionRequest> uomConversions,
 
         @Min(value = 0, message = "lowStockDefault must be at least 0")
         Integer lowStockDefault,

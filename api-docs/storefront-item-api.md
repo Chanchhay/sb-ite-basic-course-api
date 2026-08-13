@@ -422,7 +422,11 @@ field in this spec.
     "variants": [
         { "name": "Small", "price": 1.80 },
         { "name": "Medium", "price": 2.60 },
-        { "name": "Large", "price": 3.80 }
+        {
+            "name": "Large",
+            "price": 3.80,
+            "imageUrl": "https://cdn.example.com/assets/tea-large.webp"
+        }
     ],
     "descriptionBlocks": [
         {
