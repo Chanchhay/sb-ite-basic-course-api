@@ -4,6 +4,7 @@ import kh.edu.istad.ite.features.catalog.dto.DescriptionBlockResponse;
 import kh.edu.istad.ite.features.catalog.dto.DescriptionColumnResponse;
 import kh.edu.istad.ite.features.catalog.dto.ItemAttributeResponse;
 import kh.edu.istad.ite.features.catalog.dto.ItemAttributeValueResponse;
+import kh.edu.istad.ite.features.catalog.dto.ItemColorResponse;
 import kh.edu.istad.ite.features.catalog.dto.ItemResponse;
 import kh.edu.istad.ite.features.catalog.dto.ItemUomConversionResponse;
 import kh.edu.istad.ite.features.catalog.dto.ItemVariantResponse;
@@ -64,6 +65,12 @@ public class ItemMapper {
                 item.getAttributes() == null ? null : item.getAttributes().stream()
                         .map(this::toAttributeResponse)
                         .toList(),
+                item.getColors() == null ? List.of() : item.getColors().stream()
+                        .map(color -> new ItemColorResponse(
+                                color.getValue(),
+                                color.getColorHex(),
+                                color.getImageUrl()))
+                        .toList(),
                 item.getDescriptionBlocks() == null ? null : item.getDescriptionBlocks().stream()
                         .map(this::toDescriptionBlockResponse)
                         .toList(),
@@ -77,7 +84,10 @@ public class ItemMapper {
                         .map(this::toUomConversionResponse)
                         .toList(),
                 item.getLowStockDefault(),
-                item.getStatus()
+                item.getStatus(),
+                // Left to whoever is asking on behalf of a channel; the
+                // catalogue itself has no channel to answer for.
+                null
         );
     }
 
@@ -132,7 +142,10 @@ public class ItemMapper {
                 variant.getBarcode(),
                 variant.getImageUrl(),
                 variant.getPrice(),
-                variant.getAvailable()
+                variant.getOptionName(),
+                variant.getColorValue(),
+                variant.getAvailable(),
+                null
         );
     }
 

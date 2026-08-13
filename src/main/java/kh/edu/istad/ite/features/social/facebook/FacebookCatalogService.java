@@ -180,7 +180,8 @@ public class FacebookCatalogService {
     }
 
     private String stockLabel(Item item, Business business) {
-        Optional<BigDecimal> availableQuantity = stockHelper.trackedAvailableQuantity(business.getId(), item);
+        Optional<BigDecimal> availableQuantity = stockHelper.trackedAvailableQuantity(
+                business.getId(), item, OrderChannel.MESSENGER);
         if (availableQuantity.isEmpty()) {
             return "🟢 មានទំនិញ";
         }

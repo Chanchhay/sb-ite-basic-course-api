@@ -10,6 +10,7 @@ import kh.edu.istad.ite.features.catalog.entity.Item;
 import kh.edu.istad.ite.features.catalog.entity.ItemVariant;
 import kh.edu.istad.ite.features.customer.entity.Customer;
 import kh.edu.istad.ite.features.customer.repository.CustomerRepository;
+import kh.edu.istad.ite.features.channel.service.ItemChannelStockService;
 import kh.edu.istad.ite.features.inventory.service.StockEntryService;
 import kh.edu.istad.ite.features.order.entity.Order;
 import kh.edu.istad.ite.features.order.entity.OrderItem;
@@ -74,6 +75,8 @@ public class TelegramCheckoutServiceImpl implements TelegramCheckoutService {
     private final BakongTransactionClient bakongTransactionClient;
     private final CredentialCipher credentialCipher;
     private final StockEntryService stockEntryService;
+
+    private final ItemChannelStockService itemChannelStockService;
     private final ReceiptService receiptService;
     private final TelegramStockHelper stockHelper;
     private final TelegramUIHelper uiHelper;
@@ -104,7 +107,8 @@ public class TelegramCheckoutServiceImpl implements TelegramCheckoutService {
         for (CartItem cartItem : cart.getItems()) {
             int quantity = cartItem.getQuantity() == null ? 1 : cartItem.getQuantity();
             if (!stockHelper.hasEnoughStock(
-                    businessId, cartItem.getItem(), cartItem.getVariant(), cartItem.baseQuantity())) {
+                    businessId, cartItem.getItem(), cartItem.getVariant(), cartItem.baseQuantity(),
+                    OrderChannel.TELEGRAM)) {
                 throw new TelegramCheckoutException(
                         "⚠️ ស្តុកមិនគ្រប់គ្រាន់សម្រាប់ \"" + cartItem.getItem().getName()
                                 + "\" ទេ។ សូមកែសម្រួលកន្ត្រកទំនិញរបស់អ្នកមុននឹងទូទាត់ប្រាក់។");
@@ -328,6 +332,15 @@ public class TelegramCheckoutServiceImpl implements TelegramCheckoutService {
             }
 
             line.setUnitCost(unitCost.setScale(2, RoundingMode.HALF_UP));
+
+            // The sale uses up the channel's share of the shelf as well as the
+            // shelf itself. Does nothing for an item whose stock is shared,
+            // which is most of them.
+            itemChannelStockService.consume(
+                    line.getItem(),
+                    line.getVariant(),
+                    order.getChannel(),
+                    line.baseQuantity());
 
             totalCost = totalCost.add(unitCost.multiply(BigDecimal.valueOf(line.getQuantity())));
             itemCount += line.getQuantity();

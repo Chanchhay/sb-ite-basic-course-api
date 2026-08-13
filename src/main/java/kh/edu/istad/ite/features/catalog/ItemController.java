@@ -20,6 +20,7 @@ import java.math.BigDecimal;
 import kh.edu.istad.ite.shared.enums.ItemType;
 import kh.edu.istad.ite.shared.enums.ItemStatus;
 import kh.edu.istad.ite.features.catalog.dto.ItemAttributeRequest;
+import kh.edu.istad.ite.features.catalog.dto.ItemColorRequest;
 import kh.edu.istad.ite.features.catalog.dto.DescriptionBlockRequest;
 import kh.edu.istad.ite.features.catalog.dto.ItemUomConversionRequest;
 import kh.edu.istad.ite.features.catalog.dto.ItemVariantRequest;
@@ -51,6 +52,7 @@ public class ItemController {
             @RequestParam(required = false) BigDecimal compareAtPrice,
             @RequestParam ItemType itemType,
             @RequestPart(required = false) List<ItemAttributeRequest> attributes,
+            @RequestPart(required = false) List<ItemColorRequest> colors,
             @RequestPart(required = false) List<DescriptionBlockRequest> descriptionBlocks,
             @RequestPart(required = false) List<ItemVariantRequest> variants,
             @RequestPart(required = false) List<UUID> addOnIds,
@@ -61,7 +63,7 @@ public class ItemController {
     ) {
         CreateItemRequest request = new CreateItemRequest(
                 itemGroupId, unitId, name, sku, code, description, imageUrl, images,
-                badge, barcode, price, compareAtPrice, itemType, attributes,
+                badge, barcode, price, compareAtPrice, itemType, attributes, colors,
                 descriptionBlocks, variants, addOnIds, uomConversions, lowStockDefault, status
         );
         java.util.Set<jakarta.validation.ConstraintViolation<CreateItemRequest>> violations = validator.validate(request);
@@ -102,6 +104,7 @@ public class ItemController {
             @RequestParam(required = false) BigDecimal compareAtPrice,
             @RequestParam(required = false) ItemType itemType,
             @RequestPart(required = false) List<ItemAttributeRequest> attributes,
+            @RequestPart(required = false) List<ItemColorRequest> colors,
             @RequestPart(required = false) List<DescriptionBlockRequest> descriptionBlocks,
             @RequestPart(required = false) List<ItemVariantRequest> variants,
             @RequestPart(required = false) List<UUID> addOnIds,
@@ -112,7 +115,7 @@ public class ItemController {
     ) {
         UpdateItemRequest request = new UpdateItemRequest(
                 itemGroupId, unitId, name, sku, code, description, imageUrl, images,
-                badge, barcode, price, compareAtPrice, itemType, attributes,
+                badge, barcode, price, compareAtPrice, itemType, attributes, colors,
                 descriptionBlocks, variants, addOnIds, uomConversions, lowStockDefault, status
         );
         java.util.Set<jakarta.validation.ConstraintViolation<UpdateItemRequest>> violations = validator.validate(request);

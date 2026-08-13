@@ -4,9 +4,16 @@ import kh.edu.istad.ite.features.business.entity.Business;
 import kh.edu.istad.ite.features.business.repository.BusinessRepository;
 import kh.edu.istad.ite.features.cart.dto.AddToCartRequest;
 import kh.edu.istad.ite.features.cart.dto.CartCountResponse;
+import kh.edu.istad.ite.features.cart.dto.CartSelectionRequest;
 import kh.edu.istad.ite.features.cart.dto.CartSummaryResponse;
 import kh.edu.istad.ite.features.cart.entity.Cart;
 import kh.edu.istad.ite.features.cart.entity.CartItem;
+import kh.edu.istad.ite.features.cart.entity.CartItemSelection;
+import kh.edu.istad.ite.features.catalog.entity.ItemAttribute;
+import kh.edu.istad.ite.features.catalog.entity.ItemAttributeValue;
+import kh.edu.istad.ite.features.catalog.entity.ItemUomConversion;
+import kh.edu.istad.ite.features.catalog.entity.Unit;
+import kh.edu.istad.ite.shared.enums.AttributePlacement;
 import kh.edu.istad.ite.features.cart.repository.CartItemRepository;
 import kh.edu.istad.ite.features.cart.repository.CartRepository;
 import kh.edu.istad.ite.features.catalog.entity.Item;
@@ -16,10 +23,16 @@ import kh.edu.istad.ite.features.customer.entity.Customer;
 import kh.edu.istad.ite.features.customer.entity.GlobalCustomer;
 import kh.edu.istad.ite.features.customer.repository.CustomerRepository;
 import kh.edu.istad.ite.features.customer.service.CustomerIdentityService;
+import kh.edu.istad.ite.features.channel.service.ChannelPriceResolver;
+import kh.edu.istad.ite.features.channel.service.ItemChannelStockService;
+import kh.edu.istad.ite.features.inventory.dto.StockSummaryResponse;
+import kh.edu.istad.ite.features.inventory.service.StockEntryService;
 import kh.edu.istad.ite.features.minio.MinioService;
 import kh.edu.istad.ite.shared.enums.BusinessFeature;
 import kh.edu.istad.ite.shared.enums.CartStatus;
 import kh.edu.istad.ite.shared.enums.ItemStatus;
+import kh.edu.istad.ite.shared.enums.ItemType;
+import kh.edu.istad.ite.shared.enums.OrderChannel;
 import kh.edu.istad.ite.shared.helper.AuthHelper;
 import kh.edu.istad.ite.shared.helper.BusinessHelper;
 import lombok.RequiredArgsConstructor;
@@ -36,8 +49,12 @@ import org.springframework.web.server.ResponseStatusException;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
+import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 
@@ -45,6 +62,9 @@ import java.util.UUID;
 @Slf4j
 @RequiredArgsConstructor
 public class StorefrontCartService {
+
+    /** The seeded channel the online store trades as. */
+    private static final String WEB_CHANNEL_CODE = OrderChannel.WEB.name();
 
     private final CartRepository cartRepository;
     private final CartItemRepository cartItemRepository;
@@ -54,6 +74,9 @@ public class StorefrontCartService {
     private final CustomerIdentityService customerIdentityService;
     private final BusinessHelper businessHelper;
     private final MinioService minioService;
+    private final ChannelPriceResolver channelPriceResolver;
+    private final ItemChannelStockService itemChannelStockService;
+    private final StockEntryService stockEntryService;
 
 
     @Transactional(readOnly = true)
@@ -115,26 +138,43 @@ public class StorefrontCartService {
         }
 
         ItemVariant variant = resolveVariant(item, request.variantId());
-        BigDecimal unitPrice = resolvePrice(item, variant);
+        PricedLine priced = resolveLine(business, item, variant, request.unitId());
+        List<CartItemSelection> selections = resolveSelections(item, request.selections());
 
         Customer customer = customerIdentityService.customerFor(business, shopper);
         Cart cart = activeCartFor(customer, business);
 
-        CartItem line = findLine(cart, item.getId(), request.variantId()).orElse(null);
+        String selectionKey = selections.stream()
+                .map(selection -> selection.getAttributeName() + "=" + selection.getValue())
+                .sorted()
+                .collect(java.util.stream.Collectors.joining("|"));
+
+        CartItem line = findLine(
+                cart, item.getId(), request.variantId(), unitIdOf(priced.unit()), selectionKey)
+                .orElse(null);
+
+        // What the line would hold once this is added, so that adding one at a
+        // time cannot creep past what the web may sell.
+        int alreadyHeld = line == null || line.getQuantity() == null ? 0 : line.getQuantity();
+        requireStock(business, item, variant,
+                priced.unitFactor().multiply(BigDecimal.valueOf(alreadyHeld + request.quantity())));
 
         if (line == null) {
             line = CartItem.builder()
                     .cart(cart)
                     .item(item)
                     .variant(variant)
+                    .unit(priced.unit())
+                    .unitFactor(priced.unitFactor())
                     .quantity(request.quantity())
-                    .priceSnapshot(unitPrice)
+                    .priceSnapshot(priced.unitPrice())
                     .build();
 
+            selections.forEach(line::addSelection);
             cart.getItems().add(line);
         } else {
             line.setQuantity(line.getQuantity() + request.quantity());
-            line.setPriceSnapshot(unitPrice);
+            line.setPriceSnapshot(priced.unitPrice());
         }
 
         cartRepository.save(cart);
@@ -151,6 +191,18 @@ public class StorefrontCartService {
             cart.getItems().removeIf(candidate -> candidate.getId().equals(cartItemId));
             cartRepository.save(cart);
         } else {
+            // Raising the quantity here is the same promise as adding it in
+            // the first place, so it answers to the same ceiling — in base
+            // units, since the line may be a pack.
+            BigDecimal factor = line.getUnitFactor() == null
+                    ? BigDecimal.ONE
+                    : line.getUnitFactor();
+
+            requireStock(
+                    line.getCart().getBusiness(),
+                    line.getItem(),
+                    line.getVariant(),
+                    factor.multiply(BigDecimal.valueOf(quantity)));
             line.setQuantity(quantity);
             cartItemRepository.save(line);
         }
@@ -245,16 +297,117 @@ public class StorefrontCartService {
         }
 
         businessHelper.requireFeature(business.getId(), BusinessFeature.STOREFRONT);
+        // Hours the shop set for its online store, enforced where the till's
+        // are: unenforced opening hours are a note to self.
+        channelPriceResolver.requireOpen(business.getId(), WEB_CHANNEL_CODE);
     }
 
-    private Optional<CartItem> findLine(Cart cart, UUID itemId, UUID variantId) {
+    private static UUID unitIdOf(Unit unit) {
+        return unit == null ? null : unit.getId();
+    }
+
+    private Optional<CartItem> findLine(
+            Cart cart, UUID itemId, UUID variantId, UUID unitId, String selectionKey) {
         return cart.getItems().stream()
                 .filter(line -> line.getItem().getId().equals(itemId))
                 .filter(line -> {
                     UUID lineVariant = line.getVariant() == null ? null : line.getVariant().getId();
                     return variantId == null ? lineVariant == null : variantId.equals(lineVariant);
                 })
+                // A six-pack is not six singles: different price, different
+                // line. Merging them would lose which one was bought.
+                .filter(line -> Objects.equals(unitIdOf(line.getUnit()), unitId))
+                // Two of the same drink at different sweetness are two orders,
+                // not one of quantity two. Merging them would hand the counter
+                // a ticket that cannot be made.
+                .filter(line -> line.selectionKey().equals(selectionKey))
                 .findFirst();
+    }
+
+    /**
+     * Turns what the shopper picked into what the line will carry.
+     *
+     * Checked against the item rather than trusted, for the ordinary reason:
+     * this arrives from a browser. An attribute the item does not have, or a
+     * value it does not offer, is a line the shop cannot make — and a value the
+     * seller switched off is one they said they would not make today.
+     *
+     * Only {@code OPTION} attributes are choices. The rest are copy: a
+     * HIGHLIGHT is a delivery promise, a SPECIFICATION is a fact about the
+     * item, and a HIDDEN one was never meant to leave the back office.
+     */
+    /** Absent placement means OPTION — that is what an attribute was before the field existed. */
+    private boolean isOption(ItemAttribute attribute) {
+        return attribute.getPlacement() == null
+                || AttributePlacement.OPTION.equals(attribute.getPlacement());
+    }
+
+    private List<CartItemSelection> resolveSelections(
+            Item item, List<CartSelectionRequest> requested) {
+        if (requested == null || requested.isEmpty()) {
+            return List.of();
+        }
+
+        List<ItemAttribute> attributes = item.getAttributes() == null
+                ? List.of()
+                : item.getAttributes();
+
+        List<CartItemSelection> resolved = new ArrayList<>(requested.size());
+        Set<String> seen = new HashSet<>();
+
+        for (CartSelectionRequest choice : requested) {
+            ItemAttribute attribute = attributes.stream()
+                    .filter(candidate -> isOption(candidate))
+                    .filter(candidate -> candidate.getName().equalsIgnoreCase(choice.attributeName()))
+                    .findFirst()
+                    .orElseThrow(() -> new ResponseStatusException(
+                            HttpStatus.BAD_REQUEST,
+                            "\"" + item.getName() + "\" has no option called \""
+                                    + choice.attributeName() + "\""));
+
+            if (!seen.add(attribute.getName().toLowerCase(Locale.ROOT))) {
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST,
+                        "\"" + attribute.getName() + "\" was chosen twice");
+            }
+
+            ItemAttributeValue value = (attribute.getValues() == null ? List.<ItemAttributeValue>of()
+                    : attribute.getValues())
+                    .stream()
+                    .filter(candidate -> candidate.getValue().equals(choice.value()))
+                    .findFirst()
+                    .orElseThrow(() -> new ResponseStatusException(
+                            HttpStatus.BAD_REQUEST,
+                            "\"" + choice.value() + "\" is not a " + attribute.getName()
+                                    + " that \"" + item.getName() + "\" comes in"));
+
+            if (Boolean.FALSE.equals(value.getAvailable())) {
+                throw new ResponseStatusException(
+                        HttpStatus.CONFLICT,
+                        attribute.getName() + " \"" + choice.value() + "\" is not available today");
+            }
+
+            resolved.add(CartItemSelection.builder()
+                    .attributeName(attribute.getName())
+                    .value(value.getValue())
+                    .label(value.getLabel())
+                    .build());
+        }
+
+        // Every option the item offers has to be answered, or the line reaches
+        // the counter with a question on it.
+        attributes.stream()
+                .filter(this::isOption)
+                .filter(attribute -> attribute.getValues() != null && !attribute.getValues().isEmpty())
+                .filter(attribute -> !seen.contains(attribute.getName().toLowerCase(Locale.ROOT)))
+                .findFirst()
+                .ifPresent(missing -> {
+                    throw new ResponseStatusException(
+                            HttpStatus.BAD_REQUEST,
+                            "Choose a " + missing.getName() + " for \"" + item.getName() + "\"");
+                });
+
+        return resolved;
     }
 
     private ItemVariant resolveVariant(Item item, UUID variantId) {
@@ -269,14 +422,129 @@ public class StorefrontCartService {
                         HttpStatus.NOT_FOUND, "Variant has not been found: " + variantId));
     }
 
-    private BigDecimal resolvePrice(Item item, ItemVariant variant) {
-        BigDecimal price = variant != null && variant.getPrice() != null ? variant.getPrice() : item.getPrice();
+    /**
+     * What this line is: the unit it is sold in, what one of them holds, and
+     * what the web charges for it.
+     */
+    private record PricedLine(Unit unit, BigDecimal unitFactor, BigDecimal unitPrice) {
+    }
+
+    /**
+     * What the web charges for this line, in whatever unit it is being bought.
+     *
+     * A larger unit is priced in its own right — a case is not twenty-four
+     * times a can, or nobody would buy the case — so a pack's price replaces
+     * the single price rather than multiplying it, and the factor only says
+     * what comes off the shelf.
+     *
+     * The channel gets the last word either way, because a shop that marked
+     * its online prices up meant the basket too. Without that the storefront
+     * quotes the web price and the basket quietly bills the business price.
+     */
+    private PricedLine resolveLine(
+            Business business, Item item, ItemVariant variant, UUID unitId) {
+
+        Unit unit = item.getUnit();
+        BigDecimal unitFactor = BigDecimal.ONE;
+        BigDecimal price = variant != null && variant.getPrice() != null
+                ? variant.getPrice()
+                : item.getPrice();
+
+        UUID baseUnitId = item.getUnit() == null ? null : item.getUnit().getId();
+
+        if (unitId != null && !unitId.equals(baseUnitId)) {
+            // A pack belongs to one option: the case defined for Large is not
+            // the one defined for Small, and a shop need not sell both. So the
+            // line's option is part of finding it, never a fallback to some
+            // other option's case — that would sell what nobody offered.
+            UUID lineVariantId = variant == null ? null : variant.getId();
+
+            ItemUomConversion conversion = item.getUomConversions().stream()
+                    .filter(candidate -> candidate.getUnit() != null
+                            && candidate.getUnit().getId().equals(unitId))
+                    .filter(candidate -> Objects.equals(
+                            candidate.getVariant() == null ? null : candidate.getVariant().getId(),
+                            lineVariantId))
+                    .findFirst()
+                    .orElseThrow(() -> new ResponseStatusException(
+                            HttpStatus.NOT_FOUND,
+                            "\"" + nameOf(item, variant) + "\" is not sold by that unit"));
+
+            if (conversion.getPrice() == null) {
+                throw new ResponseStatusException(
+                        HttpStatus.CONFLICT,
+                        "\"" + nameOf(item, variant) + "\" has no price per "
+                                + conversion.getUnit().getName());
+            }
+
+            unit = conversion.getUnit();
+            unitFactor = conversion.getFactor() == null ? BigDecimal.ONE : conversion.getFactor();
+            price = conversion.getPrice();
+        }
 
         if (price == null) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "This item has no price yet");
         }
 
-        return price;
+        BigDecimal channelPrice = channelPriceResolver.priceFor(
+                business.getId(),
+                WEB_CHANNEL_CODE,
+                price,
+                item.getId(),
+                variant == null ? null : variant.getId(),
+                // A pack on the item's own base unit is the item sold plainly,
+                // and that exception is stored with no unit at all.
+                unit == null || unit.getId().equals(baseUnitId) ? null : unit.getId());
+
+        return new PricedLine(unit, unitFactor, channelPrice);
+    }
+
+    /** How a line should be named when something goes wrong with it. */
+    private String nameOf(Item item, ItemVariant variant) {
+        return variant == null
+                ? item.getName()
+                : item.getName() + " (" + variant.getVariantName() + ")";
+    }
+
+    /**
+     * Refuses a basket the web cannot supply, while it can still be changed.
+     *
+     * The checkout checks this too and must, since the shelf moves in between
+     * — but finding out at the payment screen that the second of three lines
+     * was never available is the worst moment to be told. Counted against what
+     * the line would hold in total, not the increment, or adding one at a time
+     * walks straight past the ceiling.
+     *
+     * Measured in base units, because that is how the shelf is counted: two
+     * six-packs need twelve bottles, not two.
+     */
+    private void requireStock(
+            Business business, Item item, ItemVariant variant, BigDecimal totalBaseQuantity) {
+        if (!ItemType.PHYSICAL.equals(item.getItemType())) {
+            return;
+        }
+
+        StockSummaryResponse summary = stockEntryService.findAvailableStock(
+                business.getId(), item.getId(), variant == null ? null : variant.getId());
+
+        // No entries at all means the shop is not tracking this item, which is
+        // not the same as it having none.
+        if (summary == null || summary.lastEntryId() == null) {
+            return;
+        }
+
+        BigDecimal onHand = summary.quantityOnHand() == null ? BigDecimal.ZERO : summary.quantityOnHand();
+        BigDecimal available = itemChannelStockService.availableFor(
+                item, variant, OrderChannel.WEB, onHand);
+
+        if (available.compareTo(totalBaseQuantity) < 0) {
+            // Named by the option, or the shopper is told the item is out
+            // while the shop is full of the size they did not ask for.
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "\"" + nameOf(item, variant) + "\" only has "
+                            + available.stripTrailingZeros().toPlainString() + " left");
+        }
     }
 
     private String toPublicUrl(String key) {
@@ -322,6 +590,24 @@ public class StorefrontCartService {
             badges.add(variant.getVariantName());
         }
 
+        List<CartItemSelection> chosen = line.getSelections() == null
+                ? List.of()
+                : line.getSelections();
+
+        // "Sugar Level: 50%" reads as one chip; the name alone would not say
+        // enough and the value alone would not say what it answers.
+        chosen.forEach(selection ->
+                badges.add(selection.getAttributeName() + ": " + selection.display()));
+
+        Unit unit = line.getUnit();
+        BigDecimal factor = line.getUnitFactor() == null ? BigDecimal.ONE : line.getUnitFactor();
+
+        // Only worth a chip when it is a pack. "per Bottle" on every single
+        // line is noise the shopper already knows.
+        if (unit != null && factor.compareTo(BigDecimal.ONE) > 0) {
+            badges.add(unit.getName());
+        }
+
         return new CartSummaryResponse.Line(
                 line.getId(),
                 line.getItem().getId(),
@@ -330,6 +616,15 @@ public class StorefrontCartService {
                 line.getItem().getDescription(),
                 coverImageOf(line.getItem()),
                 badges,
+                chosen.stream()
+                        .map(selection -> new CartSummaryResponse.Selection(
+                                selection.getAttributeName(),
+                                selection.getValue(),
+                                selection.display()))
+                        .toList(),
+                unitIdOf(unit),
+                unit == null ? null : unit.getName(),
+                factor,
                 line.getQuantity(),
                 line.getPriceSnapshot(),
                 line.getSubtotal());

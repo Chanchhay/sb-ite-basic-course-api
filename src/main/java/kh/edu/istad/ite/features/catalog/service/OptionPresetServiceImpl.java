@@ -133,6 +133,7 @@ public class OptionPresetServiceImpl implements OptionPresetService {
             OptionPresetValue value = new OptionPresetValue();
             value.setValue(text);
             value.setColorHex(TextHelper.trimToNull(request.colorHex()));
+            value.setImageUrl(TextHelper.trimToNull(request.imageUrl()));
             values.add(value);
         }
 

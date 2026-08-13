@@ -10,7 +10,9 @@ import kh.edu.istad.ite.features.catalog.entity.Item;
 import kh.edu.istad.ite.features.catalog.entity.ItemVariant;
 import kh.edu.istad.ite.features.customer.entity.Customer;
 import kh.edu.istad.ite.features.customer.repository.CustomerRepository;
+import kh.edu.istad.ite.features.channel.service.ItemChannelStockService;
 import kh.edu.istad.ite.features.inventory.service.StockEntryService;
+import kh.edu.istad.ite.features.social.service.TelegramStockHelper;
 import kh.edu.istad.ite.features.order.entity.Order;
 import kh.edu.istad.ite.features.order.entity.OrderItem;
 import kh.edu.istad.ite.features.order.entity.Sale;
@@ -77,6 +79,9 @@ public class FacebookCheckoutService {
     private final BakongTransactionClient bakongTransactionClient;
     private final CredentialCipher credentialCipher;
     private final StockEntryService stockEntryService;
+
+    private final ItemChannelStockService itemChannelStockService;
+    private final TelegramStockHelper stockHelper;
     private final ReceiptService receiptService;
     private final ApplicationEventPublisher eventPublisher;
     private final FacebookGraphClient graphClient;
@@ -124,6 +129,21 @@ public class FacebookCheckoutService {
 
         BigDecimal subtotal = BigDecimal.ZERO;
         for (CartItem cartItem : cart.getItems()) {
+            // Checked here, where the customer can still change the basket:
+            // Messenger settles after the QR is paid, and refusing a line then
+            // would be refusing an order that has already been paid for. The
+            // channel is part of the question — this shop may have given
+            // Messenger only some of what is on the shelf.
+            if (!stockHelper.hasEnoughStock(
+                    businessId,
+                    cartItem.getItem(),
+                    cartItem.getVariant(),
+                    cartItem.baseQuantity(),
+                    OrderChannel.MESSENGER)) {
+                throw new RuntimeException(
+                        "⚠️ ស្តុកមិនគ្រប់គ្រាន់សម្រាប់ \"" + cartItem.getItem().getName() + "\" ទេ។");
+            }
+
             ItemVariant variant = cartItem.getVariant();
             BigDecimal price = cartItem.getPriceSnapshot() != null
                     ? cartItem.getPriceSnapshot()
@@ -378,6 +398,15 @@ public class FacebookCheckoutService {
             }
 
             line.setUnitCost(unitCost.setScale(2, RoundingMode.HALF_UP));
+
+            // The sale uses up the channel's share of the shelf as well as the
+            // shelf itself. Does nothing for an item whose stock is shared,
+            // which is most of them.
+            itemChannelStockService.consume(
+                    line.getItem(),
+                    line.getVariant(),
+                    order.getChannel(),
+                    line.baseQuantity());
 
             totalCost = totalCost.add(unitCost.multiply(BigDecimal.valueOf(line.getQuantity())));
             itemCount += line.getQuantity();

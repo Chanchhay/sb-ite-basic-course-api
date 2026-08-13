@@ -53,6 +53,12 @@ public record UpdateItemRequest(
 
         List<@Valid ItemAttributeRequest> attributes,
 
+        /**
+         * The colours this item comes in, declared once. A variant names one
+         * of them to say which colour it is.
+         */
+        List<@Valid ItemColorRequest> colors,
+
         @Size(max = 30, message = "descriptionBlocks must have at most 30 items")
         List<@Valid DescriptionBlockRequest> descriptionBlocks,
 

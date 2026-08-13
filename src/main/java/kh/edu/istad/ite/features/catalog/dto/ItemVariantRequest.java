@@ -23,6 +23,16 @@ public record ItemVariantRequest(
         @Size(max = 500, message = "variant image URL must be at most 500 characters")
         String imageUrl,
 
+        // The size half of the pair — "Large". Falls back to the variant's own
+        // name on an item that is not sold by colour.
+        @Size(max = 150, message = "optionName must be at most 150 characters")
+        String optionName,
+
+        // Which of the item's colours this row is. Null when the size alone is
+        // the whole variant.
+        @Size(max = 150, message = "colorValue must be at most 150 characters")
+        String colorValue,
+
         @DecimalMin(value = "0.0", inclusive = true, message = "variant price must be at least zero")
         @Digits(integer = 10, fraction = 2, message = "variant price must have at most 10 integer digits and 2 decimal places")
         BigDecimal price,

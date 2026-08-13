@@ -32,10 +32,12 @@ import lombok.extern.slf4j.Slf4j;
 import kh.edu.istad.ite.features.catalog.dto.DescriptionBlockRequest;
 import kh.edu.istad.ite.features.catalog.dto.DescriptionColumnRequest;
 import kh.edu.istad.ite.features.catalog.dto.ItemAttributeRequest;
+import kh.edu.istad.ite.features.catalog.dto.ItemColorRequest;
 import kh.edu.istad.ite.features.catalog.dto.ItemAttributeValueRequest;
 import kh.edu.istad.ite.features.catalog.entity.DescriptionBlock;
 import kh.edu.istad.ite.features.catalog.entity.DescriptionColumn;
 import kh.edu.istad.ite.features.catalog.entity.ItemAttribute;
+import kh.edu.istad.ite.features.catalog.entity.ItemColor;
 import kh.edu.istad.ite.features.catalog.entity.ItemAttributeValue;
 import kh.edu.istad.ite.shared.enums.AttributePlacement;
 import kh.edu.istad.ite.shared.enums.AttributeType;
@@ -51,6 +53,7 @@ import java.util.ArrayList;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.Collections;
+import java.util.Locale;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
@@ -122,7 +125,9 @@ public class ItemServiceImpl implements ItemService {
         item.setCompareAtPrice(normalizePrice(request.compareAtPrice()));
         item.setDescriptionBlocks(mapDescriptionBlocks(request.descriptionBlocks()));
         item.setAttributes(mapAttributes(request.attributes()));
+        item.setColors(mapColors(request.colors()));
         replaceVariants(item, business, request.variants());
+        requireDeclaredColors(item);
         replaceAddOns(item, businessId, request.addOnIds());
         replaceUomConversions(item, businessId, request.uomConversions());
         item.setLowStockDefault(request.lowStockDefault() == null ? DEFAULT_LOW_STOCK : request.lowStockDefault());
@@ -221,9 +226,11 @@ public class ItemServiceImpl implements ItemService {
         }
         if (request.attributes() != null) {
             item.setAttributes(mapAttributes(request.attributes()));
+            item.setColors(mapColors(request.colors()));
         }
         if (request.variants() != null) {
             replaceVariants(item, item.getBusiness(), request.variants());
+            requireDeclaredColors(item);
         }
         if (request.addOnIds() != null) {
             replaceAddOns(item, item.getBusiness().getId(), request.addOnIds());
@@ -410,6 +417,78 @@ public class ItemServiceImpl implements ItemService {
         }
 
         return price.setScale(2, RoundingMode.HALF_UP);
+    }
+
+    private List<ItemColor> mapColors(List<ItemColorRequest> requests) {
+        if (requests == null) {
+            return new ArrayList<>();
+        }
+
+        Set<String> seen = new HashSet<>();
+        List<ItemColor> colors = new ArrayList<>();
+
+        for (ItemColorRequest request : requests) {
+            String value = TextHelper.trimToNull(request.value());
+
+            if (value == null) continue;
+
+            if (!seen.add(value.toLowerCase(Locale.ROOT))) {
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST,
+                        "This item lists the colour \"" + value + "\" twice");
+            }
+
+            ItemColor color = new ItemColor();
+            color.setValue(value);
+            color.setColorHex(TextHelper.trimToNull(request.colorHex()));
+            color.setImageUrl(TextHelper.trimToNull(request.imageUrl()));
+            colors.add(color);
+        }
+
+        return colors;
+    }
+
+    /**
+     * Every variant's colour has to be one the item declares.
+     *
+     * A variant pointing at a colour the item does not list is a row nothing
+     * can reach: the swatches are drawn from the item's colours, so no click
+     * would ever select it — and it would sit there holding stock nobody can
+     * sell. Two variants on the same size and colour are refused for the same
+     * reason: the picker would resolve to whichever came first, silently.
+     */
+    private void requireDeclaredColors(Item item) {
+        Set<String> declared = (item.getColors() == null ? List.<ItemColor>of() : item.getColors())
+                .stream()
+                .map(color -> color.getValue().toLowerCase(Locale.ROOT))
+                .collect(Collectors.toSet());
+
+        Set<String> pairs = new HashSet<>();
+
+        for (ItemVariant variant : item.getVariants()) {
+            String colorValue = variant.getColorValue();
+
+            if (colorValue != null
+                    && !declared.contains(colorValue.toLowerCase(Locale.ROOT))) {
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST,
+                        "\"" + item.getName() + "\" does not come in " + colorValue);
+            }
+
+            String option = variant.getOptionName() == null
+                    ? variant.getVariantName()
+                    : variant.getOptionName();
+
+            String key = (option == null ? "" : option.toLowerCase(Locale.ROOT))
+                    + "|"
+                    + (colorValue == null ? "" : colorValue.toLowerCase(Locale.ROOT));
+
+            if (!pairs.add(key)) {
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST,
+                        "\"" + variant.getVariantName() + "\" is listed twice");
+            }
+        }
     }
 
     private List<ItemAttribute> mapAttributes(List<ItemAttributeRequest> requests) {
@@ -609,6 +688,11 @@ public class ItemServiceImpl implements ItemService {
             variant.setSku(TextHelper.trimToNull(request.sku()));
             variant.setBarcode(TextHelper.trimToNull(request.barcode()));
             variant.setImageUrl(TextHelper.trimToNull(request.imageUrl()));
+            // The size half falls back to the variant's own name, which is
+            // what it is on an item sold by size alone.
+            String optionName = TextHelper.trimToNull(request.optionName());
+            variant.setOptionName(optionName == null ? variantName : optionName);
+            variant.setColorValue(TextHelper.trimToNull(request.colorValue()));
             variant.setPrice(normalizePrice(request.price()));
             variant.setAvailable(request.available());
         }

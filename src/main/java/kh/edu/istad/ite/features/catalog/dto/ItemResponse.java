@@ -29,11 +29,22 @@ public record ItemResponse(
         BigDecimal compareAtPrice,
         ItemType itemType,
         List<ItemAttributeResponse> attributes,
+        /** The colours this item comes in, declared once for every size. */
+        List<ItemColorResponse> colors,
         List<DescriptionBlockResponse> descriptionBlocks,
         List<ItemVariantResponse> variants,
         List<AddOnResponse> addOns,
         List<ItemUomConversionResponse> uomConversions,
         Integer lowStockDefault,
-        ItemStatus status
+        ItemStatus status,
+        /**
+         * How many of this item the asking channel may still sell, summed over
+         * its options — the cap is counted per option, so the item's own figure
+         * is the total of what each of them may sell.
+         *
+         * Only the storefront fills this in; every other reader leaves it null,
+         * which means "not asked" rather than "none left".
+         */
+        BigDecimal availableQuantity
 ) {
 }

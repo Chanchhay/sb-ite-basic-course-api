@@ -9,6 +9,9 @@ public record OptionPresetValueRequest(
         String value,
 
         @Size(max = 20, message = "colorHex must be at most 20 characters")
-        String colorHex
+        String colorHex,
+
+        @Size(max = 255, message = "imageUrl must be at most 255 characters")
+        String imageUrl
 ) {
 }

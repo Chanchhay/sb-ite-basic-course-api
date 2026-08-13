@@ -60,6 +60,13 @@ public class OrderMapper {
                                 addOn.getAddOnName(),
                                 addOn.getUnitPrice()
                         ))
+                        .toList(),
+                item.getSelections() == null ? List.of() : item.getSelections().stream()
+                        .map(selection -> new OrderItemResponse.OrderItemSelectionResponse(
+                                selection.getAttributeName(),
+                                selection.getValue(),
+                                selection.display()
+                        ))
                         .toList()
         );
     }

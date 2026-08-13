@@ -34,6 +34,7 @@ import kh.edu.istad.ite.features.catalog.entity.Unit;
 import kh.edu.istad.ite.features.catalog.repository.ItemRepository;
 import kh.edu.istad.ite.features.customer.entity.Customer;
 import kh.edu.istad.ite.features.customer.repository.CustomerRepository;
+import kh.edu.istad.ite.features.channel.service.ItemChannelStockService;
 import kh.edu.istad.ite.features.inventory.service.StockEntryService;
 import kh.edu.istad.ite.features.order.dto.AddOrderItemRequest;
 import kh.edu.istad.ite.features.order.dto.CreateOrderItemRequest;
@@ -97,6 +98,8 @@ public class OrderServiceImpl implements OrderService {
     private final OrderMapper orderMapper;
     private final SaleRepository saleRepository;
     private final StockEntryService stockEntryService;
+
+    private final ItemChannelStockService itemChannelStockService;
     private final ReceiptService receiptService;
     private final FilterSpecification<Order> filterSpecification;
     private final kh.edu.istad.ite.features.register.repository.RegisterSessionRepository registerSessionRepository;
@@ -357,6 +360,17 @@ public class OrderServiceImpl implements OrderService {
     ) {
         requirePending(order);
 
+        // Nothing has been written yet, so a line that would sell past this
+        // channel's share stops the whole sale here rather than halfway
+        // through the ledger. Items whose stock is shared are untouched by it.
+        for (OrderItem line : order.getItems()) {
+            itemChannelStockService.requireAllocation(
+                    line.getItem(),
+                    line.getVariant(),
+                    order.getChannel(),
+                    line.baseQuantity());
+        }
+
         int scale = scaleFor(order);
         BigDecimal total = order.getTotal();
 
@@ -385,6 +399,15 @@ public class OrderServiceImpl implements OrderService {
             }
 
             line.setUnitCost(unitCost.setScale(2, RoundingMode.HALF_UP));
+
+            // The sale uses up the channel's share of the shelf as well as the
+            // shelf itself. Does nothing for an item whose stock is shared,
+            // which is most of them.
+            itemChannelStockService.consume(
+                    line.getItem(),
+                    line.getVariant(),
+                    order.getChannel(),
+                    line.baseQuantity());
 
             // The extras go out with it: a tub of pearls empties whether it
             // was scooped into one drink or ten.

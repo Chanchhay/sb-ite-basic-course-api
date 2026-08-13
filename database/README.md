@@ -32,6 +32,22 @@ the app after these changes creates:
   nullable columns
 - `stock_entries.cost_of_goods`, `unit_sale_price`, `entered_quantity`,
   `entered_unit_id` — new nullable columns
+- `cart_item_selections`, `order_item_selections` — new tables, the options a
+  line was ordered with ("Sugar Level: 50%"). Nothing to backfill: no order
+  placed before them carried the choice anywhere, so there is nothing to
+  recover.
+- `items.colors` (jsonb), `item_variants.option_name`, `item_variants.color_value`
+  — new nullable columns. An item declares its colours once (name, swatch, one
+  photo) and each size ticks which it comes in; the saved row is the
+  size-and-colour pair, so stock is kept per colour. `variant_name` stays the
+  readable form ("Large / Red"), which is why carts, orders, receipts, POS and
+  channel allocations needed no change. A variant with no `color_value` is a
+  plain size and behaves exactly as before. `AttributeType.COLOR` and `AttributePlacement.HIDDEN` are no longer offered
+  in the back office but remain in the enums, so any item already saved under
+  one still loads. Migrate those by hand if you want the constants gone.
+- `items.available_quantity` — **not** a column. Storefront availability is
+  computed per request from stock less the channel's allocation; it is never
+  stored.
 
 ## Scripts
 

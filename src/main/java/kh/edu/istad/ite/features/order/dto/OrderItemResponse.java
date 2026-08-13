@@ -20,12 +20,24 @@ public record OrderItemResponse(
         BigDecimal discountAmount,
         BigDecimal lineTotal,
         /** Extras chosen on this line, priced as they were when rung up. */
-        List<OrderItemAddOnResponse> addOns
+        List<OrderItemAddOnResponse> addOns,
+        /**
+         * The options chosen on this line — "Sugar Level: 50%". Costs nothing,
+         * but it is what the line has to be made as.
+         */
+        List<OrderItemSelectionResponse> selections
 ) {
     public record OrderItemAddOnResponse(
             UUID addOnId,
             String name,
             BigDecimal unitPrice
+    ) {
+    }
+
+    public record OrderItemSelectionResponse(
+            String attributeName,
+            String value,
+            String label
     ) {
     }
 }

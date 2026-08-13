@@ -18,9 +18,11 @@ import kh.edu.istad.ite.features.customer.entity.GlobalCustomer;
 import kh.edu.istad.ite.features.customer.repository.CustomerRepository;
 import kh.edu.istad.ite.features.customer.service.CustomerIdentityService;
 import kh.edu.istad.ite.features.inventory.dto.StockSummaryResponse;
+import kh.edu.istad.ite.features.channel.service.ItemChannelStockService;
 import kh.edu.istad.ite.features.inventory.service.StockEntryService;
 import kh.edu.istad.ite.features.order.entity.Order;
 import kh.edu.istad.ite.features.order.entity.OrderItem;
+import kh.edu.istad.ite.features.order.entity.OrderItemSelection;
 import kh.edu.istad.ite.features.order.entity.Sale;
 import kh.edu.istad.ite.features.order.repository.OrderRepository;
 import kh.edu.istad.ite.features.order.repository.SaleRepository;
@@ -94,6 +96,9 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
     private final BakongTransactionClient bakongTransactionClient;
     private final CredentialCipher credentialCipher;
     private final StockEntryService stockEntryService;
+
+    private final ItemChannelStockService itemChannelStockService;
+    private final kh.edu.istad.ite.features.channel.service.ChannelPriceResolver channelPriceResolver;
     private final ReceiptService receiptService;
     private final TelegramAlertService telegramAlertService;
 
@@ -437,6 +442,15 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
 
             line.setUnitCost(unitCost.setScale(2, RoundingMode.HALF_UP));
 
+            // The sale uses up the channel's share of the shelf as well as the
+            // shelf itself. Does nothing for an item whose stock is shared,
+            // which is most of them.
+            itemChannelStockService.consume(
+                    line.getItem(),
+                    line.getVariant(),
+                    order.getChannel(),
+                    line.baseQuantity());
+
             totalCost = totalCost.add(unitCost.multiply(BigDecimal.valueOf(line.getQuantity())));
             itemCount += line.getQuantity();
         }
@@ -538,6 +552,8 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
         }
 
         businessHelper.requireFeature(business.getId(), BusinessFeature.STOREFRONT);
+        // The shop's own online hours, enforced before money moves.
+        channelPriceResolver.requireOpen(business.getId(), TERMINAL_LABEL);
     }
 
     /**
@@ -545,6 +561,10 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
      *
      * The option is counted on its own, so the item's total cannot answer it —
      * ten Smalls in stock says nothing about the Large being bought.
+     *
+     * And what is on the shelf is not always what this channel may sell: a
+     * shop that has given the web four of its ten has said the other six are
+     * for the counter, so the basket must stop at four.
      */
     private boolean hasEnoughStock(
             UUID businessId, Item item, ItemVariant variant, BigDecimal requestedBaseQuantity) {
@@ -560,7 +580,9 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
             return true;
         }
 
-        BigDecimal available = summary.quantityOnHand() == null ? BigDecimal.ZERO : summary.quantityOnHand();
+        BigDecimal onHand = summary.quantityOnHand() == null ? BigDecimal.ZERO : summary.quantityOnHand();
+        BigDecimal available = itemChannelStockService.availableFor(
+                item, variant, OrderChannel.WEB, onHand);
 
         return available.compareTo(requestedBaseQuantity) >= 0;
     }
@@ -596,6 +618,19 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
         orderItem.setUnitCost(BigDecimal.ZERO);
         orderItem.setDiscountAmount(BigDecimal.ZERO);
         orderItem.setLineTotal(unitPrice.multiply(BigDecimal.valueOf(quantity)));
+
+        // The basket is emptied once this settles, so the order takes its own
+        // copy of what was chosen — otherwise the only record of "50% sugar"
+        // disappears at the moment it starts to matter.
+        if (cartItem.getSelections() != null) {
+            cartItem.getSelections().forEach(chosen -> {
+                OrderItemSelection selection = new OrderItemSelection();
+                selection.setAttributeName(chosen.getAttributeName());
+                selection.setValue(chosen.getValue());
+                selection.setLabel(chosen.getLabel());
+                orderItem.addSelection(selection);
+            });
+        }
 
         return orderItem;
     }
@@ -688,7 +723,11 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
                         item.getItemName(),
                         item.getQuantity() != null ? item.getQuantity() : 1,
                         item.getUnitPrice() != null ? item.getUnitPrice() : BigDecimal.ZERO,
-                        item.getLineTotal() != null ? item.getLineTotal() : BigDecimal.ZERO
+                        item.getLineTotal() != null ? item.getLineTotal() : BigDecimal.ZERO,
+                        item.getSelections() == null ? List.of() : item.getSelections().stream()
+                                .map(selection ->
+                                        selection.getAttributeName() + ": " + selection.display())
+                                .toList()
                 ))
                 .toList();
 

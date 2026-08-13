@@ -19,6 +19,7 @@ import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 import kh.edu.istad.ite.config.audit.BasedAuditingEntity;
 import kh.edu.istad.ite.features.business.entity.Business;
+import kh.edu.istad.ite.shared.enums.ChannelStockMode;
 import kh.edu.istad.ite.shared.enums.ItemStatus;
 import kh.edu.istad.ite.shared.enums.ItemType;
 import lombok.Getter;
@@ -117,6 +118,17 @@ public class Item extends BasedAuditingEntity {
     @Column(columnDefinition = "jsonb")
     private List<ItemAttribute> attributes;
 
+    /**
+     * The colours this item comes in, declared once and shared by every size.
+     *
+     * Empty on an item that is not sold by colour, which is most of them. A
+     * size says which of these it offers; the pair of the two is what carries
+     * stock.
+     */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(columnDefinition = "jsonb")
+    private List<ItemColor> colors = new ArrayList<>();
+
     @OneToMany(mappedBy = "item", cascade = CascadeType.ALL, orphanRemoval = true)
     @OrderBy("variantName ASC")
     private List<ItemVariant> variants = new ArrayList<>();
@@ -141,6 +153,18 @@ public class Item extends BasedAuditingEntity {
 
     @Column(name = "low_stock_default", nullable = false, columnDefinition = "int default 20")
     private Integer lowStockDefault = 20;
+
+    /**
+     * Whether every channel sells from the whole shelf, or each gets a share.
+     *
+     * Nullable on purpose: an item that predates allocation has never been
+     * asked the question, and reading that as SHARED is what keeps the shop
+     * selling exactly as it did. The allocations themselves live in
+     * {@code item_channel_stocks} — this only says whether they are in force.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "channel_stock_mode", length = 20)
+    private ChannelStockMode channelStockMode;
 
     @Enumerated(EnumType.STRING)
     @Column(

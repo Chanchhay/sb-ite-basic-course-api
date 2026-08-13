@@ -109,6 +109,21 @@ public class OrderItem {
         addOns.add(addOn);
     }
 
+    /**
+     * The options chosen on this line — 50% sugar, no ice.
+     *
+     * Costs nothing and consumes nothing, unlike the add-ons above; it is how
+     * the thing is made, and the only place that instruction survives once the
+     * basket is gone.
+     */
+    @OneToMany(mappedBy = "orderItem", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<OrderItemSelection> selections = new ArrayList<>();
+
+    public void addSelection(OrderItemSelection selection) {
+        selection.setOrderItem(this);
+        selections.add(selection);
+    }
+
     /** Base units this line moves: quantity times the factor. */
     public BigDecimal baseQuantity() {
         BigDecimal factor = unitFactor == null ? BigDecimal.ONE : unitFactor;

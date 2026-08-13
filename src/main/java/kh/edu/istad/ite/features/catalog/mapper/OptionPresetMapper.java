@@ -25,7 +25,8 @@ public class OptionPresetMapper {
                         : preset.getValues().stream()
                                 .map(value -> new OptionPresetValueResponse(
                                         value.getValue(),
-                                        value.getColorHex()
+                                        value.getColorHex(),
+                                        value.getImageUrl()
                                 ))
                                 .toList()
         );

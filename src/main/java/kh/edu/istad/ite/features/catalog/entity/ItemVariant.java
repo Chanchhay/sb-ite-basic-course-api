@@ -63,6 +63,33 @@ public class ItemVariant extends BasedAuditingEntity {
     @Column(name = "image_url", length = 500)
     private String imageUrl;
 
+    /**
+     * The swatch this option shows — the circle a shopper clicks.
+     *
+     * Set only on an option that is a colour; a size has nothing to show. It
+     * belongs to the option rather than to a separate axis because the option
+     * is what carries the price and the shelf, and a colour a shop cannot
+     * count is not one it can sell.
+     */
+    /**
+     * The size half of what this row is — "Large".
+     *
+     * A variant is a size and a colour together, because that pair is what a
+     * shop counts: Large is out in Navy while Large in Red is stacked up, and
+     * one row for "Large" could not say so. {@link #variantName} stays the
+     * readable form of the pair ("Large / Red"), so receipts, tickets and
+     * stock reports keep printing a name rather than two fields.
+     */
+    @Column(name = "option_name", length = 150)
+    private String optionName;
+
+    /**
+     * Which of the item's colours this row is, by its value. Null on an item
+     * that is not sold by colour, where the size alone is the whole variant.
+     */
+    @Column(name = "color_value", length = 150)
+    private String colorValue;
+
     @Column(precision = 12, scale = 2)
     private BigDecimal price;
 
