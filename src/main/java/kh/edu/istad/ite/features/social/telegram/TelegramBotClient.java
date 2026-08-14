@@ -117,18 +117,26 @@ public class TelegramBotClient {
     }
 
     public void sendMessage(String botToken, Long chatId, String text) {
-        sendMessage(botToken, chatId, text, null);
+        sendMessage(botToken, chatId, text, null, null);
     }
 
     public void sendMessage(String botToken, Long chatId, String text, List<List<InlineKeyboardButton>> keyboard) {
+        sendMessage(botToken, chatId, text, keyboard, null);
+    }
+
+    public void sendMessage(String botToken, Long chatId, String text, ReplyKeyboardMarkup replyKeyboardMarkup) {
+        sendMessage(botToken, chatId, text, null, replyKeyboardMarkup);
+    }
+
+    public void sendMessage(String botToken, Long chatId, String text, List<List<InlineKeyboardButton>> keyboard, ReplyKeyboardMarkup replyKeyboardMarkup) {
         String safeText = truncate(nullSafe(text, "..."), MAX_MESSAGE_LENGTH);
 
-        if (postMessage(botToken, chatId, safeText, keyboard, true)) {
+        if (postMessage(botToken, chatId, safeText, keyboard, replyKeyboardMarkup, true)) {
             return;
         }
 
         log.warn("Retrying chat {} without parse_mode after Telegram rejected the Markdown", chatId);
-        postMessage(botToken, chatId, safeText, keyboard, false);
+        postMessage(botToken, chatId, safeText, keyboard, replyKeyboardMarkup, false);
     }
 
     private boolean postMessage(
@@ -136,6 +144,7 @@ public class TelegramBotClient {
             Long chatId,
             String text,
             List<List<InlineKeyboardButton>> keyboard,
+            ReplyKeyboardMarkup replyKeyboardMarkup,
             boolean withParseMode) {
         try {
             Map<String, Object> requestBody = new HashMap<>();
@@ -146,9 +155,13 @@ public class TelegramBotClient {
                 requestBody.put("parse_mode", PARSE_MODE);
             }
 
-            Map<String, Object> replyMarkup = buildReplyMarkup(keyboard);
-            if (replyMarkup != null) {
-                requestBody.put("reply_markup", replyMarkup);
+            if (keyboard != null && !keyboard.isEmpty()) {
+                Map<String, Object> replyMarkup = buildReplyMarkup(keyboard);
+                if (replyMarkup != null) {
+                    requestBody.put("reply_markup", replyMarkup);
+                }
+            } else if (replyKeyboardMarkup != null) {
+                requestBody.put("reply_markup", replyKeyboardMarkup);
             }
 
             restClient.post()

@@ -8,6 +8,7 @@ public record TelegramFrom(
         Long id,
         @JsonProperty("is_bot") Boolean isBot,
         @JsonProperty("first_name") String firstName,
+        @JsonProperty("last_name") String lastName,
         String username
 ) {
 }

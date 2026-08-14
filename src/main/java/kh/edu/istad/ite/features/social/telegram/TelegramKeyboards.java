@@ -72,4 +72,32 @@ public class TelegramKeyboards {
         keyboard.add(List.of(new InlineKeyboardButton("⬅️ ម៉ឺនុយដើម (Main Menu)", "menu:main")));
         return keyboard;
     }
+
+    public static ReplyKeyboardMarkup persistentReplyMenu() {
+        return new ReplyKeyboardMarkup(
+                List.of(
+                        List.of(
+                                new ReplyKeyboardButton("🛍️ ផលិតផល (Catalog)"),
+                                new ReplyKeyboardButton("🛒 កន្ត្រក (Cart)")
+                        ),
+                        List.of(
+                                new ReplyKeyboardButton("📦 ប្រវត្តិទិញ (Orders)"),
+                                new ReplyKeyboardButton("👤 គណនី (Profile)")
+                        )
+                ),
+                true,
+                true
+        );
+    }
+
+    public static ReplyKeyboardMarkup shareContactReplyKeyboard() {
+        return new ReplyKeyboardMarkup(
+                List.of(
+                        List.of(new ReplyKeyboardButton("📱 ចែករំលែកលេខទូរស័ព្ទ (Share Phone Number)", true)),
+                        List.of(new ReplyKeyboardButton("⬅️ ម៉ឺនុយដើម (Main Menu)"))
+                ),
+                true,
+                true
+        );
+    }
 }
