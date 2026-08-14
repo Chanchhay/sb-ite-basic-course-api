@@ -43,6 +43,8 @@ public record CartSummaryResponse(
             List<String> badges,
             /** The options chosen, by name, for a client that wants them apart. */
             List<Selection> selections,
+            /** The extras ticked, priced as they stood when they were. */
+            List<AddOn> addOns,
             /**
              * The unit bought, and how many base units one of them holds. A
              * case of twenty-four must never read as a single can — it is
@@ -52,7 +54,15 @@ public record CartSummaryResponse(
             String unitName,
             BigDecimal unitFactor,
             int quantity,
+            /** The thing itself, without its extras. */
             BigDecimal unitPrice,
+            /**
+             * What one of this line is actually billed at — the price above
+             * plus every extra ticked on it. This is what {@link #subtotal}
+             * is a multiple of, so a cart that shows a per-unit price should
+             * show this one.
+             */
+            BigDecimal unitPriceWithAddOns,
             BigDecimal subtotal
     ) {
     }
@@ -61,6 +71,14 @@ public record CartSummaryResponse(
             String attributeName,
             String value,
             String label
+    ) {
+    }
+
+    /** One extra riding on a line, at the price it was ticked at. */
+    public record AddOn(
+            UUID addOnId,
+            String name,
+            BigDecimal unitPrice
     ) {
     }
 }

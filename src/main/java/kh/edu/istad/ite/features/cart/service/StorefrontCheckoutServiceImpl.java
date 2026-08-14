@@ -22,6 +22,7 @@ import kh.edu.istad.ite.features.channel.service.ItemChannelStockService;
 import kh.edu.istad.ite.features.inventory.service.StockEntryService;
 import kh.edu.istad.ite.features.order.entity.Order;
 import kh.edu.istad.ite.features.order.entity.OrderItem;
+import kh.edu.istad.ite.features.order.entity.OrderItemAddOn;
 import kh.edu.istad.ite.features.order.entity.OrderItemSelection;
 import kh.edu.istad.ite.features.order.entity.Sale;
 import kh.edu.istad.ite.features.order.repository.OrderRepository;
@@ -66,6 +67,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.Stream;
 import kh.edu.istad.ite.features.social.service.TelegramAlertService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -451,6 +453,23 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
                     order.getChannel(),
                     line.baseQuantity());
 
+            // The extras go out with it: a tub of pearls empties whether it
+            // was scooped into one drink or ten, and whether the drink was
+            // rung up at the till or bought on the web.
+            for (OrderItemAddOn chosen : line.getAddOns()) {
+                if (chosen.getAddOn() == null) {
+                    continue;
+                }
+
+                stockEntryService.recordAddOnSale(
+                        business,
+                        chosen.getAddOn(),
+                        chosen.getUsePerOrder()
+                                .multiply(BigDecimal.valueOf(line.getQuantity())),
+                        order.getId(),
+                        order.getInvoiceNumber());
+            }
+
             totalCost = totalCost.add(unitCost.multiply(BigDecimal.valueOf(line.getQuantity())));
             itemCount += line.getQuantity();
         }
@@ -617,7 +636,26 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
         orderItem.setUnitPrice(unitPrice);
         orderItem.setUnitCost(BigDecimal.ZERO);
         orderItem.setDiscountAmount(BigDecimal.ZERO);
-        orderItem.setLineTotal(unitPrice.multiply(BigDecimal.valueOf(quantity)));
+
+        // The extras were agreed and priced when they were ticked, so the
+        // order takes its own copy of each — the basket is emptied once this
+        // settles, and a receipt has to keep saying what was in the cup.
+        if (cartItem.getAddOns() != null) {
+            cartItem.getAddOns().forEach(chosen -> {
+                OrderItemAddOn addOn = new OrderItemAddOn();
+                addOn.setAddOn(chosen.getAddOn());
+                addOn.setAddOnName(chosen.getAddOnName());
+                addOn.setUnitPrice(
+                        chosen.getUnitPrice() == null ? BigDecimal.ZERO : chosen.getUnitPrice());
+                addOn.setUsePerOrder(
+                        chosen.getUsePerOrder() == null ? BigDecimal.ONE : chosen.getUsePerOrder());
+                orderItem.addAddOn(addOn);
+            });
+        }
+
+        // Billed with its extras on top, the way the basket quoted it.
+        orderItem.setLineTotal(
+                orderItem.priceWithAddOns().multiply(BigDecimal.valueOf(quantity)));
 
         // The basket is emptied once this settles, so the order takes its own
         // copy of what was chosen — otherwise the only record of "50% sugar"
@@ -724,9 +762,19 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
                         item.getQuantity() != null ? item.getQuantity() : 1,
                         item.getUnitPrice() != null ? item.getUnitPrice() : BigDecimal.ZERO,
                         item.getLineTotal() != null ? item.getLineTotal() : BigDecimal.ZERO,
-                        item.getSelections() == null ? List.of() : item.getSelections().stream()
-                                .map(selection ->
-                                        selection.getAttributeName() + ": " + selection.display())
+                        // The extras read alongside the options: without them
+                        // the line total is higher than the item's price with
+                        // nothing on the receipt to say why.
+                        Stream.concat(
+                                        item.getSelections() == null
+                                                ? Stream.<String>empty()
+                                                : item.getSelections().stream()
+                                                        .map(selection -> selection.getAttributeName()
+                                                                + ": " + selection.display()),
+                                        item.getAddOns() == null
+                                                ? Stream.<String>empty()
+                                                : item.getAddOns().stream()
+                                                        .map(addOn -> "+ " + addOn.getAddOnName()))
                                 .toList()
                 ))
                 .toList();
