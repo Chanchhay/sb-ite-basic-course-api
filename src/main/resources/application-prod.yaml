@@ -27,6 +27,9 @@ spring:
         jwt:
           jwk-set-uri: ${JWK_SET_URI:${ISSUER_URI}/protocol/openid-connect/certs}
           issuer-uri: ${ISSUER_URI}
+          jws-algorithms:
+            - RS256
+            - RS512
 
   jpa:
     hibernate:
