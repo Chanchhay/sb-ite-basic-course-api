@@ -8,7 +8,10 @@ import kh.edu.istad.ite.features.cart.dto.CartSelectionRequest;
 import kh.edu.istad.ite.features.cart.dto.CartSummaryResponse;
 import kh.edu.istad.ite.features.cart.entity.Cart;
 import kh.edu.istad.ite.features.cart.entity.CartItem;
+import kh.edu.istad.ite.features.cart.entity.CartItemAddOn;
 import kh.edu.istad.ite.features.cart.entity.CartItemSelection;
+import kh.edu.istad.ite.features.catalog.entity.AddOn;
+import kh.edu.istad.ite.features.catalog.entity.ItemAddOn;
 import kh.edu.istad.ite.features.catalog.entity.ItemAttribute;
 import kh.edu.istad.ite.features.catalog.entity.ItemAttributeValue;
 import kh.edu.istad.ite.features.catalog.entity.ItemUomConversion;
@@ -140,6 +143,7 @@ public class StorefrontCartService {
         ItemVariant variant = resolveVariant(item, request.variantId());
         PricedLine priced = resolveLine(business, item, variant, request.unitId());
         List<CartItemSelection> selections = resolveSelections(item, request.selections());
+        List<CartItemAddOn> addOns = resolveAddOns(item, request.addOnIds());
 
         Customer customer = customerIdentityService.customerFor(business, shopper);
         Cart cart = activeCartFor(customer, business);
@@ -149,8 +153,14 @@ public class StorefrontCartService {
                 .sorted()
                 .collect(java.util.stream.Collectors.joining("|"));
 
+        String addOnKey = addOns.stream()
+                .map(addOn -> addOn.getAddOn().getId().toString())
+                .sorted()
+                .collect(java.util.stream.Collectors.joining("|"));
+
         CartItem line = findLine(
-                cart, item.getId(), request.variantId(), unitIdOf(priced.unit()), selectionKey)
+                cart, item.getId(), request.variantId(), unitIdOf(priced.unit()),
+                selectionKey, addOnKey)
                 .orElse(null);
 
         // What the line would hold once this is added, so that adding one at a
@@ -171,6 +181,7 @@ public class StorefrontCartService {
                     .build();
 
             selections.forEach(line::addSelection);
+            addOns.forEach(line::addAddOn);
             cart.getItems().add(line);
         } else {
             line.setQuantity(line.getQuantity() + request.quantity());
@@ -307,7 +318,8 @@ public class StorefrontCartService {
     }
 
     private Optional<CartItem> findLine(
-            Cart cart, UUID itemId, UUID variantId, UUID unitId, String selectionKey) {
+            Cart cart, UUID itemId, UUID variantId, UUID unitId,
+            String selectionKey, String addOnKey) {
         return cart.getItems().stream()
                 .filter(line -> line.getItem().getId().equals(itemId))
                 .filter(line -> {
@@ -321,6 +333,9 @@ public class StorefrontCartService {
                 // not one of quantity two. Merging them would hand the counter
                 // a ticket that cannot be made.
                 .filter(line -> line.selectionKey().equals(selectionKey))
+                // And one with pearls is not one without: different money,
+                // different thing to make.
+                .filter(line -> line.addOnKey().equals(addOnKey))
                 .findFirst();
     }
 
@@ -406,6 +421,63 @@ public class StorefrontCartService {
                             HttpStatus.BAD_REQUEST,
                             "Choose a " + missing.getName() + " for \"" + item.getName() + "\"");
                 });
+
+        return resolved;
+    }
+
+    /**
+     * Turns the extras ticked into what the line will carry.
+     *
+     * Checked against the item rather than trusted, for the same reason the
+     * options are: this arrives from a browser. An add-on the item does not
+     * offer, one the shop has taken off that item for now, or one nobody has
+     * priced yet is an extra the counter cannot make good on — and an unpriced
+     * one would otherwise ride along free.
+     *
+     * The name, price and usage are copied onto the line as they stand now, so
+     * a basket left open overnight still costs what it said it cost. This is
+     * the till's {@code attachAddOns} rule, kept in step deliberately: the same
+     * extra must not be sellable on one channel and not the other.
+     */
+    private List<CartItemAddOn> resolveAddOns(Item item, List<UUID> addOnIds) {
+        if (addOnIds == null || addOnIds.isEmpty()) {
+            return List.of();
+        }
+
+        List<ItemAddOn> offered = item.getAddOns() == null ? List.of() : item.getAddOns();
+        List<CartItemAddOn> resolved = new ArrayList<>();
+
+        for (UUID addOnId : addOnIds.stream().filter(Objects::nonNull).distinct().toList()) {
+            ItemAddOn link = offered.stream()
+                    .filter(candidate -> candidate.getAddOn() != null)
+                    .filter(candidate -> candidate.getAddOn().getId().equals(addOnId))
+                    .findFirst()
+                    .orElseThrow(() -> new ResponseStatusException(
+                            HttpStatus.BAD_REQUEST,
+                            "\"" + item.getName() + "\" does not come with that extra"));
+
+            AddOn addOn = link.getAddOn();
+
+            if (!link.isAvailable()) {
+                throw new ResponseStatusException(
+                        HttpStatus.CONFLICT,
+                        "\"" + addOn.getName() + "\" is not on sale with \"" + item.getName() + "\"");
+            }
+
+            if (addOn.getPrice() == null) {
+                throw new ResponseStatusException(
+                        HttpStatus.CONFLICT,
+                        "\"" + addOn.getName() + "\" has no price yet");
+            }
+
+            CartItemAddOn chosen = new CartItemAddOn();
+            chosen.setAddOn(addOn);
+            chosen.setAddOnName(addOn.getName());
+            chosen.setUnitPrice(addOn.getPrice());
+            chosen.setUsePerOrder(
+                    addOn.getUsePerOrder() == null ? BigDecimal.ONE : addOn.getUsePerOrder());
+            resolved.add(chosen);
+        }
 
         return resolved;
     }
@@ -575,7 +647,13 @@ public class StorefrontCartService {
 
                 null,
                 StringUtils.hasText(business.getBaseCurrency()) ? business.getBaseCurrency() : "USD",
-                Boolean.TRUE.equals(business.getIsEnabled()) && !Boolean.TRUE.equals(business.getIsClosed()),
+                // The online store's hours count as much as the switch does:
+                // the checkout refuses an out-of-hours basket, so a cart that
+                // reads "Open" would only be setting the shopper up to be told
+                // no at the payment screen.
+                Boolean.TRUE.equals(business.getIsEnabled())
+                        && !Boolean.TRUE.equals(business.getIsClosed())
+                        && channelPriceResolver.isOpenNow(business.getId(), WEB_CHANNEL_CODE),
                 cart.getTotalItemsCount(),
                 cart.getTotalAmount(),
                 lines);
@@ -608,6 +686,12 @@ public class StorefrontCartService {
             badges.add(unit.getName());
         }
 
+        List<CartItemAddOn> extras = line.getAddOns() == null ? List.of() : line.getAddOns();
+
+        // "+ Extra shot" reads as an addition rather than as another option,
+        // which is what it is — and what the counter's ticket says too.
+        extras.forEach(addOn -> badges.add("+ " + addOn.getAddOnName()));
+
         return new CartSummaryResponse.Line(
                 line.getId(),
                 line.getItem().getId(),
@@ -622,11 +706,18 @@ public class StorefrontCartService {
                                 selection.getValue(),
                                 selection.display()))
                         .toList(),
+                extras.stream()
+                        .map(addOn -> new CartSummaryResponse.AddOn(
+                                addOn.getAddOn() == null ? null : addOn.getAddOn().getId(),
+                                addOn.getAddOnName(),
+                                addOn.getUnitPrice()))
+                        .toList(),
                 unitIdOf(unit),
                 unit == null ? null : unit.getName(),
                 factor,
                 line.getQuantity(),
                 line.getPriceSnapshot(),
+                line.priceWithAddOns(),
                 line.getSubtotal());
     }
 

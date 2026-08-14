@@ -153,6 +153,30 @@ public class ChannelPriceResolver {
                         + schedule.describeDay(now.getDayOfWeek()) + ".");
     }
 
+    /**
+     * The hours this channel keeps, or null when it keeps none.
+     *
+     * The same schedule {@link #requireOpen} enforces, handed out so a
+     * storefront can say what the counter will do before a shopper finds out
+     * by being refused.
+     */
+    public ChannelScheduleDto scheduleFor(UUID businessId, String channelCode) {
+        if (businessId == null || channelCode == null) return null;
+
+        return settingsRepository
+                .findByBusinessIdAndSalesChannelCode(businessId, channelCode)
+                .map(BusinessChannelSettings::getScheduleJson)
+                .map(this::readSchedule)
+                .orElse(null);
+    }
+
+    /** Whether the channel is taking orders this minute. No hours means always. */
+    public boolean isOpenNow(UUID businessId, String channelCode) {
+        ChannelScheduleDto schedule = scheduleFor(businessId, channelCode);
+
+        return schedule == null || schedule.isOpenAt(LocalDateTime.now());
+    }
+
     /** Unreadable hours never close a shop that is trying to trade. */
     private ChannelScheduleDto readSchedule(String json) {
         if (json == null || json.isBlank()) return null;

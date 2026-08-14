@@ -22,6 +22,11 @@ public record AddToCartRequest(
          * client that does not offer options keeps working unchanged.
          */
         @Valid List<CartSelectionRequest> selections,
+        /**
+         * The extras ticked on this line. Each must be on sale for the item
+         * and priced, exactly as at the till. Absent is the same as none.
+         */
+        List<UUID> addOnIds,
         @NotNull @Min(1) Integer quantity
 ) {
 }
