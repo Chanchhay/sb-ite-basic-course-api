@@ -14,20 +14,31 @@ public class SalesChannelSeeder implements CommandLineRunner {
 
     private final SalesChannelRepository salesChannelRepository;
 
+    /**
+     * The channels an order can arrive through.
+     *
+     * Codes match {@code OrderChannel} exactly, because that is how an order
+     * says where it came from and how its channel price is then found. A
+     * channel missing here is one whose orders quietly pay the business price.
+     */
+    private static final List<String[]> CHANNELS = List.of(
+            new String[] {"POS", "Point of Sale"},
+            new String[] {"WEB", "Online Store"},
+            new String[] {"TELEGRAM", "Telegram"},
+            new String[] {"MESSENGER", "Messenger"});
+
     @Override
     public void run(String... args) throws Exception {
-        if (salesChannelRepository.count() == 0) {
-            SalesChannel pos = new SalesChannel();
-            pos.setName("Point of Sale");
-            pos.setCode("POS");
-            pos.setIsActive(true);
+        // Added one at a time rather than only on an empty table: a database
+        // seeded before a channel existed would never get it otherwise.
+        for (String[] channel : CHANNELS) {
+            if (salesChannelRepository.findByCode(channel[0]).isPresent()) continue;
 
-            SalesChannel online = new SalesChannel();
-            online.setName("Online Store");
-            online.setCode("ONLINE");
-            online.setIsActive(true);
-
-            salesChannelRepository.saveAll(List.of(pos, online));
+            SalesChannel fresh = new SalesChannel();
+            fresh.setCode(channel[0]);
+            fresh.setName(channel[1]);
+            fresh.setIsActive(true);
+            salesChannelRepository.save(fresh);
         }
     }
 }

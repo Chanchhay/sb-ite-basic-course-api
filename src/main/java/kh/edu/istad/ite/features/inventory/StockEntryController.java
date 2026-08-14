@@ -2,6 +2,7 @@ package kh.edu.istad.ite.features.inventory;
 
 import jakarta.validation.Valid;
 import kh.edu.istad.ite.features.inventory.dto.CreateStockEntryRequest;
+import kh.edu.istad.ite.features.inventory.dto.StockBatchResponse;
 import kh.edu.istad.ite.features.inventory.dto.StockEntryResponse;
 import kh.edu.istad.ite.features.inventory.dto.StockSummaryResponse;
 import kh.edu.istad.ite.features.inventory.service.StockEntryService;
@@ -78,6 +79,20 @@ public class StockEntryController {
             @PathVariable UUID itemId
     ) {
         return stockEntryService.findItemStockEntries(businessId, itemId);
+    }
+
+    /**
+     * The deliveries still on the shelf for one item, in the order they sell.
+     *
+     * What makes a margin explicable: an item's cost is not one number but
+     * whichever batch the next sale comes out of.
+     */
+    @GetMapping("/items/{itemId}/stock-batches")
+    public List<StockBatchResponse> findItemBatches(
+            @PathVariable UUID businessId,
+            @PathVariable UUID itemId
+    ) {
+        return stockEntryService.findItemBatches(businessId, itemId);
     }
 
     @GetMapping("/items/{itemId}/stock")

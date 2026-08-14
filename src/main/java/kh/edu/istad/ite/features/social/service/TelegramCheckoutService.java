@@ -14,6 +14,8 @@ public interface TelegramCheckoutService {
 
     void cancelCheckout(UUID businessId, UUID orderId);
 
+    void updateQrMessageId(UUID qrCodeId, Integer messageId);
+
     record CheckoutDraft(
             UUID orderId,
             String invoiceNumber,
@@ -23,7 +25,8 @@ public interface TelegramCheckoutService {
             String qrPayload,
             String md5,
             byte[] qrPng,
-            LocalDateTime expiresAt
+            LocalDateTime expiresAt,
+            UUID qrCodeId
     ) {
     }
 

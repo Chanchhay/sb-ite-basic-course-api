@@ -13,6 +13,11 @@ public record PublicStoreResponse(
         String storefrontUrl,
         BusinessSubCategoryResponse category,
         Boolean isClosed,
+        /**
+         * Whether the shop is taking web orders right now — the manual switch
+         * and the Online Store's hours together, since a card that says "Open"
+         * on a shop the checkout will refuse is worse than no card at all.
+         */
         Boolean isOpen,
         String discountLabel,
         String openTime,

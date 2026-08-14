@@ -21,8 +21,6 @@ public final class SecurityUtils {
 
         JwtAuthenticationToken jwtAuthenticationToken = (JwtAuthenticationToken) auth;
 
-        IO.print("TEST: " + jwtAuthenticationToken);
-
         return jwtAuthenticationToken.getToken().getSubject();
     }
 

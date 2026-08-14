@@ -10,6 +10,7 @@ import kh.edu.istad.ite.features.catalog.entity.Item;
 import kh.edu.istad.ite.features.catalog.entity.ItemVariant;
 import kh.edu.istad.ite.features.customer.entity.Customer;
 import kh.edu.istad.ite.features.customer.repository.CustomerRepository;
+import kh.edu.istad.ite.features.channel.service.ItemChannelStockService;
 import kh.edu.istad.ite.features.inventory.service.StockEntryService;
 import kh.edu.istad.ite.features.order.entity.Order;
 import kh.edu.istad.ite.features.order.entity.OrderItem;
@@ -35,6 +36,12 @@ import kh.edu.istad.ite.shared.enums.PaymentMethodType;
 import kh.edu.istad.ite.shared.enums.QrStatus;
 import kh.edu.istad.ite.shared.enums.ReceiptType;
 import kh.edu.istad.ite.shared.helper.BusinessHelper;
+import kh.edu.istad.ite.features.cart.entity.CartItemSelection;
+import kh.edu.istad.ite.features.discount.dto.DiscountResponse;
+import kh.edu.istad.ite.features.discount.service.DiscountService;
+import kh.edu.istad.ite.features.order.entity.OrderItemSelection;
+import kh.edu.istad.ite.shared.enums.DiscountType;
+import kh.edu.istad.ite.shared.enums.DiscountScope;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
@@ -49,6 +56,7 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.List;
 import java.util.UUID;
 
 @Service
@@ -74,10 +82,13 @@ public class TelegramCheckoutServiceImpl implements TelegramCheckoutService {
     private final BakongTransactionClient bakongTransactionClient;
     private final CredentialCipher credentialCipher;
     private final StockEntryService stockEntryService;
+
+    private final ItemChannelStockService itemChannelStockService;
     private final ReceiptService receiptService;
     private final TelegramStockHelper stockHelper;
     private final TelegramUIHelper uiHelper;
     private final ApplicationEventPublisher eventPublisher;
+    private final DiscountService discountService;
 
     @Override
     @Transactional
@@ -99,18 +110,17 @@ public class TelegramCheckoutServiceImpl implements TelegramCheckoutService {
 
         BusinessPaymentSetting setting = requireActiveBakongSetting(businessId);
 
-        // Never let a customer pay for something we can't actually fulfil: check stock
-        // BEFORE a KHQR is generated, not after Bakong confirms the money moved.
         for (CartItem cartItem : cart.getItems()) {
             int quantity = cartItem.getQuantity() == null ? 1 : cartItem.getQuantity();
-            if (!stockHelper.hasEnoughStock(businessId, cartItem.getItem(), quantity)) {
+            if (!stockHelper.hasEnoughStock(
+                    businessId, cartItem.getItem(), cartItem.getVariant(), cartItem.baseQuantity(),
+                    OrderChannel.TELEGRAM)) {
                 throw new TelegramCheckoutException(
                         "⚠️ ស្តុកមិនគ្រប់គ្រាន់សម្រាប់ \"" + cartItem.getItem().getName()
                                 + "\" ទេ។ សូមកែសម្រួលកន្ត្រកទំនិញរបស់អ្នកមុននឹងទូទាត់ប្រាក់។");
             }
         }
 
-        // 1. Build a real PENDING order from the cart.
         Order order = new Order();
         order.setBusiness(business);
         order.setCustomer(customer);
@@ -118,27 +128,68 @@ public class TelegramCheckoutServiceImpl implements TelegramCheckoutService {
         order.setStatus(OrderStatus.PENDING);
         order.setCurrency(resolveCurrency(business));
         order.setInvoiceNumber(nextInvoiceNumber(businessId));
-        // No cashier: the customer rang this up themselves through the bot.
         order.setCashierId(null);
         order.setNote("Telegram bot order");
 
+        int scale = scaleFor(order.getCurrency());
         BigDecimal subtotal = BigDecimal.ZERO;
+        BigDecimal totalDiscount = BigDecimal.ZERO;
 
         for (CartItem cartItem : cart.getItems()) {
             OrderItem orderItem = toOrderItem(cartItem);
-            order.addItem(orderItem);
-            subtotal = subtotal.add(orderItem.getLineTotal());
-        }
 
-        int scale = scaleFor(order.getCurrency());
+            Item item = cartItem.getItem();
+            UUID itemGroupId = item.getItemGroup() != null ? item.getItemGroup().getId() : null;
+            int quantity = cartItem.getQuantity() == null ? 1 : cartItem.getQuantity();
+
+            BigDecimal baseUnitPrice = orderItem.getUnitPrice();
+            BigDecimal rawLineSubtotal = baseUnitPrice.multiply(BigDecimal.valueOf(quantity));
+
+            List<DiscountResponse> applicableDiscounts = discountService.findApplicableDiscounts(
+                    businessId,
+                    OrderChannel.TELEGRAM,
+                    item.getId(),
+                    itemGroupId
+            );
+
+            BigDecimal lineDiscount = BigDecimal.ZERO;
+            if (!applicableDiscounts.isEmpty()) {
+                DiscountResponse discount = applicableDiscounts.get(0);
+                if (discount.type() == DiscountType.PERCENTAGE && discount.value() != null) {
+                    BigDecimal unitDiscount = baseUnitPrice.multiply(discount.value()).divide(BigDecimal.valueOf(100), scale, RoundingMode.HALF_UP);
+                    lineDiscount = unitDiscount.multiply(BigDecimal.valueOf(quantity));
+                } else if (discount.type() == DiscountType.FIXED_AMOUNT && discount.value() != null) {
+                    lineDiscount = discount.value().multiply(BigDecimal.valueOf(quantity));
+                }
+
+                if (discount.maxDiscountAmount() != null && lineDiscount.compareTo(discount.maxDiscountAmount()) > 0) {
+                    lineDiscount = discount.maxDiscountAmount();
+                }
+
+                if (lineDiscount.compareTo(rawLineSubtotal) > 0) {
+                    lineDiscount = rawLineSubtotal;
+                }
+            }
+
+            orderItem.setDiscountAmount(lineDiscount.setScale(scale, RoundingMode.HALF_UP));
+            BigDecimal lineTotal = rawLineSubtotal.subtract(lineDiscount);
+            if (lineTotal.compareTo(BigDecimal.ZERO) < 0) {
+                lineTotal = BigDecimal.ZERO;
+            }
+            orderItem.setLineTotal(lineTotal.setScale(scale, RoundingMode.HALF_UP));
+
+            order.addItem(orderItem);
+            subtotal = subtotal.add(rawLineSubtotal);
+            totalDiscount = totalDiscount.add(lineDiscount);
+        }
 
         order.setSubtotal(subtotal.setScale(scale, RoundingMode.HALF_UP));
-        order.setDiscountAmount(BigDecimal.ZERO.setScale(scale, RoundingMode.HALF_UP));
-        order.setTotal(subtotal.setScale(scale, RoundingMode.HALF_UP));
-
-        if (order.getTotal().compareTo(BigDecimal.ZERO) <= 0) {
-            throw new TelegramCheckoutException("⚠️ ទឹកប្រាក់សរុបត្រូវតែធំជាងសូន្យ។");
+        order.setDiscountAmount(totalDiscount.setScale(scale, RoundingMode.HALF_UP));
+        BigDecimal finalTotal = subtotal.subtract(totalDiscount);
+        if (finalTotal.compareTo(BigDecimal.ZERO) < 0) {
+            finalTotal = BigDecimal.ZERO;
         }
+        order.setTotal(finalTotal.setScale(scale, RoundingMode.HALF_UP));
 
         Order savedOrder = orderRepository.save(order);
 
@@ -202,7 +253,8 @@ public class TelegramCheckoutServiceImpl implements TelegramCheckoutService {
                 result.qr(),
                 result.md5(),
                 png,
-                expiresAtLocal
+                expiresAtLocal,
+                qrCode.getId()
         );
     }
 
@@ -293,27 +345,48 @@ public class TelegramCheckoutServiceImpl implements TelegramCheckoutService {
         });
     }
 
+    @Override
+    @Transactional
+    public void updateQrMessageId(UUID qrCodeId, Integer messageId) {
+        paymentQrCodeRepository.findById(qrCodeId).ifPresent(qr -> {
+            qr.setTelegramMessageId(messageId);
+            paymentQrCodeRepository.save(qr);
+        });
+    }
+
     private void settle(Business business, Order order) {
         BigDecimal totalCost = BigDecimal.ZERO;
         int itemCount = 0;
 
         for (OrderItem line : order.getItems()) {
-            stockEntryService.recordSale(
+            // Costed from the batches the sale emptied, not from what is left.
+            BigDecimal unitCost = stockEntryService.recordSale(
                     business,
                     line.getItem(),
+                    line.getVariant(),
+                    // A case of twenty-four takes twenty-four off the shelf;
+                    // the ledger still reads back as the one case that sold.
+                    line.baseQuantity(),
                     BigDecimal.valueOf(line.getQuantity()),
+                    line.getUnit(),
                     order.getId(),
                     order.getInvoiceNumber()
-            );
-
-            BigDecimal unitCost = stockEntryService.findLatestUnitCost(
-                    business.getId(), line.getItem().getId());
+            ).getUnitCost();
 
             if (unitCost == null) {
                 unitCost = BigDecimal.ZERO;
             }
 
             line.setUnitCost(unitCost.setScale(2, RoundingMode.HALF_UP));
+
+            // The sale uses up the channel's share of the shelf as well as the
+            // shelf itself. Does nothing for an item whose stock is shared,
+            // which is most of them.
+            itemChannelStockService.consume(
+                    line.getItem(),
+                    line.getVariant(),
+                    order.getChannel(),
+                    line.baseQuantity());
 
             totalCost = totalCost.add(unitCost.multiply(BigDecimal.valueOf(line.getQuantity())));
             itemCount += line.getQuantity();
@@ -380,14 +453,25 @@ public class TelegramCheckoutServiceImpl implements TelegramCheckoutService {
         int quantity = cartItem.getQuantity() == null ? 1 : cartItem.getQuantity();
 
         OrderItem orderItem = new OrderItem();
+        orderItem.setBusiness(cartItem.getCart().getBusiness());
         orderItem.setItem(item);
         orderItem.setVariant(variant);
+        orderItem.setUnit(cartItem.getUnit());
+        orderItem.setUnitFactor(cartItem.getUnitFactor());
         orderItem.setItemName(variant != null ? item.getName() + " (" + variant.getVariantName() + ")" : item.getName());
         orderItem.setQuantity(quantity);
         orderItem.setUnitPrice(unitPrice);
         orderItem.setUnitCost(BigDecimal.ZERO);
-        orderItem.setDiscountAmount(BigDecimal.ZERO);
-        orderItem.setLineTotal(unitPrice.multiply(BigDecimal.valueOf(quantity)));
+
+        if (cartItem.getSelections() != null && !cartItem.getSelections().isEmpty()) {
+            for (CartItemSelection sel : cartItem.getSelections()) {
+                OrderItemSelection orderSel = new OrderItemSelection();
+                orderSel.setAttributeName(sel.getAttributeName());
+                orderSel.setValue(sel.getValue());
+                orderSel.setLabel(sel.getLabel());
+                orderItem.addSelection(orderSel);
+            }
+        }
 
         return orderItem;
     }

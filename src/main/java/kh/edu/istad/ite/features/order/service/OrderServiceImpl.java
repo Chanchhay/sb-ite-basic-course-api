@@ -6,7 +6,9 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 import org.springframework.data.domain.Pageable;
@@ -23,10 +25,16 @@ import kh.edu.istad.ite.config.security.CredentialCipher;
 import kh.edu.istad.ite.config.specification.FilterSpecification;
 import kh.edu.istad.ite.features.business.entity.Business;
 import kh.edu.istad.ite.features.catalog.entity.Item;
+import kh.edu.istad.ite.features.catalog.entity.ItemUomConversion;
+import kh.edu.istad.ite.features.catalog.entity.AddOn;
+import kh.edu.istad.ite.features.catalog.entity.ItemAddOn;
+import kh.edu.istad.ite.features.order.entity.OrderItemAddOn;
 import kh.edu.istad.ite.features.catalog.entity.ItemVariant;
+import kh.edu.istad.ite.features.catalog.entity.Unit;
 import kh.edu.istad.ite.features.catalog.repository.ItemRepository;
 import kh.edu.istad.ite.features.customer.entity.Customer;
 import kh.edu.istad.ite.features.customer.repository.CustomerRepository;
+import kh.edu.istad.ite.features.channel.service.ItemChannelStockService;
 import kh.edu.istad.ite.features.inventory.service.StockEntryService;
 import kh.edu.istad.ite.features.order.dto.AddOrderItemRequest;
 import kh.edu.istad.ite.features.order.dto.CreateOrderItemRequest;
@@ -90,15 +98,24 @@ public class OrderServiceImpl implements OrderService {
     private final OrderMapper orderMapper;
     private final SaleRepository saleRepository;
     private final StockEntryService stockEntryService;
+
+    private final ItemChannelStockService itemChannelStockService;
     private final ReceiptService receiptService;
     private final FilterSpecification<Order> filterSpecification;
     private final kh.edu.istad.ite.features.register.repository.RegisterSessionRepository registerSessionRepository;
     private final TelegramAlertService telegramAlertService;
+    private final kh.edu.istad.ite.features.channel.service.ChannelPriceResolver channelPriceResolver;
 
     @Override
     @Transactional
     public OrderResponse createOrder(UUID businessId, CreateOrderRequest request) {
         Business business = businessHelper.findAccessibleBusiness(businessId);
+
+        // Opening hours nothing enforces are a note to self, so a channel that
+        // has said it is shut does not take the order.
+        if (request.channel() != null) {
+            channelPriceResolver.requireOpen(businessId, request.channel().name());
+        }
 
         Order order = new Order();
         order.setBusiness(business);
@@ -132,9 +149,9 @@ public class OrderServiceImpl implements OrderService {
                     OrderItem existing = existingOpt.get();
                     existing.setQuantity(existing.getQuantity() + itemRequest.quantity());
                     BigDecimal itemDiscount = existing.getDiscountAmount() != null ? existing.getDiscountAmount() : BigDecimal.ZERO;
-                    existing.setLineTotal(existing.getUnitPrice().multiply(BigDecimal.valueOf(existing.getQuantity())).subtract(itemDiscount));
+                    existing.setLineTotal(existing.priceWithAddOns().multiply(BigDecimal.valueOf(existing.getQuantity())).subtract(itemDiscount));
                 } else {
-                    OrderItem item = buildItem(businessId, itemRequest);
+                    OrderItem item = buildItem(businessId, channelCodeOf(order), itemRequest);
                     maxLineNumber++;
                     item.setLineNumber(maxLineNumber);
                     order.addItem(item);
@@ -343,6 +360,17 @@ public class OrderServiceImpl implements OrderService {
     ) {
         requirePending(order);
 
+        // Nothing has been written yet, so a line that would sell past this
+        // channel's share stops the whole sale here rather than halfway
+        // through the ledger. Items whose stock is shared are untouched by it.
+        for (OrderItem line : order.getItems()) {
+            itemChannelStockService.requireAllocation(
+                    line.getItem(),
+                    line.getVariant(),
+                    order.getChannel(),
+                    line.baseQuantity());
+        }
+
         int scale = scaleFor(order);
         BigDecimal total = order.getTotal();
 
@@ -350,22 +378,53 @@ public class OrderServiceImpl implements OrderService {
         int itemCount = 0;
 
         for (OrderItem line : order.getItems()) {
-            stockEntryService.recordSale(
+            // The sale consumes stock batches oldest first, so its own entry
+            // already carries what those units cost. Asking the item again
+            // afterwards would price the sale at whatever is left on the shelf.
+            BigDecimal unitCost = stockEntryService.recordSale(
                     business,
                     line.getItem(),
+                    line.getVariant(),
+                    // A case of twenty-four takes twenty-four off the shelf;
+                    // the ledger still reads back as the one case that sold.
+                    line.baseQuantity(),
                     BigDecimal.valueOf(line.getQuantity()),
+                    line.getUnit(),
                     order.getId(),
                     order.getInvoiceNumber()
-            );
-
-            BigDecimal unitCost = stockEntryService.findLatestUnitCost(
-                    business.getId(), line.getItem().getId());
+            ).getUnitCost();
 
             if (unitCost == null) {
                 unitCost = BigDecimal.ZERO;
             }
 
             line.setUnitCost(unitCost.setScale(2, RoundingMode.HALF_UP));
+
+            // The sale uses up the channel's share of the shelf as well as the
+            // shelf itself. Does nothing for an item whose stock is shared,
+            // which is most of them.
+            itemChannelStockService.consume(
+                    line.getItem(),
+                    line.getVariant(),
+                    order.getChannel(),
+                    line.baseQuantity());
+
+            // The extras go out with it: a tub of pearls empties whether it
+            // was scooped into one drink or ten.
+            for (OrderItemAddOn chosen : line.getAddOns()) {
+                if (chosen.getAddOn() == null) {
+                    continue;
+                }
+
+                stockEntryService.recordAddOnSale(
+                        business,
+                        chosen.getAddOn(),
+                        chosen.getUsePerOrder()
+                                .multiply(BigDecimal.valueOf(line.getQuantity())),
+                        order.getId(),
+                        order.getInvoiceNumber()
+                );
+            }
 
             totalCost = totalCost.add(unitCost.multiply(BigDecimal.valueOf(line.getQuantity())));
             itemCount += line.getQuantity();
@@ -473,7 +532,12 @@ public class OrderServiceImpl implements OrderService {
         return orderMapper.toResponse(orderRepository.save(order));
     }
 
-    private OrderItem buildItem(UUID businessId, CreateOrderItemRequest request) {
+    /** The channel an order came through, as the sales channel knows it. */
+    private static String channelCodeOf(Order order) {
+        return order.getChannel() == null ? null : order.getChannel().name();
+    }
+
+    private OrderItem buildItem(UUID businessId, String channelCode, CreateOrderItemRequest request) {
         Item item = itemRepository.findByIdAndBusinessId(request.itemId(), businessId)
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND, "Item has not been found: " + request.itemId()));
@@ -493,22 +557,173 @@ public class OrderServiceImpl implements OrderService {
             }
         }
 
+        /*
+         * A larger unit is priced in its own right — a case is not twenty-four
+         * times a can, or nobody would buy the case. So its price replaces the
+         * item's rather than multiplying it, and the factor only says what
+         * comes off the shelf.
+         */
+        Unit unit = null;
+        BigDecimal unitFactor = BigDecimal.ONE;
+
+        if (request.unitId() != null && !request.unitId().equals(baseUnitId(item))) {
+            /*
+             * A larger unit belongs to one option: the case defined for Large
+             * is not the one defined for Small, and a shop need not sell both.
+             * So the line's option is part of finding it — never a fallback to
+             * some other option's case, which would sell what nobody offered.
+             */
+            final ItemVariant chosenOption = variant;
+            final UUID lineVariantId = variant == null ? null : variant.getId();
+            ItemUomConversion conversion = item.getUomConversions().stream()
+                    .filter(candidate -> candidate.getUnit() != null
+                            && candidate.getUnit().getId().equals(request.unitId()))
+                    .filter(candidate -> {
+                        UUID candidateVariantId = candidate.getVariant() == null
+                                ? null
+                                : candidate.getVariant().getId();
+
+                        return java.util.Objects.equals(candidateVariantId, lineVariantId);
+                    })
+                    .findFirst()
+                    .orElseThrow(() -> new ResponseStatusException(
+                            HttpStatus.NOT_FOUND,
+                            "\"" + item.getName() + "\""
+                                    + (chosenOption == null
+                                            ? ""
+                                            : " (" + chosenOption.getVariantName() + ")")
+                                    + " is not sold by that unit"));
+
+            if (conversion.getPrice() == null) {
+                throw new ResponseStatusException(
+                        HttpStatus.CONFLICT,
+                        "\"" + item.getName() + "\""
+                                + (variant == null ? "" : " (" + variant.getVariantName() + ")")
+                                + " has no price per " + conversion.getUnit().getName());
+            }
+
+            unitPrice = conversion.getPrice();
+            unit = conversion.getUnit();
+            unitFactor = conversion.getFactor();
+        } else if (item.getUnit() != null) {
+            unit = item.getUnit();
+        }
+
         if (unitPrice == null) {
             throw new ResponseStatusException(
                     HttpStatus.CONFLICT, "Item has no price: " + item.getName());
         }
 
+        /*
+         * The channel gets the last word on what this costs.
+         *
+         * A shop that charges more for delivery set that up once, against the
+         * business price; charging the business price here regardless would
+         * make every one of those exceptions a decoration.
+         */
+        unitPrice = channelPriceResolver.priceFor(
+                businessId,
+                channelCode,
+                unitPrice,
+                item.getId(),
+                variant == null ? null : variant.getId(),
+                unit == null || unit.getId().equals(baseUnitId(item)) ? null : unit.getId());
+
         OrderItem orderItem = new OrderItem();
+        attachAddOns(orderItem, item, request.addOnIds());
         orderItem.setItem(item);
         orderItem.setVariant(variant);
+        orderItem.setUnit(unit);
+        orderItem.setUnitFactor(unitFactor);
         orderItem.setItemName(item.getName());
         orderItem.setQuantity(request.quantity());
         orderItem.setUnitPrice(unitPrice);
         orderItem.setUnitCost(BigDecimal.ZERO);
         orderItem.setDiscountAmount(BigDecimal.ZERO);
-        orderItem.setLineTotal(unitPrice.multiply(BigDecimal.valueOf(request.quantity())));
+        orderItem.setLineTotal(
+                orderItem.priceWithAddOns().multiply(BigDecimal.valueOf(request.quantity())));
 
         return orderItem;
+    }
+
+    private static UUID baseUnitId(Item item) {
+        return item.getUnit() == null ? null : item.getUnit().getId();
+    }
+
+    /**
+     * Whether a line is the same sale as what is being added.
+     *
+     * A case and a can of the same beer are different lines: they carry
+     * different prices and take different amounts off the shelf, so merging
+     * them would lose both.
+     */
+    private static boolean sameLine(
+            OrderItem line, UUID itemId, UUID variantId, UUID unitId, List<UUID> addOnIds) {
+        boolean sameItem = line.getItem().getId().equals(itemId);
+        boolean sameVariant = line.getVariant() == null
+                ? variantId == null
+                : line.getVariant().getId().equals(variantId);
+        UUID lineUnitId = line.getUnit() == null ? null : line.getUnit().getId();
+        // A line in the base unit may carry the unit or not, depending on when
+        // it was written, and both mean the same thing.
+        boolean sameUnit = unitId == null
+                ? lineUnitId == null || lineUnitId.equals(baseUnitId(line.getItem()))
+                : unitId.equals(lineUnitId);
+
+        // A latte with pearls is not the same line as one without.
+        Set<UUID> lineAddOns = line.getAddOns().stream()
+                .map(addOn -> addOn.getAddOn() == null ? null : addOn.getAddOn().getId())
+                .collect(java.util.stream.Collectors.toSet());
+        Set<UUID> wantedAddOns = addOnIds == null
+                ? Set.of()
+                : new java.util.HashSet<>(addOnIds);
+
+        return sameItem && sameVariant && sameUnit && lineAddOns.equals(wantedAddOns);
+    }
+
+    /**
+     * Puts the chosen extras on the line, at what they cost right now.
+     *
+     * Only what the item actually sells: an add-on it does not offer, or one
+     * switched off for it, is refused rather than quietly charged for. The
+     * price and usage are copied onto the line, so the receipt and the stock
+     * it consumed stay readable however the add-on changes later.
+     */
+    private void attachAddOns(OrderItem orderItem, Item item, List<UUID> addOnIds) {
+        if (addOnIds == null || addOnIds.isEmpty()) {
+            return;
+        }
+
+        for (UUID addOnId : addOnIds.stream().filter(java.util.Objects::nonNull).distinct().toList()) {
+            ItemAddOn link = item.getAddOns().stream()
+                    .filter(candidate -> candidate.getAddOn().getId().equals(addOnId))
+                    .findFirst()
+                    .orElseThrow(() -> new ResponseStatusException(
+                            HttpStatus.NOT_FOUND,
+                            "\"" + item.getName() + "\" does not offer that add-on"));
+
+            AddOn addOn = link.getAddOn();
+
+            if (!link.isAvailable()) {
+                throw new ResponseStatusException(
+                        HttpStatus.CONFLICT,
+                        "\"" + addOn.getName() + "\" is not on sale with \"" + item.getName() + "\"");
+            }
+
+            if (addOn.getPrice() == null) {
+                throw new ResponseStatusException(
+                        HttpStatus.CONFLICT,
+                        "\"" + addOn.getName() + "\" has no price yet");
+            }
+
+            OrderItemAddOn line = new OrderItemAddOn();
+            line.setAddOn(addOn);
+            line.setAddOnName(addOn.getName());
+            line.setUnitPrice(addOn.getPrice());
+            line.setUsePerOrder(
+                    addOn.getUsePerOrder() == null ? BigDecimal.ONE : addOn.getUsePerOrder());
+            orderItem.addAddOn(line);
+        }
     }
 
     private Order findOrder(UUID businessId, UUID orderId) {
@@ -567,8 +782,8 @@ public class OrderServiceImpl implements OrderService {
         Order order = validateOrderModification(businessId, orderId);
 
         java.util.Optional<OrderItem> existingOpt = order.getItems().stream()
-                .filter(i -> i.getItem().getId().equals(request.itemId()) &&
-                        (i.getVariant() == null ? request.variantId() == null : i.getVariant().getId().equals(request.variantId())))
+                .filter(i -> sameLine(i, request.itemId(), request.variantId(), request.unitId(),
+                        request.addOnIds()))
                 .findFirst();
 
         if (existingOpt.isPresent()) {
@@ -579,15 +794,16 @@ public class OrderServiceImpl implements OrderService {
                 itemDiscount = itemDiscount.add(request.discountAmount());
                 existing.setDiscountAmount(itemDiscount);
             }
-            existing.setLineTotal(existing.getUnitPrice().multiply(BigDecimal.valueOf(existing.getQuantity())).subtract(itemDiscount));
+            existing.setLineTotal(existing.priceWithAddOns().multiply(BigDecimal.valueOf(existing.getQuantity())).subtract(itemDiscount));
         } else {
             CreateOrderItemRequest createReq = new CreateOrderItemRequest(
-                    request.itemId(), request.variantId(), request.quantity());
+                    request.itemId(), request.variantId(), request.unitId(),
+                    request.addOnIds(), request.quantity());
 
-            OrderItem item = buildItem(businessId, createReq);
+            OrderItem item = buildItem(businessId, channelCodeOf(order), createReq);
             if (request.discountAmount() != null) {
                 item.setDiscountAmount(request.discountAmount());
-                item.setLineTotal(item.getUnitPrice().multiply(BigDecimal.valueOf(item.getQuantity())).subtract(request.discountAmount()));
+                item.setLineTotal(item.priceWithAddOns().multiply(BigDecimal.valueOf(item.getQuantity())).subtract(request.discountAmount()));
             }
             int maxLine = order.getItems().stream()
                     .mapToInt(i -> i.getLineNumber() == null ? 0 : i.getLineNumber())
@@ -621,7 +837,7 @@ public class OrderServiceImpl implements OrderService {
 
         // Recalculate line total
         BigDecimal discount = item.getDiscountAmount() != null ? item.getDiscountAmount() : BigDecimal.ZERO;
-        item.setLineTotal(item.getUnitPrice().multiply(BigDecimal.valueOf(item.getQuantity())).subtract(discount));
+        item.setLineTotal(item.priceWithAddOns().multiply(BigDecimal.valueOf(item.getQuantity())).subtract(discount));
 
         recalculateOrderTotals(order);
         return orderMapper.toResponse(orderRepository.save(order));

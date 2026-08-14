@@ -22,6 +22,17 @@ public interface ItemChannelRepository extends JpaRepository<ItemChannel, UUID> 
         List<ItemChannel> findBySalesChannelIdAndIsEnabledTrue(
                         UUID salesChannelId);
 
+        /** Every link this channel has to one business's items, on or off. */
+        @Query("""
+            SELECT ic FROM ItemChannel ic
+            JOIN FETCH ic.item i
+            WHERE ic.salesChannel.id = :channelId
+              AND i.business.id = :businessId
+        """)
+        List<ItemChannel> findBySalesChannelIdAndBusinessId(
+                        @org.springframework.data.repository.query.Param("channelId") UUID channelId,
+                        @org.springframework.data.repository.query.Param("businessId") UUID businessId);
+
         @Query("SELECT ic FROM ItemChannel ic JOIN FETCH ic.item i WHERE ic.salesChannel.code = :code AND ic.isEnabled = true")
         List<ItemChannel> findBySalesChannelCodeAndIsEnabledTrue(
                         @org.springframework.data.repository.query.Param("code") String code);
