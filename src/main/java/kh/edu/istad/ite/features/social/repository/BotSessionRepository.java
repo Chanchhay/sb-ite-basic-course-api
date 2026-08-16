@@ -11,4 +11,7 @@ public interface BotSessionRepository extends JpaRepository<BotSession, UUID> {
 
     Optional<BotSession> findByBusiness_IdAndChannelAndExternalId(
             UUID businessId, ChannelType channel, String externalId);
+
+    Optional<BotSession> findByBusiness_IdAndChannelAndCustomer_Id(
+            UUID businessId, ChannelType channel, UUID customerId);
 }

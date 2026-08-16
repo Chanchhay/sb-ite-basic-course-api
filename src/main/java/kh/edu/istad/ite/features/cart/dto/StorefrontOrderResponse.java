@@ -39,6 +39,12 @@ public record StorefrontOrderResponse(
             String itemName,
             int quantity,
             BigDecimal unitPrice,
-            BigDecimal lineTotal
+            BigDecimal lineTotal,
+            /**
+             * The options this line was ordered with — "Sugar Level: 50%".
+             * Already rendered for printing, since a receipt has no use for
+             * the stored value once the order exists.
+             */
+            List<String> selections
     ) {}
 }

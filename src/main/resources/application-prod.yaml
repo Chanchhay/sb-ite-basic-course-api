@@ -1,0 +1,127 @@
+# Production.
+server:
+  max-http-request-header-size: 64KB
+  tomcat:
+    # An item save carries a part per field plus one per picture, which is
+    # already past Tomcat's default of 10.
+    max-part-count: 64
+  # A shop losing its connection mid-save should not leave a worker pinned.
+  shutdown: graceful
+
+spring:
+  scalar:
+    url: ${SERVER_URL:localhost://8080}/v3/api-docs
+    path: /docs
+    enabled: true
+
+  application:
+    name: ite-sb-api
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 50MB
+
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          jwk-set-uri: ${JWK_SET_URI:${ISSUER_URI}/protocol/openid-connect/certs}
+          issuer-uri: ${ISSUER_URI}
+          jws-algorithms:
+            - RS256
+            - RS512
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: true
+    open-in-view: false
+    properties:
+      hibernate:
+        format_sql: true
+        jdbc:
+          batch_size: 25
+        order_inserts: true
+        order_updates: true
+
+  datasource:
+    driver-class-name: org.postgresql.Driver
+    # PGHOST must be the private endpoint (`postgres.railway.internal`), not
+    # the `*.proxy.rlwy.net` one: the proxy sends every query out to the public
+    # internet and back for a database in the same project.
+    url: jdbc:postgresql://${PGHOST}:${PGPORT:5432}/${PGDATABASE}
+    username: ${DB_USER}
+    password: ${DB_PASS}
+    hikari:
+      # Sized against Postgres, not against hope: a small pool that queues is
+      # faster than a large one that makes the database thrash. Raise only with
+      # a `max_connections` figure to justify it.
+      maximum-pool-size: ${DB_POOL_MAX:10}
+      minimum-idle: ${DB_POOL_MIN:2}
+      # Fail a request that cannot get a connection rather than hanging the
+      # customer's browser on it.
+      connection-timeout: 10000
+      validation-timeout: 3000
+      idle-timeout: 300000
+      # Under Postgres' own idle cap, so the pool retires a connection before
+      # the server drops it underneath us.
+      max-lifetime: 900000
+
+keycloak:
+  admin:
+    server-url: ${KEYCLOAK_URL}
+    client-id: ${KEYCLOAK_CLIENT_ID}
+    client-secret: ${KEYCLOAK_CLIENT_SECRET}
+    realm: master
+    target-realm: ${TARGET_REALM}
+    send-verification-email: false
+
+app:
+  cors:
+    allowed-origin-patterns:
+      - "https://fluxibiz.store"
+      - "https://www.fluxibiz.store"
+      - "https://*.fluxibiz.store"
+      - "https://business.fluxibiz.store"
+      - "https://administrator.fluxibiz.store"
+      - "https://bo-dashboard-ite-basic-lyart.vercel.app"
+      - "https://sb-ite-basic-course-api-production.up.railway.app"
+  storefront:
+    base-domain: ${BASE_STOREFRONT_DOMAIN}
+    protocol: https
+    path-prefix: /store
+    subdomain-enabled: true
+  security:
+    credential-encryption-key: ${CREDENTIAL_ENCRYPTION_KEY:}
+
+  telegram:
+    api-base-url: https://api.telegram.org
+    webhook-base-url: ${TELEGRAM_WEBHOOK_BASE_URL:}
+    payment-poll-interval-ms: 5000
+    payment-poll-initial-delay-ms: 10000
+
+  facebook:
+    app-id: ${FACEBOOK_APP_ID:}
+    app-secret: ${FACEBOOK_APP_SECRET:}
+    redirect-uri: ${FACEBOOK_OAUTH_REDIRECT_URI:}
+    frontend-result-url: ${FACEBOOK_FRONTEND_RESULT_URL:}
+    webhook-verify-token: ${FACEBOOK_WEBHOOK_VERIFY_TOKEN:fluxibiz_verify_token}
+
+  bakong:
+    base-url: https://api-bakong.nbc.gov.kh
+    timeout: 8s
+
+minio:
+  endpoint: ${MINIO_ENDPOINT}
+  access-key: ${MINIO_ACCESS_KEY}
+  secret-key: ${MINIO_SECRET_KEY}
+  bucket:
+    assets: fluxibix
+
+logging:
+  level:
+    root: INFO
+    # The SQL logger, silenced by name as well as by `show-sql`, so turning one
+    # back on for a debugging session does not quietly turn both on.
+    org.hibernate.SQL: WARN
+    org.hibernate.orm.jdbc.bind: WARN

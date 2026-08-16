@@ -93,6 +93,93 @@ public class KeycloakBotAuthService {
         }
     }
 
+    public KeycloakUserInfo findOrCreateTelegramKeycloakUser(Long telegramId, String firstName, String lastName, String username, String phoneNumber) {
+        String primaryUsername = (username != null && !username.isBlank()) ? username : "telegram_" + telegramId;
+        String fallbackUsername = "telegram_" + telegramId;
+        try {
+            RealmResource realmResource = keycloakAdminClient.realm(realm);
+            UsersResource usersResource = realmResource.users();
+
+            List<UserRepresentation> existingUsers = usersResource.search(primaryUsername, true);
+            if (existingUsers.isEmpty() && !primaryUsername.equalsIgnoreCase(fallbackUsername)) {
+                existingUsers = usersResource.search(fallbackUsername, true);
+            }
+
+            if (!existingUsers.isEmpty()) {
+                UserRepresentation u = existingUsers.get(0);
+                boolean updated = false;
+
+                if (phoneNumber != null && !phoneNumber.isBlank()) {
+                    u.singleAttribute("phoneNumber", phoneNumber);
+                    updated = true;
+                }
+                if (username != null && !username.isBlank()) {
+                    u.singleAttribute("telegramUsername", username);
+                    updated = true;
+                }
+                if (updated) {
+                    try {
+                        usersResource.get(u.getId()).update(u);
+                    } catch (Exception ex) {
+                        log.warn("Could not update Keycloak user attributes: {}", ex.getMessage());
+                    }
+                }
+
+                String userPhone = (phoneNumber != null && !phoneNumber.isBlank()) ? phoneNumber : "N/A";
+                if (u.getAttributes() != null && u.getAttributes().containsKey("phoneNumber")) {
+                    List<String> phones = u.getAttributes().get("phoneNumber");
+                    if (!phones.isEmpty() && phones.get(0) != null) {
+                        userPhone = phones.get(0);
+                    }
+                }
+
+                return new KeycloakUserInfo(
+                        u.getId(),
+                        u.getUsername(),
+                        u.getEmail(),
+                        u.getFirstName(),
+                        u.getLastName(),
+                        userPhone
+                );
+            }
+
+            UserRepresentation user = new UserRepresentation();
+            user.setEnabled(true);
+            user.setUsername(primaryUsername);
+            user.setFirstName(firstName != null ? firstName : "Telegram");
+            user.setLastName(lastName != null ? lastName : "User");
+            user.singleAttribute("telegramId", String.valueOf(telegramId));
+            if (username != null && !username.isBlank()) {
+                user.singleAttribute("telegramUsername", username);
+            }
+            if (phoneNumber != null && !phoneNumber.isBlank()) {
+                user.singleAttribute("phoneNumber", phoneNumber);
+            }
+
+            Response response = usersResource.create(user);
+            if (response.getStatus() == 201) {
+                log.info("Successfully registered Telegram user {} into Keycloak", primaryUsername);
+                List<UserRepresentation> createdList = usersResource.search(primaryUsername, true);
+                if (!createdList.isEmpty()) {
+                    UserRepresentation created = createdList.get(0);
+                    return new KeycloakUserInfo(
+                            created.getId(),
+                            created.getUsername(),
+                            created.getEmail(),
+                            created.getFirstName(),
+                            created.getLastName(),
+                            phoneNumber != null ? phoneNumber : "N/A"
+                    );
+                }
+            } else {
+                log.error("Failed to create Telegram user in Keycloak. Status: {}", response.getStatus());
+            }
+        } catch (Exception e) {
+            log.error("Exception in findOrCreateTelegramKeycloakUser for tgId {}: {}", telegramId, e.getMessage(), e);
+        }
+        return new KeycloakUserInfo("tg_" + telegramId, primaryUsername, null, firstName, lastName, phoneNumber != null ? phoneNumber : "N/A");
+    }
+
 
     public KeycloakUserInfo loginAndFetchUserInfo(String emailOrUsername, String password) {
         try {

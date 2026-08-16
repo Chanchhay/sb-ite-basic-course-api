@@ -26,6 +26,17 @@ public interface ItemService {
 
     ItemResponse updateItem(UUID businessId, UUID itemId, UpdateItemRequest request, List<MultipartFile> files);
 
+    /**
+     * Changes only which add-ons the item offers.
+     *
+     * A narrow write on purpose: attaching one from a list row must not be
+     * able to touch the item's name, images or anything else it never saw.
+     */
+    ItemResponse updateItemAddOns(UUID businessId, UUID itemId, List<UUID> addOnIds);
+
+    /** Turns one add-on on or off for one item, without unlinking it. */
+    ItemResponse updateItemAddOnAvailability(UUID businessId, UUID itemId, UUID addOnId, boolean available);
+
     void deleteItem(UUID businessId, UUID itemId);
 
     ItemResponse findItemByBarcode(UUID businessId, String barcode);

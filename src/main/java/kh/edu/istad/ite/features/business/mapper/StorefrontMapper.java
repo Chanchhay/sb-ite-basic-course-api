@@ -4,10 +4,13 @@ import kh.edu.istad.ite.config.props.StorefrontProps;
 import kh.edu.istad.ite.features.business.dto.PublicStoreDetailResponse;
 import kh.edu.istad.ite.features.business.dto.PublicStoreResponse;
 import kh.edu.istad.ite.features.business.entity.Business;
+import kh.edu.istad.ite.features.channel.dto.ChannelScheduleDto;
+import kh.edu.istad.ite.features.channel.service.ChannelPriceResolver;
 import kh.edu.istad.ite.features.discount.entity.Discount;
 import kh.edu.istad.ite.features.discount.repository.DiscountRepository;
 import kh.edu.istad.ite.features.minio.MinioService;
 import kh.edu.istad.ite.shared.enums.DiscountRuleType;
+import kh.edu.istad.ite.shared.enums.DiscountScope;
 import kh.edu.istad.ite.shared.enums.DiscountType;
 import kh.edu.istad.ite.shared.enums.RecordStatus;
 import lombok.RequiredArgsConstructor;
@@ -25,6 +28,10 @@ public class StorefrontMapper {
     private final BusinessMapper businessMapper;
     private final MinioService minioService;
     private final DiscountRepository discountRepository;
+    private final ChannelPriceResolver channelPriceResolver;
+
+    /** The seeded channel the online store trades as. */
+    private static final String WEB_CHANNEL_CODE = "WEB";
 
     public String buildStorefrontUrl(String slug) {
         if (slug == null) {
@@ -57,7 +64,9 @@ public class StorefrontMapper {
                 business.getId(),
                 RecordStatus.ACTIVE,
                 LocalDateTime.now()
-        );
+        ).stream()
+         .filter(d -> d.getScope() == DiscountScope.ORDER || d.getScope() == DiscountScope.ALL_ITEMS)
+         .toList();
         if (activeDiscounts == null || activeDiscounts.isEmpty()) {
             return null;
         }
@@ -83,6 +92,30 @@ public class StorefrontMapper {
         return primary.getName();
     }
 
+    /**
+     * The hours the shop set for its Online Store.
+     *
+     * Read from the WEB channel rather than from the business's own open and
+     * close times: those are the shopfront's hours, and a shop can perfectly
+     * well take web orders after the doors are locked — or stop taking them
+     * before. The channel's schedule is what the checkout enforces, so it is
+     * the only one worth showing.
+     */
+    private ChannelScheduleDto onlineHoursOf(Business business) {
+        return channelPriceResolver.scheduleFor(business.getId(), WEB_CHANNEL_CODE);
+    }
+
+    /** Whether web orders are being taken right now: the switch and the hours. */
+    private boolean isTakingWebOrders(Business business) {
+        if (Boolean.TRUE.equals(business.getIsClosed())) {
+            return false;
+        }
+
+        ChannelScheduleDto hours = onlineHoursOf(business);
+
+        return hours == null || hours.isOpenAt(LocalDateTime.now());
+    }
+
     public PublicStoreResponse toPublicResponse(Business business) {
         boolean isClosed = Boolean.TRUE.equals(business.getIsClosed());
         return new PublicStoreResponse(
@@ -96,7 +129,7 @@ public class StorefrontMapper {
                 buildStorefrontUrl(business.getSlug()),
                 businessMapper.toSubCategoryResponse(business.getBusinessCategory()),
                 isClosed,
-                !isClosed,
+                isTakingWebOrders(business),
                 resolveDiscountLabel(business),
                 business.getOpenTime(),
                 business.getCloseTime()
@@ -105,6 +138,8 @@ public class StorefrontMapper {
 
     public PublicStoreDetailResponse toPublicDetailResponse(Business business) {
         boolean isClosed = Boolean.TRUE.equals(business.getIsClosed());
+        ChannelScheduleDto onlineHours = onlineHoursOf(business);
+        boolean openNow = isTakingWebOrders(business);
         return new PublicStoreDetailResponse(
                 business.getId(),
                 business.getSlug(),
@@ -123,10 +158,15 @@ public class StorefrontMapper {
                 businessMapper.toSubCategoryResponse(business.getBusinessCategory()),
                 business.getSocialLinks(),
                 isClosed,
-                !isClosed,
+                openNow,
                 resolveDiscountLabel(business),
                 business.getOpenTime(),
-                business.getCloseTime()
+                business.getCloseTime(),
+                onlineHours,
+                openNow,
+                onlineHours == null
+                        ? null
+                        : onlineHours.describeDay(LocalDateTime.now().getDayOfWeek())
         );
     }
 }

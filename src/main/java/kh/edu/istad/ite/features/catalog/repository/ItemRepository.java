@@ -31,7 +31,9 @@ public interface ItemRepository extends JpaRepository<Item, UUID>, JpaSpecificat
 
         boolean existsByBusinessIdAndSlugIgnoreCaseAndIdNot(UUID businessId, String slug, UUID id);
 
-        boolean existsByBusinessIdAndItemGroupId(UUID businessId, UUID itemGroupId);
+        boolean existsByBusinessIdAndAddOnsId(UUID businessId, UUID addOnId);
+
+    boolean existsByBusinessIdAndItemGroupId(UUID businessId, UUID itemGroupId);
 
         boolean existsByBusiness_Id(UUID businessId);
 

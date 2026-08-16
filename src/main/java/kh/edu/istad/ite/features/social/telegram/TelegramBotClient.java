@@ -36,9 +36,7 @@ public class TelegramBotClient {
     private final RestClient restClient;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-
-    private final ExecutorService fireAndForget =
-            Executors.newVirtualThreadPerTaskExecutor();
+    private final ExecutorService fireAndForget = Executors.newVirtualThreadPerTaskExecutor();
 
     public TelegramBotClient(TelegramProps props) {
 
@@ -58,9 +56,10 @@ public class TelegramBotClient {
     public TelegramBotIdentity getMe(String botToken) {
         try {
             Map<String, Object> body = restClient.get()
-                    .uri("/bot{token}/getMe", botToken)
+                    .uri("/bot" + botToken + "/getMe")
                     .retrieve()
-                    .body(new ParameterizedTypeReference<Map<String, Object>>() {});
+                    .body(new ParameterizedTypeReference<Map<String, Object>>() {
+                    });
 
             if (body == null || !Boolean.TRUE.equals(body.get("ok"))) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Telegram rejected this bot token");
@@ -87,15 +86,15 @@ public class TelegramBotClient {
             Map<String, Object> requestBody = Map.of(
                     "url", webhookUrl,
                     "secret_token", secretToken,
-                    "allowed_updates", List.of("message", "callback_query")
-            );
+                    "allowed_updates", List.of("message", "callback_query"));
 
             Map<String, Object> body = restClient.post()
-                    .uri("/bot{token}/setWebhook", botToken)
+                    .uri("/bot" + botToken + "/setWebhook")
                     .contentType(MediaType.APPLICATION_JSON)
                     .body(requestBody)
                     .retrieve()
-                    .body(new ParameterizedTypeReference<Map<String, Object>>() {});
+                    .body(new ParameterizedTypeReference<Map<String, Object>>() {
+                    });
 
             if (body == null || !Boolean.TRUE.equals(body.get("ok"))) {
                 throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "Failed to register the Telegram webhook");
@@ -109,7 +108,7 @@ public class TelegramBotClient {
     public void deleteWebhook(String botToken) {
         try {
             restClient.get()
-                    .uri("/bot{token}/deleteWebhook", botToken)
+                    .uri("/bot" + botToken + "/deleteWebhook")
                     .retrieve()
                     .toBodilessEntity();
         } catch (RestClientException exception) {
@@ -117,21 +116,27 @@ public class TelegramBotClient {
         }
     }
 
-
     public void sendMessage(String botToken, Long chatId, String text) {
-        sendMessage(botToken, chatId, text, null);
+        sendMessage(botToken, chatId, text, null, null);
     }
 
-
     public void sendMessage(String botToken, Long chatId, String text, List<List<InlineKeyboardButton>> keyboard) {
+        sendMessage(botToken, chatId, text, keyboard, null);
+    }
+
+    public void sendMessage(String botToken, Long chatId, String text, ReplyKeyboardMarkup replyKeyboardMarkup) {
+        sendMessage(botToken, chatId, text, null, replyKeyboardMarkup);
+    }
+
+    public void sendMessage(String botToken, Long chatId, String text, List<List<InlineKeyboardButton>> keyboard, ReplyKeyboardMarkup replyKeyboardMarkup) {
         String safeText = truncate(nullSafe(text, "..."), MAX_MESSAGE_LENGTH);
 
-        if (postMessage(botToken, chatId, safeText, keyboard, true)) {
+        if (postMessage(botToken, chatId, safeText, keyboard, replyKeyboardMarkup, true)) {
             return;
         }
 
         log.warn("Retrying chat {} without parse_mode after Telegram rejected the Markdown", chatId);
-        postMessage(botToken, chatId, safeText, keyboard, false);
+        postMessage(botToken, chatId, safeText, keyboard, replyKeyboardMarkup, false);
     }
 
     private boolean postMessage(
@@ -139,8 +144,8 @@ public class TelegramBotClient {
             Long chatId,
             String text,
             List<List<InlineKeyboardButton>> keyboard,
-            boolean withParseMode
-    ) {
+            ReplyKeyboardMarkup replyKeyboardMarkup,
+            boolean withParseMode) {
         try {
             Map<String, Object> requestBody = new HashMap<>();
             requestBody.put("chat_id", chatId);
@@ -150,13 +155,17 @@ public class TelegramBotClient {
                 requestBody.put("parse_mode", PARSE_MODE);
             }
 
-            Map<String, Object> replyMarkup = buildReplyMarkup(keyboard);
-            if (replyMarkup != null) {
-                requestBody.put("reply_markup", replyMarkup);
+            if (keyboard != null && !keyboard.isEmpty()) {
+                Map<String, Object> replyMarkup = buildReplyMarkup(keyboard);
+                if (replyMarkup != null) {
+                    requestBody.put("reply_markup", replyMarkup);
+                }
+            } else if (replyKeyboardMarkup != null) {
+                requestBody.put("reply_markup", replyKeyboardMarkup);
             }
 
             restClient.post()
-                    .uri("/bot{token}/sendMessage", botToken)
+                    .uri("/bot" + botToken + "/sendMessage")
                     .contentType(MediaType.APPLICATION_JSON)
                     .body(requestBody)
                     .retrieve()
@@ -182,7 +191,7 @@ public class TelegramBotClient {
             }
 
             restClient.post()
-                    .uri("/bot{token}/answerCallbackQuery", botToken)
+                    .uri("/bot" + botToken + "/answerCallbackQuery")
                     .contentType(MediaType.APPLICATION_JSON)
                     .body(requestBody)
                     .retrieve()
@@ -192,9 +201,8 @@ public class TelegramBotClient {
         }
     }
 
-
     public void sendPhoto(String botToken, Long chatId, String photoUrl, String caption,
-                          List<List<InlineKeyboardButton>> keyboard) {
+            List<List<InlineKeyboardButton>> keyboard) {
         String safeCaption = truncate(nullSafe(caption, ""), MAX_CAPTION_LENGTH);
 
         try {
@@ -210,7 +218,7 @@ public class TelegramBotClient {
             }
 
             restClient.post()
-                    .uri("/bot{token}/sendPhoto", botToken)
+                    .uri("/bot" + botToken + "/sendPhoto")
                     .contentType(MediaType.APPLICATION_JSON)
                     .body(requestBody)
                     .retrieve()
@@ -226,12 +234,11 @@ public class TelegramBotClient {
         }
     }
 
-
-    public void sendPhotoBytes(String botToken, Long chatId, byte[] photo, String filename,
-                               String caption, List<List<InlineKeyboardButton>> keyboard) {
+    public Integer sendPhotoBytes(String botToken, Long chatId, byte[] photo, String filename,
+            String caption, List<List<InlineKeyboardButton>> keyboard) {
         if (photo == null || photo.length == 0) {
             sendMessage(botToken, chatId, caption, keyboard);
-            return;
+            return null;
         }
 
         String safeCaption = truncate(nullSafe(caption, ""), MAX_CAPTION_LENGTH);
@@ -250,24 +257,34 @@ public class TelegramBotClient {
 
             Map<String, Object> replyMarkup = buildReplyMarkup(keyboard);
             if (replyMarkup != null) {
-                // In multipart, reply_markup must be a JSON-encoded string.
                 form.add("reply_markup", objectMapper.writeValueAsString(replyMarkup));
             }
 
-            restClient.post()
-                    .uri("/bot{token}/sendPhoto", botToken)
+            Map<String, Object> response = restClient.post()
+                    .uri("/bot" + botToken + "/sendPhoto")
                     .contentType(MediaType.MULTIPART_FORM_DATA)
                     .body(form)
                     .retrieve()
-                    .toBodilessEntity();
+                    .body(new ParameterizedTypeReference<Map<String, Object>>() {
+                    });
+
+            if (response != null && Boolean.TRUE.equals(response.get("ok"))) {
+                if (response.get("result") instanceof Map<?, ?> result) {
+                    Number messageId = (Number) result.get("message_id");
+                    return messageId != null ? messageId.intValue() : null;
+                }
+            }
+            return null;
         } catch (HttpStatusCodeException exception) {
             log.warn("Telegram sendPhotoBytes failed for chat {}: {} -> {}. Falling back to text.",
                     chatId, exception.getStatusCode(), exception.getResponseBodyAsString());
             sendMessage(botToken, chatId, caption, keyboard);
+            return null;
         } catch (Exception exception) {
             log.warn("Telegram sendPhotoBytes failed for chat {}: {}. Falling back to text.",
                     chatId, exception.getMessage());
             sendMessage(botToken, chatId, caption, keyboard);
+            return null;
         }
     }
 
@@ -278,30 +295,27 @@ public class TelegramBotClient {
         try {
             Map<String, Object> requestBody = Map.of(
                     "chat_id", chatId,
-                    "message_id", messageId
-            );
+                    "message_id", messageId);
 
             restClient.post()
-                    .uri("/bot{token}/deleteMessage", botToken)
+                    .uri("/bot" + botToken + "/deleteMessage")
                     .contentType(MediaType.APPLICATION_JSON)
                     .body(requestBody)
                     .retrieve()
                     .toBodilessEntity();
         } catch (RestClientException exception) {
-            log.warn("Telegram deleteMessage failed for chat {} message {}: {}", chatId, messageId, exception.getMessage());
+            log.warn("Telegram deleteMessage failed for chat {} message {}: {}", chatId, messageId,
+                    exception.getMessage());
         }
     }
-
 
     public void answerCallbackQueryAsync(String botToken, String callbackQueryId, String toastText) {
         fireAndForget.execute(() -> answerCallbackQuery(botToken, callbackQueryId, toastText));
     }
 
-
     public void deleteMessageAsync(String botToken, Long chatId, Integer messageId) {
         fireAndForget.execute(() -> deleteMessage(botToken, chatId, messageId));
     }
-
 
     private Map<String, Object> buildReplyMarkup(List<List<InlineKeyboardButton>> keyboard) {
         if (keyboard == null || keyboard.isEmpty()) {
@@ -331,7 +345,6 @@ public class TelegramBotClient {
                 ? Map.of("text", button.label(), "url", button.url())
                 : Map.of("text", button.label(), "callback_data", truncateCallbackData(button.callbackData()));
     }
-
 
     private String truncateCallbackData(String data) {
         if (data.length() <= 64) {

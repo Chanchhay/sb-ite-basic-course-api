@@ -273,7 +273,9 @@ keyword, itemGroupId, unitId, availability, minPrice, maxPrice
 
 # 10. Item Variants
 
-The latest variant table contains no barcode or status field.
+A variant carries its own `sku`, `barcode` and `imageUrl` — each variation is
+scanned and counted on its own, and the storefront swaps to the variant's
+picture when a shopper picks that option. There is still no status field.
 
 | Method | Endpoint | Description |
 |---|---|---|

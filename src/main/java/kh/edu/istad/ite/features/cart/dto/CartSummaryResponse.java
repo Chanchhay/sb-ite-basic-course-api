@@ -34,10 +34,51 @@ public record CartSummaryResponse(
             String name,
             String description,
             String imageUrl,
+            /**
+             * The chips shown under the line — the option, then each choice.
+             * Kept as flat display text so a cart list needs no vocabulary for
+             * what it is showing; {@link #selections} is the structured form
+             * for anything that does.
+             */
             List<String> badges,
+            /** The options chosen, by name, for a client that wants them apart. */
+            List<Selection> selections,
+            /** The extras ticked, priced as they stood when they were. */
+            List<AddOn> addOns,
+            /**
+             * The unit bought, and how many base units one of them holds. A
+             * case of twenty-four must never read as a single can — it is
+             * different money and different stock.
+             */
+            UUID unitId,
+            String unitName,
+            BigDecimal unitFactor,
             int quantity,
+            /** The thing itself, without its extras. */
             BigDecimal unitPrice,
+            /**
+             * What one of this line is actually billed at — the price above
+             * plus every extra ticked on it. This is what {@link #subtotal}
+             * is a multiple of, so a cart that shows a per-unit price should
+             * show this one.
+             */
+            BigDecimal unitPriceWithAddOns,
             BigDecimal subtotal
+    ) {
+    }
+
+    public record Selection(
+            String attributeName,
+            String value,
+            String label
+    ) {
+    }
+
+    /** One extra riding on a line, at the price it was ticked at. */
+    public record AddOn(
+            UUID addOnId,
+            String name,
+            BigDecimal unitPrice
     ) {
     }
 }

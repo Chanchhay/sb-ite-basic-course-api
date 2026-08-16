@@ -24,7 +24,12 @@ public class TelegramWebhookController {
             @RequestHeader(value = "X-Telegram-Bot-Api-Secret-Token", required = false) String secretTokenHeader,
             @RequestBody TelegramUpdate update
     ) {
-        telegramWebhookService.handleUpdate(webhookSecret, secretTokenHeader, update);
+        try {
+            telegramWebhookService.handleUpdate(webhookSecret, secretTokenHeader, update);
+        } catch (Exception e) {
+            // Catch UnexpectedRollbackException or any other exception 
+            // to ensure we always return 200 OK to Telegram and prevent infinite retries.
+        }
         return ResponseEntity.ok().build();
     }
 }
