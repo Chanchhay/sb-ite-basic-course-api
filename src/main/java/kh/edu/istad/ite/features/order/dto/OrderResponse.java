@@ -17,6 +17,8 @@ public record OrderResponse(
         OrderStatus status,
         BigDecimal subtotal,
         BigDecimal discountAmount,
+        BigDecimal taxRate,
+        BigDecimal taxAmount,
         BigDecimal total,
         String currency,
         /** The second currency this order was shown in, frozen at creation. */

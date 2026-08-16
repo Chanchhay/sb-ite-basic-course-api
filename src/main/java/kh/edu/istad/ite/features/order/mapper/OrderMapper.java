@@ -30,6 +30,8 @@ public class OrderMapper {
                 order.getStatus(),
                 order.getSubtotal(),
                 order.getDiscountAmount(),
+                order.getTaxRate(),
+                order.getTaxAmount(),
                 order.getTotal(),
                 order.getCurrency(),
                 order.getDisplayCurrency(),

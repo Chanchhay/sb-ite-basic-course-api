@@ -15,6 +15,8 @@ public record SaleResponse(
         OrderChannel channel,
         BigDecimal subtotal,
         BigDecimal discountAmount,
+        BigDecimal taxRate,
+        BigDecimal taxAmount,
         BigDecimal totalAmount,
         BigDecimal paidAmount,
         BigDecimal changeAmount,

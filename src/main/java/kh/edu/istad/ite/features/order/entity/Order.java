@@ -66,6 +66,12 @@ public class Order extends BasedAuditingEntity {
     @Column(name = "discount_amount", nullable = false, precision = 12, scale = 2)
     private BigDecimal discountAmount = BigDecimal.ZERO;
 
+    @Column(name = "tax_rate", precision = 5, scale = 2)
+    private BigDecimal taxRate = BigDecimal.ZERO;
+
+    @Column(name = "tax_amount", nullable = false, precision = 12, scale = 2)
+    private BigDecimal taxAmount = BigDecimal.ZERO;
+
     @Column(nullable = false, precision = 12, scale = 2)
     private BigDecimal total = BigDecimal.ZERO;
 

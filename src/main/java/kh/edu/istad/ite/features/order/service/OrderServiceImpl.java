@@ -442,6 +442,8 @@ public class OrderServiceImpl implements OrderService {
         sale.setChannel(order.getChannel());
         sale.setSubtotal(order.getSubtotal());
         sale.setDiscountAmount(order.getDiscountAmount());
+          sale.setTaxRate(order.getTaxRate());
+          sale.setTaxAmount(order.getTaxAmount() != null ? order.getTaxAmount() : BigDecimal.ZERO);
         sale.setTotalAmount(total);
         sale.setPaidAmount(received);
         sale.setChangeAmount(received.subtract(total).setScale(scale, RoundingMode.HALF_UP));
@@ -496,6 +498,8 @@ public class OrderServiceImpl implements OrderService {
                 sale.getChannel(),
                 sale.getSubtotal(),
                 sale.getDiscountAmount(),
+                sale.getTaxRate(),
+                sale.getTaxAmount(),
                 sale.getTotalAmount(),
                 sale.getPaidAmount(),
                 sale.getChangeAmount(),
