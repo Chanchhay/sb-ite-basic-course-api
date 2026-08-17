@@ -16,6 +16,12 @@ public record PayOrderRequest(
 
         TaxInclusionType taxInclusionType,
 
+        @PositiveOrZero
+        BigDecimal taxRate,
+
+        @PositiveOrZero
+        BigDecimal taxAmount,
+
         String note
 ) {
 }

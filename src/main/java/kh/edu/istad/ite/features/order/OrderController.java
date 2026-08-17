@@ -133,4 +133,13 @@ public class OrderController {
     ) {
         return orderService.updateOrderNote(businessId, orderId, request);
     }
+
+    @PatchMapping("/{orderId}/discount")
+    public OrderResponse updateOrderDiscount(
+            @PathVariable UUID businessId,
+            @PathVariable UUID orderId,
+            @Valid @RequestBody UpdateOrderDiscountRequest request
+    ) {
+        return orderService.updateOrderDiscount(businessId, orderId, request);
+    }
 }
