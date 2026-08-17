@@ -12,6 +12,7 @@ public interface RegisterSessionService {
     RegisterSessionResponse openSession(OpenSessionRequest request, String userId);
     RegisterSessionResponse closeSession(Long sessionId, CloseSessionRequest request);
     RegisterSessionResponse getCurrentSession(String userId);
+    List<RegisterSessionResponse> listSessions(String userId);
     RegisterSessionResponse joinSession(Long sessionId, String userId);
     RegisterSessionResponse getSessionSummary(Long sessionId);
     CashMovementResponse addCashMovement(Long sessionId, CashMovementRequest request);

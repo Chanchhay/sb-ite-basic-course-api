@@ -61,6 +61,12 @@ public class RegisterSessionController {
         return ResponseEntity.ok(sessionService.getCashMovements(sessionId));
     }
 
+    @GetMapping("/sessions")
+    public ResponseEntity<List<RegisterSessionResponse>> listSessions() {
+        String userId = AuthHelper.currentUserId().toString();
+        return ResponseEntity.ok(sessionService.listSessions(userId));
+    }
+
     @GetMapping("/sessions/current")
     public ResponseEntity<RegisterSessionResponse> getCurrentSession() {
         String userId = AuthHelper.currentUserId().toString();
@@ -77,4 +83,7 @@ public class RegisterSessionController {
         RegisterSessionResponse response = sessionService.joinSession(sessionId, userId);
         return ResponseEntity.ok(response);
     }
+
+
+
 }
