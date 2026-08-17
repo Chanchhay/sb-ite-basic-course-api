@@ -70,6 +70,7 @@ import kh.edu.istad.ite.shared.enums.PaymentMethodType;
 import kh.edu.istad.ite.shared.enums.QrStatus;
 import kh.edu.istad.ite.shared.enums.ReceiptType;
 import kh.edu.istad.ite.shared.enums.SessionStatus;
+import kh.edu.istad.ite.shared.enums.TaxInclusionType;
 import kh.edu.istad.ite.shared.helper.AuthHelper;
 import kh.edu.istad.ite.shared.helper.BusinessHelper;
 import kh.edu.istad.ite.shared.helper.CurrencyDisplayHelper;
@@ -123,6 +124,8 @@ public class OrderServiceImpl implements OrderService {
         order.setStatus(OrderStatus.PENDING);
         order.setNote(request.note());
         order.setCurrency(resolveCurrency(request.currency(), business));
+        TaxInclusionType inclusionType = resolveTaxInclusionType(request.taxInclusionType());
+        order.setTaxInclusionType(inclusionType);
         applyDisplayCurrency(business, order);
         order.setInvoiceNumber(nextInvoiceNumber(business.getId()));
         // Whoever is signed in is the one working the till.
@@ -288,7 +291,7 @@ public class OrderServiceImpl implements OrderService {
                     "Received " + received + " is less than the total " + total);
         }
 
-        return toSaleResponse(settle(business, order, request.paymentMethod(), received, request.note()));
+        return toSaleResponse(settle(business, order, request, request.paymentMethod(), received, request.note()));
     }
 
     @Override
@@ -341,7 +344,7 @@ public class OrderServiceImpl implements OrderService {
         qrCode.setStatus(QrStatus.PAID);
         qrCode.setPaidAt(paidAt);
 
-        settle(business, order, PaymentMethodType.DIGITAL, order.getTotal(), null);
+        settle(business, order, null, PaymentMethodType.DIGITAL, order.getTotal(), null);
 
         telegramAlertService.sendQrPaymentAlert(order);
 
@@ -354,6 +357,7 @@ public class OrderServiceImpl implements OrderService {
     private Sale settle(
             Business business,
             Order order,
+            PayOrderRequest request,
             PaymentMethodType paymentMethod,
             BigDecimal received,
             String note
@@ -430,6 +434,10 @@ public class OrderServiceImpl implements OrderService {
             itemCount += line.getQuantity();
         }
 
+        TaxInclusionType inclusionType = request != null && request.taxInclusionType() != null
+                ? request.taxInclusionType()
+                : (order.getTaxInclusionType() != null ? order.getTaxInclusionType() : TaxInclusionType.EXCLUSIVE);
+        order.setTaxInclusionType(inclusionType);
         order.setStatus(OrderStatus.PAID);
         orderRepository.save(order);
 
@@ -442,8 +450,9 @@ public class OrderServiceImpl implements OrderService {
         sale.setChannel(order.getChannel());
         sale.setSubtotal(order.getSubtotal());
         sale.setDiscountAmount(order.getDiscountAmount());
-          sale.setTaxRate(order.getTaxRate());
-          sale.setTaxAmount(order.getTaxAmount() != null ? order.getTaxAmount() : BigDecimal.ZERO);
+        sale.setTaxRate(order.getTaxRate());
+        sale.setTaxAmount(order.getTaxAmount() != null ? order.getTaxAmount() : BigDecimal.ZERO);
+        sale.setTaxInclusionType(inclusionType);
         sale.setTotalAmount(total);
         sale.setPaidAmount(received);
         sale.setChangeAmount(received.subtract(total).setScale(scale, RoundingMode.HALF_UP));
@@ -489,29 +498,12 @@ public class OrderServiceImpl implements OrderService {
         return CURRENCY_KHR.equalsIgnoreCase(order.getCurrency()) ? 0 : 2;
     }
 
+    private TaxInclusionType resolveTaxInclusionType(TaxInclusionType inclusionType) {
+        return inclusionType == null ? TaxInclusionType.EXCLUSIVE : inclusionType;
+    }
+
     private SaleResponse toSaleResponse(Sale sale) {
-        return new SaleResponse(
-                sale.getId(),
-                sale.getOrder().getId(),
-                sale.getInvoiceNumber(),
-                sale.getCashierId(),
-                sale.getChannel(),
-                sale.getSubtotal(),
-                sale.getDiscountAmount(),
-                sale.getTaxRate(),
-                sale.getTaxAmount(),
-                sale.getTotalAmount(),
-                sale.getPaidAmount(),
-                sale.getChangeAmount(),
-                sale.getTotalCost(),
-                sale.getCurrency(),
-                sale.getDisplayCurrency(),
-                sale.getDisplayExchangeRate(),
-                sale.getPaymentMethod(),
-                sale.getItemCount(),
-                sale.getNote(),
-                sale.getSoldAt()
-        );
+        return orderMapper.toSaleResponse(sale);
     }
 
     @Override

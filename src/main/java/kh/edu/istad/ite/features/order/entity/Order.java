@@ -6,6 +6,7 @@ import kh.edu.istad.ite.features.business.entity.Business;
 import kh.edu.istad.ite.features.customer.entity.Customer;
 import kh.edu.istad.ite.shared.enums.OrderChannel;
 import kh.edu.istad.ite.shared.enums.OrderStatus;
+import kh.edu.istad.ite.shared.enums.TaxInclusionType;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -71,6 +72,15 @@ public class Order extends BasedAuditingEntity {
 
     @Column(name = "tax_amount", nullable = false, precision = 12, scale = 2)
     private BigDecimal taxAmount = BigDecimal.ZERO;
+
+    @Enumerated(EnumType.STRING)
+    @Column(
+            name = "tax_inclusion_type",
+            nullable = false,
+            length = 20,
+            columnDefinition = "varchar(20) default 'EXCLUSIVE'"
+    )
+    private TaxInclusionType taxInclusionType = TaxInclusionType.EXCLUSIVE;
 
     @Column(nullable = false, precision = 12, scale = 2)
     private BigDecimal total = BigDecimal.ZERO;

@@ -5,6 +5,7 @@ import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.PositiveOrZero;
 import kh.edu.istad.ite.shared.enums.OrderChannel;
+import kh.edu.istad.ite.shared.enums.TaxInclusionType;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -21,6 +22,8 @@ public record CreateOrderRequest(
 
         @PositiveOrZero
         BigDecimal discountAmount,
+
+        TaxInclusionType taxInclusionType,
 
         String currency,
 
