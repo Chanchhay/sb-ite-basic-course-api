@@ -36,3 +36,8 @@ out/
 
 ### VS Code ###
 .vscode/
+
+# Server secrets — never commit. .env.example is the tracked template.
+.env
+.env.*
+!.env.example
