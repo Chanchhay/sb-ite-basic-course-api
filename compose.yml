@@ -3,7 +3,7 @@
 # here publishes a port to the host.
 services:
   db:
-    image: postgres:17-alpine
+    image: postgres:18-alpine
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${PGDATABASE}
@@ -21,7 +21,9 @@ services:
     # Deliberately off the proxy network: the database is not a web service.
 
   api:
-    image: ghcr.io/chanchhay/sb-ite-basic-course-api:latest
+    # IMAGE_TAG is rewritten in .env by the Jenkins Deploy stage; it falls
+    # back to latest for a hand-run compose on a fresh box.
+    image: asia-southeast1-docker.pkg.dev/project-6f8e390c-7ad4-4d23-b1b/backend-images/ipos-api:${IMAGE_TAG:-latest}
     restart: unless-stopped
     depends_on:
       db:
