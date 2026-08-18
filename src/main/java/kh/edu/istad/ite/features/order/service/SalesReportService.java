@@ -1,26 +1,22 @@
 package kh.edu.istad.ite.features.order.service;
 
+import kh.edu.istad.ite.features.order.dto.DailyChannelRevenue;
 import kh.edu.istad.ite.features.order.dto.SalesProfitResponse;
 import kh.edu.istad.ite.features.order.repository.SaleRepository;
+import kh.edu.istad.ite.shared.enums.OrderChannel;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
-/**
- * What the shop made, per channel it sells on.
- *
- * The arithmetic is trivial; the reason it lives here rather than on the
- * screen is that the rows come out of a {@code group by} the caller never
- * sees. A client totalling its own pages can only ever total the pages it
- * asked for, and quietly under-reports the moment a shop has a good year.
- */
+
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
@@ -96,6 +92,19 @@ public class SalesReportService {
                         ? null
                         : profit.multiply(BigDecimal.valueOf(100))
                                 .divide(takings, 2, RoundingMode.HALF_UP));
+    }
+
+    public List<DailyChannelRevenue> dailyRevenueByChannel(
+            UUID businessId,
+            LocalDateTime from,
+            LocalDateTime to) {
+
+        return saleRepository.dailyRevenueByChannel(businessId, from, to).stream()
+                .map(row -> new DailyChannelRevenue(
+                        LocalDate.parse(row.getDay()),
+                        OrderChannel.valueOf(row.getChannel()),
+                        money(row.getRevenue())))
+                .toList();
     }
 
     private static BigDecimal orZero(BigDecimal value) {
