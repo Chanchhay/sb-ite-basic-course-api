@@ -13,7 +13,7 @@ pipeline {
         REPOSITORY = 'backend-images'
         APP_NAME   = 'ipos-api'
 
-        DEPLOY_HOST = 'YOUR_LINUX_USER@10.148.0.2'
+        DEPLOY_HOST = 'chanchhay@10.148.0.2'
         DEPLOY_DIR  = '/opt/apps/ipos'
     }
 
