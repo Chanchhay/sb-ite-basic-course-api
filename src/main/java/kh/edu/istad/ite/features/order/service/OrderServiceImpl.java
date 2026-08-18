@@ -44,6 +44,7 @@ import kh.edu.istad.ite.features.order.dto.PayOrderRequest;
 import kh.edu.istad.ite.features.order.dto.PaymentStatusResponse;
 import kh.edu.istad.ite.features.order.dto.SaleResponse;
 import kh.edu.istad.ite.features.order.dto.UpdateOrderItemRequest;
+import kh.edu.istad.ite.features.order.dto.UpdateOrderDiscountRequest;
 import kh.edu.istad.ite.features.order.dto.UpdateOrderNoteRequest;
 import kh.edu.istad.ite.features.order.entity.Order;
 import kh.edu.istad.ite.features.order.entity.OrderItem;
@@ -70,6 +71,7 @@ import kh.edu.istad.ite.shared.enums.PaymentMethodType;
 import kh.edu.istad.ite.shared.enums.QrStatus;
 import kh.edu.istad.ite.shared.enums.ReceiptType;
 import kh.edu.istad.ite.shared.enums.SessionStatus;
+import kh.edu.istad.ite.shared.enums.TaxInclusionType;
 import kh.edu.istad.ite.shared.helper.AuthHelper;
 import kh.edu.istad.ite.shared.helper.BusinessHelper;
 import kh.edu.istad.ite.shared.helper.CurrencyDisplayHelper;
@@ -123,6 +125,8 @@ public class OrderServiceImpl implements OrderService {
         order.setStatus(OrderStatus.PENDING);
         order.setNote(request.note());
         order.setCurrency(resolveCurrency(request.currency(), business));
+        TaxInclusionType inclusionType = resolveTaxInclusionType(request.taxInclusionType());
+        order.setTaxInclusionType(inclusionType);
         applyDisplayCurrency(business, order);
         order.setInvoiceNumber(nextInvoiceNumber(business.getId()));
         // Whoever is signed in is the one working the till.
@@ -171,9 +175,20 @@ public class OrderServiceImpl implements OrderService {
 
         int scale = CURRENCY_KHR.equalsIgnoreCase(order.getCurrency()) ? 0 : 2;
 
+        BigDecimal taxRate = request.taxRate() != null ? request.taxRate() : BigDecimal.ZERO;
+        BigDecimal taxAmount = request.taxAmount() != null ? request.taxAmount() : BigDecimal.ZERO;
+        order.setTaxRate(taxRate);
+        order.setTaxAmount(taxAmount);
+
+        BigDecimal afterDiscount = subtotal.subtract(discount);
+        BigDecimal total = afterDiscount;
+        if (TaxInclusionType.EXCLUSIVE.equals(inclusionType) && taxAmount.compareTo(BigDecimal.ZERO) > 0) {
+            total = afterDiscount.add(taxAmount);
+        }
+
         order.setSubtotal(subtotal.setScale(scale, RoundingMode.HALF_UP));
         order.setDiscountAmount(discount.setScale(scale, RoundingMode.HALF_UP));
-        order.setTotal(subtotal.subtract(discount).setScale(scale, RoundingMode.HALF_UP));
+        order.setTotal(total.setScale(scale, RoundingMode.HALF_UP));
 
         return orderMapper.toResponse(orderRepository.save(order));
     }
@@ -276,19 +291,29 @@ public class OrderServiceImpl implements OrderService {
         }
 
         int scale = scaleFor(order);
-        BigDecimal total = order.getTotal();
+        TaxInclusionType inclusionType = request.taxInclusionType() != null
+                ? request.taxInclusionType()
+                : (order.getTaxInclusionType() != null ? order.getTaxInclusionType() : TaxInclusionType.EXCLUSIVE);
+        BigDecimal taxAmount = request.taxAmount() != null
+                ? request.taxAmount()
+                : (order.getTaxAmount() != null ? order.getTaxAmount() : BigDecimal.ZERO);
 
-        BigDecimal received = request.receivedAmount() == null
-                ? total
-                : request.receivedAmount().setScale(scale, RoundingMode.HALF_UP);
-
-        if (received.compareTo(total) < 0) {
-            throw new ResponseStatusException(
-                    HttpStatus.BAD_REQUEST,
-                    "Received " + received + " is less than the total " + total);
+        BigDecimal effectiveTotal = order.getTotal();
+        if (TaxInclusionType.EXCLUSIVE.equals(inclusionType) && taxAmount.compareTo(BigDecimal.ZERO) > 0) {
+            effectiveTotal = order.getTotal().add(taxAmount).setScale(scale, RoundingMode.HALF_UP);
         }
 
-        return toSaleResponse(settle(business, order, request.paymentMethod(), received, request.note()));
+        BigDecimal received = request.receivedAmount() == null
+                ? effectiveTotal
+                : request.receivedAmount().setScale(scale, RoundingMode.HALF_UP);
+
+        if (received.compareTo(effectiveTotal) < 0) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "Received " + received + " is less than the total " + effectiveTotal);
+        }
+
+        return toSaleResponse(settle(business, order, request, request.paymentMethod(), received, request.note()));
     }
 
     @Override
@@ -341,7 +366,7 @@ public class OrderServiceImpl implements OrderService {
         qrCode.setStatus(QrStatus.PAID);
         qrCode.setPaidAt(paidAt);
 
-        settle(business, order, PaymentMethodType.DIGITAL, order.getTotal(), null);
+        settle(business, order, null, PaymentMethodType.DIGITAL, order.getTotal(), null);
 
         telegramAlertService.sendQrPaymentAlert(order);
 
@@ -354,6 +379,7 @@ public class OrderServiceImpl implements OrderService {
     private Sale settle(
             Business business,
             Order order,
+            PayOrderRequest request,
             PaymentMethodType paymentMethod,
             BigDecimal received,
             String note
@@ -430,6 +456,26 @@ public class OrderServiceImpl implements OrderService {
             itemCount += line.getQuantity();
         }
 
+        TaxInclusionType inclusionType = request != null && request.taxInclusionType() != null
+                ? request.taxInclusionType()
+                : (order.getTaxInclusionType() != null ? order.getTaxInclusionType() : TaxInclusionType.EXCLUSIVE);
+
+        BigDecimal taxRate = request != null && request.taxRate() != null
+                ? request.taxRate()
+                : (order.getTaxRate() != null ? order.getTaxRate() : BigDecimal.ZERO);
+
+        BigDecimal taxAmount = request != null && request.taxAmount() != null
+                ? request.taxAmount()
+                : (order.getTaxAmount() != null ? order.getTaxAmount() : BigDecimal.ZERO);
+
+        BigDecimal effectiveTotal = order.getTotal();
+        if (TaxInclusionType.EXCLUSIVE.equals(inclusionType) && taxAmount.compareTo(BigDecimal.ZERO) > 0) {
+            effectiveTotal = order.getTotal().add(taxAmount).setScale(scale, RoundingMode.HALF_UP);
+        }
+
+        order.setTaxInclusionType(inclusionType);
+        order.setTaxRate(taxRate);
+        order.setTaxAmount(taxAmount);
         order.setStatus(OrderStatus.PAID);
         orderRepository.save(order);
 
@@ -442,9 +488,12 @@ public class OrderServiceImpl implements OrderService {
         sale.setChannel(order.getChannel());
         sale.setSubtotal(order.getSubtotal());
         sale.setDiscountAmount(order.getDiscountAmount());
-        sale.setTotalAmount(total);
+        sale.setTaxRate(taxRate);
+        sale.setTaxAmount(taxAmount);
+        sale.setTaxInclusionType(inclusionType);
+        sale.setTotalAmount(effectiveTotal);
         sale.setPaidAmount(received);
-        sale.setChangeAmount(received.subtract(total).setScale(scale, RoundingMode.HALF_UP));
+        sale.setChangeAmount(received.subtract(effectiveTotal).setScale(scale, RoundingMode.HALF_UP));
         sale.setTotalCost(totalCost.setScale(2, RoundingMode.HALF_UP));
         sale.setCurrency(order.getCurrency());
         // Frozen here, not looked up at render time, so a later rate change
@@ -487,27 +536,12 @@ public class OrderServiceImpl implements OrderService {
         return CURRENCY_KHR.equalsIgnoreCase(order.getCurrency()) ? 0 : 2;
     }
 
+    private TaxInclusionType resolveTaxInclusionType(TaxInclusionType inclusionType) {
+        return inclusionType == null ? TaxInclusionType.EXCLUSIVE : inclusionType;
+    }
+
     private SaleResponse toSaleResponse(Sale sale) {
-        return new SaleResponse(
-                sale.getId(),
-                sale.getOrder().getId(),
-                sale.getInvoiceNumber(),
-                sale.getCashierId(),
-                sale.getChannel(),
-                sale.getSubtotal(),
-                sale.getDiscountAmount(),
-                sale.getTotalAmount(),
-                sale.getPaidAmount(),
-                sale.getChangeAmount(),
-                sale.getTotalCost(),
-                sale.getCurrency(),
-                sale.getDisplayCurrency(),
-                sale.getDisplayExchangeRate(),
-                sale.getPaymentMethod(),
-                sale.getItemCount(),
-                sale.getNote(),
-                sale.getSoldAt()
-        );
+        return orderMapper.toSaleResponse(sale);
     }
 
     @Override
@@ -865,6 +899,15 @@ public class OrderServiceImpl implements OrderService {
         return orderMapper.toResponse(orderRepository.save(order));
     }
 
+    @Override
+    @Transactional
+    public OrderResponse updateOrderDiscount(UUID businessId, UUID orderId, UpdateOrderDiscountRequest request) {
+        Order order = validateOrderModification(businessId, orderId);
+        order.setDiscountAmount(request.discountAmount() != null ? request.discountAmount() : BigDecimal.ZERO);
+        recalculateOrderTotals(order);
+        return orderMapper.toResponse(orderRepository.save(order));
+    }
+
     private Order validateOrderModification(UUID businessId, UUID orderId) {
         Order order = findOrder(businessId, orderId);
         if (OrderStatus.PAID.equals(order.getStatus()) || OrderStatus.CANCELLED.equals(order.getStatus())) {
@@ -874,19 +917,45 @@ public class OrderServiceImpl implements OrderService {
     }
 
     private void recalculateOrderTotals(Order order) {
-        BigDecimal subtotal = BigDecimal.ZERO;
+        BigDecimal grossSubtotal = BigDecimal.ZERO;
+        BigDecimal itemDiscount = BigDecimal.ZERO;
+
         for (OrderItem item : order.getItems()) {
-            subtotal = subtotal.add(item.getLineTotal());
+            BigDecimal unitPrice = item.getUnitPrice() != null ? item.getUnitPrice() : BigDecimal.ZERO;
+            int qty = item.getQuantity() != null ? item.getQuantity() : 0;
+            BigDecimal itemGross = unitPrice.multiply(BigDecimal.valueOf(qty));
+            BigDecimal itemDisc = item.getDiscountAmount() != null ? item.getDiscountAmount() : BigDecimal.ZERO;
+            BigDecimal itemNet = itemGross.subtract(itemDisc);
+            if (itemNet.compareTo(BigDecimal.ZERO) < 0) {
+                itemNet = BigDecimal.ZERO;
+            }
+            item.setLineTotal(itemNet);
+
+            grossSubtotal = grossSubtotal.add(itemGross);
+            itemDiscount = itemDiscount.add(itemDisc);
         }
 
-        BigDecimal discount = order.getDiscountAmount() == null ? BigDecimal.ZERO : order.getDiscountAmount();
-        if (discount.compareTo(subtotal) > 0) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Discount cannot exceed the order subtotal");
+        BigDecimal orderDiscount = order.getDiscountAmount() == null ? BigDecimal.ZERO : order.getDiscountAmount();
+        BigDecimal totalDiscount = itemDiscount.add(orderDiscount);
+
+        if (totalDiscount.compareTo(grossSubtotal) > 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Discount cannot exceed the order gross subtotal");
         }
 
         int scale = CURRENCY_KHR.equalsIgnoreCase(order.getCurrency()) ? 0 : 2;
-        order.setSubtotal(subtotal.setScale(scale, RoundingMode.HALF_UP));
-        order.setTotal(subtotal.subtract(discount).setScale(scale, RoundingMode.HALF_UP));
-    }
+        order.setSubtotal(grossSubtotal.setScale(scale, RoundingMode.HALF_UP));
+        order.setDiscountAmount(totalDiscount.setScale(scale, RoundingMode.HALF_UP));
 
+        BigDecimal netSubtotal = grossSubtotal.subtract(totalDiscount);
+        BigDecimal taxAmount = order.getTaxAmount() != null ? order.getTaxAmount() : BigDecimal.ZERO;
+        BigDecimal total = netSubtotal;
+        if (TaxInclusionType.EXCLUSIVE.equals(order.getTaxInclusionType()) && taxAmount.compareTo(BigDecimal.ZERO) > 0) {
+            total = netSubtotal.add(taxAmount);
+        }
+
+        if (total.compareTo(BigDecimal.ZERO) < 0) {
+            total = BigDecimal.ZERO;
+        }
+        order.setTotal(total.setScale(scale, RoundingMode.HALF_UP));
+    }
 }

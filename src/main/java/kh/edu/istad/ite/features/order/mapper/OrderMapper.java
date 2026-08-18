@@ -2,8 +2,11 @@ package kh.edu.istad.ite.features.order.mapper;
 
 import kh.edu.istad.ite.features.order.dto.OrderItemResponse;
 import kh.edu.istad.ite.features.order.dto.OrderResponse;
+import kh.edu.istad.ite.features.order.dto.SaleResponse;
 import kh.edu.istad.ite.features.order.entity.Order;
 import kh.edu.istad.ite.features.order.entity.OrderItem;
+import kh.edu.istad.ite.features.order.entity.Sale;
+import org.mapstruct.Mapping;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -11,6 +14,7 @@ import java.util.List;
 @Component
 public class OrderMapper {
 
+    @Mapping(target = "taxInclusionType", source = "taxInclusionType")
     public OrderResponse toResponse(Order order) {
         if (order == null) {
             return null;
@@ -30,6 +34,9 @@ public class OrderMapper {
                 order.getStatus(),
                 order.getSubtotal(),
                 order.getDiscountAmount(),
+                order.getTaxRate(),
+                order.getTaxAmount(),
+                order.getTaxInclusionType(),
                 order.getTotal(),
                 order.getCurrency(),
                 order.getDisplayCurrency(),
@@ -68,6 +75,37 @@ public class OrderMapper {
                                 selection.display()
                         ))
                         .toList()
+        );
+    }
+
+    @Mapping(target = "taxInclusionType", source = "taxInclusionType")
+    public SaleResponse toSaleResponse(Sale sale) {
+        if (sale == null) {
+            return null;
+        }
+
+        return new SaleResponse(
+                sale.getId(),
+                sale.getOrder().getId(),
+                sale.getInvoiceNumber(),
+                sale.getCashierId(),
+                sale.getChannel(),
+                sale.getSubtotal(),
+                sale.getDiscountAmount(),
+                sale.getTaxRate(),
+                sale.getTaxAmount(),
+                sale.getTaxInclusionType(),
+                sale.getTotalAmount(),
+                sale.getPaidAmount(),
+                sale.getChangeAmount(),
+                sale.getTotalCost(),
+                sale.getCurrency(),
+                sale.getDisplayCurrency(),
+                sale.getDisplayExchangeRate(),
+                sale.getPaymentMethod(),
+                sale.getItemCount(),
+                sale.getNote(),
+                sale.getSoldAt()
         );
     }
 }
