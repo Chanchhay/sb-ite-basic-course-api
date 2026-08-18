@@ -1,45 +1,53 @@
-# Deployed to /opt/apps/ipos/compose.yml alongside its .env.
-# Traefik lives in /opt/platform and owns TLS and the public ports; nothing
-# here publishes a port to the host.
 services:
   db:
-    image: postgres:18-alpine
+    image: postgres:18
     restart: unless-stopped
+
     environment:
       POSTGRES_DB: ${PGDATABASE}
       POSTGRES_USER: ${DB_USER}
       POSTGRES_PASSWORD: ${DB_PASS}
+
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - pgdata:/var/lib/postgresql
+
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $${DB_USER} -d $${PGDATABASE}"]
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"
+        ]
       interval: 10s
       timeout: 5s
       retries: 5
+
     networks:
       - internal
-    # Deliberately off the proxy network: the database is not a web service.
+
 
   api:
-    # IMAGE_TAG is rewritten in .env by the Jenkins Deploy stage; it falls
-    # back to latest for a hand-run compose on a fresh box.
     image: asia-southeast1-docker.pkg.dev/project-6f8e390c-7ad4-4d23-b1b/backend-images/ipos-api:${IMAGE_TAG:-latest}
+
     restart: unless-stopped
+
     depends_on:
       db:
         condition: service_healthy
-    env_file: .env
+
+    env_file:
+      - .env
+
     environment:
       SPRING_PROFILES_ACTIVE: prod
       PGHOST: db
       PGPORT: 5432
+
     networks:
-      - internal   # reaches db
-      - proxy      # reachable by Traefik
+      - internal
+      - proxy
+
     labels:
       - "traefik.enable=true"
-      # Scoped to the proxy network: with two networks attached, Traefik has to
-      # be told which address to route to.
       - "traefik.docker.network=proxy"
 
       - "traefik.http.routers.ipos-api.rule=Host(`api.fluxibiz.store`)"
@@ -48,17 +56,16 @@ services:
       - "traefik.http.routers.ipos-api.tls.certresolver=letsencrypt"
       - "traefik.http.routers.ipos-api.service=ipos-api"
 
-      # The container port, not a host port — nothing is published.
       - "traefik.http.services.ipos-api.loadbalancer.server.port=8080"
 
-      # WebSocket upgrades pass through a Traefik router untouched, so the
-      # STOMP endpoint needs no extra middleware.
 
 networks:
   internal:
     driver: bridge
+
   proxy:
     external: true
+
 
 volumes:
   pgdata:
