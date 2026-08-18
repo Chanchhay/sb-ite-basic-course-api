@@ -6,6 +6,8 @@ pipeline {
         PROJECT_ID = 'project-6f8e390c-7ad4-4d23-b1b'
         REPOSITORY = 'backend-images'
         APP_NAME = 'ipos-api'
+
+        ISSUER_URI = 'https://auth.chanchhay.site/realms/istad-fluxipos-auth'
     }
 
     stages {
