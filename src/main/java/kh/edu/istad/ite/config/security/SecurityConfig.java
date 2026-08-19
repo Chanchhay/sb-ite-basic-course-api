@@ -38,6 +38,9 @@ public class SecurityConfig {
                 http.sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS));
                 http.authorizeHttpRequests(endpoints -> endpoints
                         // Public endpoints
+                        // The container's HEALTHCHECK probes this unauthenticated;
+                        // only /health is exposed, so nothing else is reachable.
+                        .requestMatchers(HttpMethod.GET, "/actuator/health", "/actuator/health/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/storefronts/*").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/storefronts/*/items").permitAll()
                         .requestMatchers(
