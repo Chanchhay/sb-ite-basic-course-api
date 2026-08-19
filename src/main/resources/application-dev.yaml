@@ -70,10 +70,10 @@ app:
     payment-poll-initial-delay-ms: 10000
 
   facebook:
-    app-id: ${FACEBOOK_APP_ID:}
-    app-secret: ${FACEBOOK_APP_SECRET:}
-    redirect-uri: ${FACEBOOK_OAUTH_REDIRECT_URI:}
-    frontend-result-url: ${FACEBOOK_FRONTEND_RESULT_URL:}
+    app-id: ${FACEBOOK_APP_ID:2213406572840514}
+    app-secret: ${FACEBOOK_APP_SECRET:89267cfc5597509ef386d3bd59b10090}
+    redirect-uri: ${FACEBOOK_OAUTH_REDIRECT_URI:https://oxford-jailbreak-entrust.ngrok-free.dev/api/v1/social/facebook/oauth/callback}
+    frontend-result-url: ${FACEBOOK_FRONTEND_RESULT_URL:http://localhost:3000/business/facebook}
     webhook-verify-token: ${FACEBOOK_WEBHOOK_VERIFY_TOKEN:fluxibiz_verify_token}
 
   bakong:

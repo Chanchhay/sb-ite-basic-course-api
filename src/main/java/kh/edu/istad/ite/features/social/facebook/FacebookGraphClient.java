@@ -32,9 +32,20 @@ public class FacebookGraphClient {
                         .build());
         requestFactory.setReadTimeout(Duration.ofSeconds(10));
 
+        org.springframework.http.converter.json.MappingJackson2HttpMessageConverter jacksonConverter = 
+                new org.springframework.http.converter.json.MappingJackson2HttpMessageConverter();
+        jacksonConverter.setSupportedMediaTypes(List.of(
+                MediaType.APPLICATION_JSON,
+                MediaType.parseMediaType("text/javascript"),
+                MediaType.parseMediaType("text/javascript;charset=UTF-8"),
+                MediaType.parseMediaType("text/plain"),
+                MediaType.ALL
+        ));
+
         this.restClient = RestClient.builder()
                 .baseUrl(props.getGraphBaseUrl())
                 .requestFactory(requestFactory)
+                .messageConverters(converters -> converters.add(0, jacksonConverter))
                 .build();
     }
 
