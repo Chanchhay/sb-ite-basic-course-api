@@ -99,6 +99,12 @@ public class SchemaScriptRunner implements CommandLineRunner {
                     apply(connection, script, applied);
                 }
             } finally {
+                // A failed script leaves its own BEGIN open and aborted — its
+                // COMMIT never ran — and Postgres refuses everything else on
+                // that connection until the block ends. Without this, the
+                // unlock below fails too and its "current transaction is
+                // aborted" buries the error that actually stopped the boot.
+                rollbackQuietly(connection);
                 unlock(connection);
             }
         }
@@ -179,6 +185,23 @@ public class SchemaScriptRunner implements CommandLineRunner {
                 connection.prepareStatement("select pg_advisory_lock(?)")) {
             statement.setLong(1, LOCK_KEY);
             statement.execute();
+        }
+    }
+
+    /**
+     * Ends whatever transaction a failed script left open.
+     *
+     * The scripts carry their own BEGIN and COMMIT. When one fails partway the
+     * COMMIT never runs, so the connection sits in an aborted block and every
+     * later statement on it — including releasing the lock — fails with
+     * "current transaction is aborted" instead of doing its job. Postgres has
+     * already discarded the script's work; this only closes the block.
+     */
+    private void rollbackQuietly(Connection connection) {
+        try (Statement statement = connection.createStatement()) {
+            statement.execute("rollback");
+        } catch (Exception e) {
+            log.debug("Nothing to roll back after the schema scripts", e);
         }
     }
 
