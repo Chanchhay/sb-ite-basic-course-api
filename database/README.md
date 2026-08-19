@@ -56,3 +56,4 @@ the app after these changes creates:
 | `001_units_scope_and_catalog_extras.sql` | Drops the global unique index on `units.slug` so two businesses can both own a "Sack", and backfills `symbol`/`category` on existing units. |
 | `002_stock_fifo_opening_layers.sql` | Opens one FIFO batch per item from its current balance, so stock that predates batch tracking can still be costed. Run after booting on the new code. |
 | `003_stock_targets_allow_add_ons.sql` | Drops `NOT NULL` on `stock_entries.item_id` / `stock_layers.item_id` and adds a check that exactly one target is set, so add-ons can hold stock. Run after booting on the new code. |
+| `005_add_tax_amount.sql` | Adds `orders.tax_amount` / `sales.tax_amount` with a default of zero. Postgres refuses a NOT NULL column with no default on a table that already has rows, so Hibernate cannot add these itself on any database with trading history. |
