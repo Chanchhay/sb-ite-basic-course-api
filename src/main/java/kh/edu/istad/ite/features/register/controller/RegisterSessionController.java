@@ -5,7 +5,9 @@ import kh.edu.istad.ite.features.register.dto.request.CashMovementRequest;
 import kh.edu.istad.ite.features.register.dto.request.CloseSessionRequest;
 import kh.edu.istad.ite.features.register.dto.request.OpenSessionRequest;
 import kh.edu.istad.ite.features.register.dto.response.CashMovementResponse;
+import kh.edu.istad.ite.config.filter.RequestDto;
 import kh.edu.istad.ite.features.register.dto.response.RegisterSessionResponse;
+import kh.edu.istad.ite.features.register.dto.response.RegisterSessionSearchResponse;
 import kh.edu.istad.ite.features.register.service.RegisterSessionService;
 import kh.edu.istad.ite.shared.helper.AuthHelper;
 import lombok.RequiredArgsConstructor;
@@ -76,6 +78,25 @@ public class RegisterSessionController {
             @PageableDefault(size = 20, sort = "openedAt", direction = Sort.Direction.DESC) Pageable pageable) {
         String userId = AuthHelper.currentUserId().toString();
         return ResponseEntity.ok(sessionService.listSessions(userId, pageable));
+    }
+
+    /**
+     * The same history, filtered, with the totals for everything matched.
+     *
+     * A POST because the filter is a structured body rather than a handful of
+     * query parameters, which is how the orders screen filters too. The free
+     * text a reader types stays in the query string: it is one string, and
+     * having it there keeps the request cacheable-looking and easy to read in
+     * a log when someone asks why a search found nothing.
+     */
+    @PostMapping("/sessions/filter")
+    public ResponseEntity<RegisterSessionSearchResponse> searchSessions(
+            @RequestBody(required = false) RequestDto request,
+            @RequestParam(required = false) String search,
+            @PageableDefault(size = 20, sort = "openedAt", direction = Sort.Direction.DESC) Pageable pageable) {
+        String userId = AuthHelper.currentUserId().toString();
+        return ResponseEntity.ok(
+                sessionService.searchSessions(userId, request, search, pageable));
     }
 
     @GetMapping("/sessions/current")

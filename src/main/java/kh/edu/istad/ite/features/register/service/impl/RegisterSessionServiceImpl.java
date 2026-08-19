@@ -1,6 +1,9 @@
 package kh.edu.istad.ite.features.register.service.impl;
 
+import jakarta.persistence.criteria.Predicate;
+import kh.edu.istad.ite.config.filter.RequestDto;
 import kh.edu.istad.ite.config.props.KeycloakAdminClientProps;
+import kh.edu.istad.ite.config.specification.FilterSpecification;
 import kh.edu.istad.ite.features.business.entity.Business;
 import kh.edu.istad.ite.features.business.repository.BusinessRepository;
 import kh.edu.istad.ite.features.order.repository.OrderRepository;
@@ -8,7 +11,9 @@ import kh.edu.istad.ite.features.register.dto.request.CashMovementRequest;
 import kh.edu.istad.ite.features.register.dto.request.CloseSessionRequest;
 import kh.edu.istad.ite.features.register.dto.request.OpenSessionRequest;
 import kh.edu.istad.ite.features.register.dto.response.CashMovementResponse;
+import kh.edu.istad.ite.features.register.dto.response.RegisterSessionMetrics;
 import kh.edu.istad.ite.features.register.dto.response.RegisterSessionResponse;
+import kh.edu.istad.ite.features.register.dto.response.RegisterSessionSearchResponse;
 import kh.edu.istad.ite.features.register.entity.*;
 import kh.edu.istad.ite.features.register.repository.CashMovementRepository;
 import kh.edu.istad.ite.features.register.repository.CashRegisterRepository;
@@ -19,14 +24,17 @@ import kh.edu.istad.ite.features.user.repository.UserProfileRepository;
 import kh.edu.istad.ite.shared.enums.CashMovementType;
 import kh.edu.istad.ite.shared.enums.RegisterStatus;
 import kh.edu.istad.ite.shared.enums.SessionStatus;
+import kh.edu.istad.ite.shared.dto.PageResponse;
 import kh.edu.istad.ite.shared.exception.AppGlobalException;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.keycloak.admin.client.Keycloak;
 import org.keycloak.admin.client.resource.UserResource;
 import org.keycloak.representations.idm.UserRepresentation;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -36,6 +44,8 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.time.ZoneId;
+import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.List;
@@ -43,12 +53,14 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class RegisterSessionServiceImpl implements RegisterSessionService {
 
     private final CashRegisterRepository registerRepository;
     private final RegisterSessionRepository sessionRepository;
+    private final FilterSpecification<RegisterSession> filterSpecification;
     private final CashMovementRepository movementRepository;
     private final UserProfileRepository userProfileRepository;
     private final BusinessRepository businessRepository;
@@ -213,7 +225,179 @@ public class RegisterSessionServiceImpl implements RegisterSessionService {
             return Page.empty(pageable);
         }
 
-        Page<RegisterSession> page = sessionRepository.findByBusinessId(business.getId(), pageable);
+        return summarizePage(
+                sessionRepository.findByBusinessId(business.getId(), pageable), pageable);
+    }
+
+    /**
+     * A filtered page of sessions, with the totals for everything it matched.
+     *
+     * Filtering happens here rather than in the browser because the list is
+     * paged: a screen that filters the page it was given would answer "no
+     * sessions match" while the matches sat on page three, which reads as a
+     * bug and is one.
+     *
+     * The structured filters — status, a date range — go through
+     * {@link FilterSpecification} like everywhere else. The free-text search is
+     * its own specification because it is an OR across several columns, and the
+     * shared one applies a single operator to every clause it is given.
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public RegisterSessionSearchResponse searchSessions(
+            String userId, RequestDto requestDto, String search, Pageable pageable) {
+
+        Business business = resolveBusiness(userId);
+        if (business == null) {
+            return new RegisterSessionSearchResponse(
+                    PageResponse.from(new PageImpl<>(List.of(), pageable, 0)),
+                    new RegisterSessionMetrics(
+                            0, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO));
+        }
+
+        UUID businessId = business.getId();
+
+        // Always ANDed, never negotiable: everything below narrows within one
+        // business, and no filter a caller sends can widen past it.
+        Specification<RegisterSession> spec =
+                (root, query, cb) -> cb.equal(root.get("businessId"), businessId);
+
+        if (requestDto != null
+                && requestDto.getSearchRequestDto() != null
+                && !requestDto.getSearchRequestDto().isEmpty()) {
+            spec = spec.and(filterSpecification.getSearchSpecificationDynamic(
+                    requestDto.getSearchRequestDto(),
+                    requestDto.getGlobalOperator() == null
+                            ? RequestDto.GlobalOperator.AND
+                            : requestDto.getGlobalOperator()));
+        }
+
+        if (search != null && !search.isBlank()) {
+            spec = spec.and(freeTextSpec(search.trim()));
+        }
+
+        Page<RegisterSession> page = sessionRepository.findAll(spec, pageable);
+
+        return new RegisterSessionSearchResponse(
+                PageResponse.from(summarizePage(page, pageable)),
+                metricsFor(businessId, spec));
+    }
+
+    /**
+     * The search box, across the columns a session is recognisable by.
+     *
+     * Cashier name is not one of them here — it lives in Keycloak, not in this
+     * database — so the name is resolved to the user ids that match it first
+     * and those are searched instead. One extra call per search, which is the
+     * price of the search box finding what a reader will actually type into it.
+     *
+     * Reconciliation status is not stored either; it is read back off the
+     * difference, so the words "over", "short" and "matched" are translated
+     * into what they mean about that number.
+     */
+    private Specification<RegisterSession> freeTextSpec(String search) {
+        String like = "%" + search.toLowerCase() + "%";
+        List<String> cashierIds = cashierIdsMatching(search);
+
+        return (root, query, cb) -> {
+            List<Predicate> matches = new ArrayList<>();
+
+            matches.add(cb.like(cb.lower(root.get("userId")), like));
+            matches.add(cb.like(cb.lower(root.get("note")), like));
+            matches.add(cb.like(cb.lower(root.get("register").get("name")), like));
+            matches.add(cb.like(cb.lower(root.get("id").as(String.class)), like));
+
+            if (!cashierIds.isEmpty()) {
+                matches.add(root.get("userId").in(cashierIds));
+            }
+
+            String word = search.toLowerCase();
+            if ("over".startsWith(word)) {
+                matches.add(cb.greaterThan(root.get("differenceAmount"), BigDecimal.ZERO));
+            }
+            if ("short".startsWith(word)) {
+                matches.add(cb.lessThan(root.get("differenceAmount"), BigDecimal.ZERO));
+            }
+            if ("matched".startsWith(word) || "balanced".startsWith(word)) {
+                matches.add(cb.equal(root.get("differenceAmount"), BigDecimal.ZERO));
+            }
+
+            return cb.or(matches.toArray(new Predicate[0]));
+        };
+    }
+
+    /** The user ids whose Keycloak name or username matches what was typed. */
+    private List<String> cashierIdsMatching(String search) {
+        try {
+            return keycloak.realm(props.getTargetRealm())
+                    .users()
+                    .search(search, 0, 50).stream()
+                    .map(UserRepresentation::getId)
+                    .filter(java.util.Objects::nonNull)
+                    .collect(Collectors.toList());
+        } catch (Exception e) {
+            // A search box that finds fewer rows is a worse search box; one
+            // that fails the whole screen because the identity server is slow
+            // is a broken one.
+            log.warn("Could not search Keycloak for cashiers matching '{}'", search, e);
+            return List.of();
+        }
+    }
+
+    /**
+     * The totals above the table, over everything the filter matched.
+     *
+     * The matching ids are read first and the sums taken against them, so the
+     * filter is expressed once — in the specification the rows themselves came
+     * from — rather than written a second time in SQL and left to drift.
+     */
+    private RegisterSessionMetrics metricsFor(
+            UUID businessId, Specification<RegisterSession> spec) {
+
+        List<RegisterSession> matched = sessionRepository.findAll(spec);
+        long activeCount =
+                sessionRepository.countByBusinessIdAndStatus(businessId, SessionStatus.OPEN);
+
+        if (matched.isEmpty()) {
+            return new RegisterSessionMetrics(
+                    activeCount, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO);
+        }
+
+        BigDecimal totalOpening = BigDecimal.ZERO;
+        BigDecimal totalDiscrepancies = BigDecimal.ZERO;
+        Long[] ids = new Long[matched.size()];
+
+        for (int i = 0; i < matched.size(); i++) {
+            RegisterSession session = matched.get(i);
+            ids[i] = session.getId();
+            totalOpening = totalOpening.add(orZero(session.getOpeningBalance()));
+            // Absolute: over and short are both "out", and netting them off
+            // would report a day that was ten over and ten short as balanced.
+            totalDiscrepancies = totalDiscrepancies.add(orZero(session.getDifferenceAmount()).abs());
+        }
+
+        BigDecimal totalCashSales = orZero(sessionRepository.sumCashSalesForSessions(
+                ids, ZoneId.systemDefault().getId()));
+
+        return new RegisterSessionMetrics(
+                activeCount, totalOpening, totalCashSales, totalDiscrepancies);
+    }
+
+    private static BigDecimal orZero(BigDecimal value) {
+        return value == null ? BigDecimal.ZERO : value;
+    }
+
+    /**
+     * Turns a page of sessions into a page of responses.
+     *
+     * Built from the rows already loaded rather than re-reading each one: the
+     * cash movement totals come back in a single grouped query, and cashier
+     * names are looked up once per person rather than once per session, since
+     * one cashier tends to open a great many drawers.
+     */
+    private Page<RegisterSessionResponse> summarizePage(
+            Page<RegisterSession> page, Pageable pageable) {
+
         if (page.isEmpty()) {
             // Guarded rather than left to the stream below: the grouped
             // movement query takes an IN list, and an empty one is not valid
