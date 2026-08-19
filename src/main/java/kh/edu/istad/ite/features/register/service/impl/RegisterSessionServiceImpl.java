@@ -33,7 +33,10 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.EnumMap;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -186,6 +189,14 @@ public class RegisterSessionServiceImpl implements RegisterSessionService {
         return getSessionSummary(session.getId());
     }
 
+    /**
+     * Every session the business has opened, newest first.
+     *
+     * Built from the sessions already loaded rather than by re-reading each
+     * one: the cash movement totals come back in a single grouped query, and
+     * cashier names are looked up once per person rather than once per
+     * session, since one cashier tends to open a great many drawers.
+     */
     @Override
     @Transactional(readOnly = true)
     public List<RegisterSessionResponse> listSessions(String userId) {
@@ -194,8 +205,30 @@ public class RegisterSessionServiceImpl implements RegisterSessionService {
             return List.of();
         }
 
-        return sessionRepository.findByBusinessIdOrderByOpenedAtDesc(business.getId()).stream()
-                .map(session -> getSessionSummary(session.getId()))
+        List<RegisterSession> sessions = sessionRepository.findByBusinessIdOrderByOpenedAtDesc(business.getId());
+        if (sessions.isEmpty()) {
+            return List.of();
+        }
+
+        List<Long> sessionIds = sessions.stream().map(RegisterSession::getId).collect(Collectors.toList());
+        Map<Long, Map<CashMovementType, BigDecimal>> movementTotals = new HashMap<>();
+        for (CashMovementRepository.SessionTypeTotal row : movementRepository.sumAmountBySessionIds(sessionIds)) {
+            movementTotals
+                    .computeIfAbsent(row.getSessionId(), id -> new EnumMap<>(CashMovementType.class))
+                    .put(row.getType(), row.getTotal());
+        }
+
+        Map<String, String> cashierNames = new HashMap<>();
+        return sessions.stream()
+                .map(session -> {
+                    Map<CashMovementType, BigDecimal> totals =
+                            movementTotals.getOrDefault(session.getId(), Map.of());
+                    return summarize(
+                            session,
+                            totals.getOrDefault(CashMovementType.PAID_IN, BigDecimal.ZERO),
+                            totals.getOrDefault(CashMovementType.PAID_OUT, BigDecimal.ZERO),
+                            cashierNames);
+                })
                 .collect(Collectors.toList());
     }
 
@@ -246,13 +279,10 @@ public class RegisterSessionServiceImpl implements RegisterSessionService {
         RegisterSession session = sessionRepository.findById(sessionId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,"Register session not found"));
 
-        LocalDateTime openedAt = LocalDateTime.ofInstant(session.getOpenedAt(), ZoneId.systemDefault());
-        LocalDateTime closedAt = session.getClosedAt() != null ? LocalDateTime.ofInstant(session.getClosedAt(), ZoneId.systemDefault()) : LocalDateTime.now();
-        BigDecimal totalCashSales = saleRepository.sumCashSalesByCashierAndDateRange(session.getUserId(), openedAt, closedAt);
         BigDecimal totalPaidIn = movementRepository.sumAmountBySessionIdAndType(sessionId, CashMovementType.PAID_IN);
         BigDecimal totalPaidOut = movementRepository.sumAmountBySessionIdAndType(sessionId, CashMovementType.PAID_OUT);
 
-        return mapToResponse(session, totalCashSales, totalPaidIn, totalPaidOut);
+        return summarize(session, totalPaidIn, totalPaidOut, new HashMap<>());
     }
 
     @Override
@@ -301,7 +331,33 @@ public class RegisterSessionServiceImpl implements RegisterSessionService {
                 .collect(Collectors.toList());
     }
 
+    /**
+     * A session's response, given movement totals the caller has already read.
+     *
+     * The cash takings still cost a query each, because the range they cover
+     * is the session's own opening and closing time and no two sessions share
+     * one.
+     */
+    private RegisterSessionResponse summarize(
+            RegisterSession session,
+            BigDecimal totalPaidIn,
+            BigDecimal totalPaidOut,
+            Map<String, String> cashierNames) {
+
+        LocalDateTime openedAt = LocalDateTime.ofInstant(session.getOpenedAt(), ZoneId.systemDefault());
+        LocalDateTime closedAt = session.getClosedAt() != null
+                ? LocalDateTime.ofInstant(session.getClosedAt(), ZoneId.systemDefault())
+                : LocalDateTime.now();
+        BigDecimal totalCashSales = saleRepository.sumCashSalesByCashierAndDateRange(session.getUserId(), openedAt, closedAt);
+
+        return mapToResponse(session, totalCashSales, totalPaidIn, totalPaidOut, cashierNames);
+    }
+
     private RegisterSessionResponse mapToResponse(RegisterSession session, BigDecimal totalCashSales, BigDecimal totalPaidIn, BigDecimal totalPaidOut) {
+        return mapToResponse(session, totalCashSales, totalPaidIn, totalPaidOut, new HashMap<>());
+    }
+
+    private RegisterSessionResponse mapToResponse(RegisterSession session, BigDecimal totalCashSales, BigDecimal totalPaidIn, BigDecimal totalPaidOut, Map<String, String> cashierNames) {
         BigDecimal expected = session.getExpectedAmount() != null ? session.getExpectedAmount() :
                 session.getOpeningBalance().add(totalCashSales).add(totalPaidIn).subtract(totalPaidOut);
 
@@ -322,7 +378,9 @@ public class RegisterSessionServiceImpl implements RegisterSessionService {
         }
 
         String cashierName = null;
-        if (session.getUserId() != null) {
+        if (session.getUserId() != null && cashierNames.containsKey(session.getUserId())) {
+            cashierName = cashierNames.get(session.getUserId());
+        } else if (session.getUserId() != null) {
             try {
                 UserResource userResource = keycloak.realm(props.getTargetRealm())
                         .users()
@@ -337,6 +395,7 @@ public class RegisterSessionServiceImpl implements RegisterSessionService {
             } catch (Exception e) {
                 cashierName = "Unknown";
             }
+            cashierNames.put(session.getUserId(), cashierName);
         }
 
         return RegisterSessionResponse.builder()

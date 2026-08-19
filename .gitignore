@@ -41,3 +41,7 @@ out/
 .env
 .env.*
 !.env.example
+
+### JVM crash dumps ###
+hs_err_pid*.log
+replay_pid*.log

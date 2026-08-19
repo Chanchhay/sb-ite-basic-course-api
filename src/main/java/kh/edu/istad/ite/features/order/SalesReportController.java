@@ -23,7 +23,13 @@ public class SalesReportController {
 
     private final SalesReportService salesReportService;
 
-
+    /**
+     * Revenue, cost and profit for every channel the shop sells on.
+     *
+     * Both ends of the range are optional, and leaving them out means all
+     * time — a shop asking "how are we doing" before it has decided on a
+     * period should get an answer rather than a validation error.
+     */
     @GetMapping("/profit")
     public SalesProfitResponse profitByChannel(
             @PathVariable UUID businessId,
@@ -35,7 +41,12 @@ public class SalesReportController {
         return salesReportService.profitByChannel(businessId, from, to);
     }
 
-
+    /**
+     * The same takings, but broken down by calendar day.
+     *
+     * Days a channel sold nothing are absent rather than zero — the caller
+     * knows the range it asked for and can fill its own gaps.
+     */
     @GetMapping("/revenue/daily")
     public List<DailyChannelRevenue> dailyRevenue(
             @PathVariable UUID businessId,
