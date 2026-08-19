@@ -9,6 +9,10 @@ import kh.edu.istad.ite.features.register.dto.response.RegisterSessionResponse;
 import kh.edu.istad.ite.features.register.service.RegisterSessionService;
 import kh.edu.istad.ite.shared.helper.AuthHelper;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -61,10 +65,17 @@ public class RegisterSessionController {
         return ResponseEntity.ok(sessionService.getCashMovements(sessionId));
     }
 
+    /**
+     * The business's session history, newest first.
+     *
+     * Paged: a shop opens a drawer every trading day, so this grows without
+     * bound and the caller should say how much of it it wants.
+     */
     @GetMapping("/sessions")
-    public ResponseEntity<List<RegisterSessionResponse>> listSessions() {
+    public ResponseEntity<Page<RegisterSessionResponse>> listSessions(
+            @PageableDefault(size = 20, sort = "openedAt", direction = Sort.Direction.DESC) Pageable pageable) {
         String userId = AuthHelper.currentUserId().toString();
-        return ResponseEntity.ok(sessionService.listSessions(userId));
+        return ResponseEntity.ok(sessionService.listSessions(userId, pageable));
     }
 
     @GetMapping("/sessions/current")

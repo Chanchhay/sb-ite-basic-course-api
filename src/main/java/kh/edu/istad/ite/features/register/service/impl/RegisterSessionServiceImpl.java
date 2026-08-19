@@ -24,6 +24,9 @@ import lombok.RequiredArgsConstructor;
 import org.keycloak.admin.client.Keycloak;
 import org.keycloak.admin.client.resource.UserResource;
 import org.keycloak.representations.idm.UserRepresentation;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -190,27 +193,38 @@ public class RegisterSessionServiceImpl implements RegisterSessionService {
     }
 
     /**
-     * Every session the business has opened, newest first.
+     * A page of the sessions the business has opened, newest first.
      *
-     * Built from the sessions already loaded rather than by re-reading each
-     * one: the cash movement totals come back in a single grouped query, and
-     * cashier names are looked up once per person rather than once per
-     * session, since one cashier tends to open a great many drawers.
+     * Paged because a shop that has been trading a year has opened a drawer
+     * every day of it, and the summary of a session is not cheap enough to
+     * build for all of them at once.
+     *
+     * Within the page the sessions are summarised from the rows already
+     * loaded rather than re-read one at a time: the cash movement totals come
+     * back in a single grouped query, and cashier names are looked up once
+     * per person rather than once per session, since one cashier tends to
+     * open a great many drawers.
      */
     @Override
     @Transactional(readOnly = true)
-    public List<RegisterSessionResponse> listSessions(String userId) {
+    public Page<RegisterSessionResponse> listSessions(String userId, Pageable pageable) {
         Business business = resolveBusiness(userId);
         if (business == null) {
-            return List.of();
+            return Page.empty(pageable);
         }
 
-        List<RegisterSession> sessions = sessionRepository.findByBusinessIdOrderByOpenedAtDesc(business.getId());
-        if (sessions.isEmpty()) {
-            return List.of();
+        Page<RegisterSession> page = sessionRepository.findByBusinessId(business.getId(), pageable);
+        if (page.isEmpty()) {
+            // Guarded rather than left to the stream below: the grouped
+            // movement query takes an IN list, and an empty one is not valid
+            // SQL. The page's own totals still describe the full result.
+            return new PageImpl<>(List.of(), pageable, page.getTotalElements());
         }
 
-        List<Long> sessionIds = sessions.stream().map(RegisterSession::getId).collect(Collectors.toList());
+        List<Long> sessionIds = page.getContent().stream()
+                .map(RegisterSession::getId)
+                .collect(Collectors.toList());
+
         Map<Long, Map<CashMovementType, BigDecimal>> movementTotals = new HashMap<>();
         for (CashMovementRepository.SessionTypeTotal row : movementRepository.sumAmountBySessionIds(sessionIds)) {
             movementTotals
@@ -219,17 +233,15 @@ public class RegisterSessionServiceImpl implements RegisterSessionService {
         }
 
         Map<String, String> cashierNames = new HashMap<>();
-        return sessions.stream()
-                .map(session -> {
-                    Map<CashMovementType, BigDecimal> totals =
-                            movementTotals.getOrDefault(session.getId(), Map.of());
-                    return summarize(
-                            session,
-                            totals.getOrDefault(CashMovementType.PAID_IN, BigDecimal.ZERO),
-                            totals.getOrDefault(CashMovementType.PAID_OUT, BigDecimal.ZERO),
-                            cashierNames);
-                })
-                .collect(Collectors.toList());
+        return page.map(session -> {
+            Map<CashMovementType, BigDecimal> totals =
+                    movementTotals.getOrDefault(session.getId(), Map.of());
+            return summarize(
+                    session,
+                    totals.getOrDefault(CashMovementType.PAID_IN, BigDecimal.ZERO),
+                    totals.getOrDefault(CashMovementType.PAID_OUT, BigDecimal.ZERO),
+                    cashierNames);
+        });
     }
 
     private Business resolveBusiness(String userId) {
