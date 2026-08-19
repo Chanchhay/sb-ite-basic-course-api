@@ -42,17 +42,6 @@ public interface SaleRepository extends JpaRepository<Sale, UUID> {
             + "group by s.business.id, s.business.displayName order by count(s) desc")
     List<ActiveBusinessProjection> findMostActiveBusinessesSince(@Param("since") LocalDateTime since);
 
-    /**
-     * What each channel took and what it cost, over a range.
-     *
-     * Grouped in the database rather than totalled by the caller: a shop that
-     * has been trading a year has more sales than any one read should carry,
-     * and a total that quietly stops at a thousand rows is worse than none.
-     *
-     * Cost is the sum of what the stock actually cost, batch by batch, as it
-     * was recorded at the moment of each sale — not what the shelf costs
-     * today. That is the whole point of keeping it on the sale.
-     */
     @Query("""
             select s.channel as channel,
                    count(s) as sales,
@@ -82,6 +71,37 @@ public interface SaleRepository extends JpaRepository<Sale, UUID> {
         java.math.BigDecimal getDiscounts();
         java.math.BigDecimal getRevenue();
         java.math.BigDecimal getCost();
+    }
+
+    /**
+     * What each channel took, per day, over a range.
+     *
+     * Native rather than JPQL because grouping by calendar day needs the
+     * database's own date formatting — there is no portable way to truncate a
+     * timestamp in JPQL. A day with no sales on a channel has no row; the
+     * caller fills the gaps for whatever range it asked for.
+     */
+    @Query(value = """
+            select to_char(sold_at, 'YYYY-MM-DD') as day,
+                   channel as channel,
+                   coalesce(sum(total_amount), 0) as revenue
+            from sales
+            where business_owner_id = :businessId
+              and (cast(:from as timestamp) is null or sold_at >= :from)
+              and (cast(:to as timestamp) is null or sold_at <= :to)
+            group by to_char(sold_at, 'YYYY-MM-DD'), channel
+            order by day
+            """, nativeQuery = true)
+    List<DailyChannelRevenueProjection> dailyRevenueByChannel(
+            @Param("businessId") UUID businessId,
+            @Param("from") LocalDateTime from,
+            @Param("to") LocalDateTime to
+    );
+
+    interface DailyChannelRevenueProjection {
+        String getDay();
+        String getChannel();
+        java.math.BigDecimal getRevenue();
     }
 
     interface MonthlyCountProjection {

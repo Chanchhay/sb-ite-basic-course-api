@@ -187,6 +187,31 @@ public class RegisterSessionServiceImpl implements RegisterSessionService {
     }
 
     @Override
+    @Transactional(readOnly = true)
+    public List<RegisterSessionResponse> listSessions(String userId) {
+        Business business = resolveBusiness(userId);
+        if (business == null) {
+            return List.of();
+        }
+
+        return sessionRepository.findByBusinessIdOrderByOpenedAtDesc(business.getId()).stream()
+                .map(session -> getSessionSummary(session.getId()))
+                .collect(Collectors.toList());
+    }
+
+    private Business resolveBusiness(String userId) {
+        UUID userUuid = UUID.fromString(userId);
+        Business business = businessRepository.findByKeycloakUserId(userUuid).orElse(null);
+        if (business == null) {
+            UserProfile profile = userProfileRepository.findById(userUuid).orElse(null);
+            if (profile != null) {
+                business = profile.getBusiness();
+            }
+        }
+        return business;
+    }
+
+    @Override
     @Transactional
     public RegisterSessionResponse joinSession(Long sessionId, String userId) {
         RegisterSession session = sessionRepository.findById(sessionId)
