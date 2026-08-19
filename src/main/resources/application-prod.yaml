@@ -1,5 +1,6 @@
 # Production.
 server:
+  port: ${PORT:8080}
   max-http-request-header-size: 64KB
   tomcat:
     # An item save carries a part per field plus one per picture, which is
@@ -10,7 +11,7 @@ server:
 
 spring:
   scalar:
-    url: ${SERVER_URL:localhost://8080}/v3/api-docs
+    url: ${SERVER_URL:http://localhost:8080}/v3/api-docs
     path: /docs
     enabled: true
 
@@ -33,7 +34,11 @@ spring:
 
   jpa:
     hibernate:
-      ddl-auto: validate
+      # `update` because this deployment starts from an empty database and
+      # there is no migration tool: Hibernate creates every table, column and
+      # foreign key from the entities. It will never drop or narrow anything,
+      # so database/ stays the escape hatch for changes it cannot make.
+      ddl-auto: update
     show-sql: true
     open-in-view: false
     properties:
@@ -125,3 +130,15 @@ logging:
     # back on for a debugging session does not quietly turn both on.
     org.hibernate.SQL: WARN
     org.hibernate.orm.jdbc.bind: WARN
+
+management:
+  endpoints:
+    web:
+      exposure:
+        # Health alone: the rest of actuator leaks build and env detail.
+        include: health
+  endpoint:
+    health:
+      show-details: never
+      probes:
+        enabled: true

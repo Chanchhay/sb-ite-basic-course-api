@@ -1,0 +1,71 @@
+services:
+  db:
+    image: postgres:18
+    restart: unless-stopped
+
+    environment:
+      POSTGRES_DB: ${PGDATABASE}
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASS}
+
+    volumes:
+      - pgdata:/var/lib/postgresql
+
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+    networks:
+      - internal
+
+
+  api:
+    image: asia-southeast1-docker.pkg.dev/project-6f8e390c-7ad4-4d23-b1b/backend-images/ipos-api:${IMAGE_TAG:-latest}
+
+    restart: unless-stopped
+
+    depends_on:
+      db:
+        condition: service_healthy
+
+    env_file:
+      - .env
+
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      PGHOST: db
+      PGPORT: 5432
+
+    networks:
+      - internal
+      - proxy
+
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=proxy"
+
+      - "traefik.http.routers.ipos-api.rule=Host(`api.fluxibiz.store`)"
+      - "traefik.http.routers.ipos-api.entrypoints=websecure"
+      - "traefik.http.routers.ipos-api.tls=true"
+      - "traefik.http.routers.ipos-api.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.ipos-api.service=ipos-api"
+
+      - "traefik.http.services.ipos-api.loadbalancer.server.port=8080"
+
+
+networks:
+  internal:
+    driver: bridge
+
+  proxy:
+    external: true
+
+
+volumes:
+  pgdata:
