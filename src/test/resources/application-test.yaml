@@ -1,0 +1,102 @@
+# Context-load test config. Every value here is a placeholder that satisfies a
+# @Value or @ConfigurationProperties binding — nothing connects to anything.
+#
+# The point of contextLoads() is to catch a broken bean graph, so this profile
+# is built to start with no Postgres, no Keycloak and no MinIO reachable.
+server:
+  max-http-request-header-size: 64KB
+
+spring:
+  application:
+    name: ite-sb-api
+
+  scalar:
+    url: http://localhost:8080/v3/api-docs
+    path: /docs
+    enabled: false
+
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 50MB
+
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          # jwk-set-uri, deliberately NOT issuer-uri: issuer-uri makes Spring
+          # fetch the discovery document while the bean is being built, which
+          # would need a live Keycloak. jwk-set-uri builds the decoder lazily.
+          jwk-set-uri: http://localhost:8081/realms/test/protocol/openid-connect/certs
+
+  datasource:
+    driver-class-name: org.postgresql.Driver
+    # Deliberately a dead port: if anything ever starts opening a connection
+    # during a context load, this test fails loudly instead of quietly binding
+    # to whatever Postgres happens to be running on the build machine.
+    url: jdbc:postgresql://localhost:59999/test
+    username: test
+    password: test
+    hikari:
+      # The pool opens no connection until one is asked for, and nothing asks
+      # during a context load.
+      minimum-idle: 0
+
+  jpa:
+    hibernate:
+      ddl-auto: none
+    open-in-view: false
+    # Named outright so Hibernate does not go to the database to work it out.
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
+    properties:
+      hibernate:
+        boot:
+          # Without this Hibernate opens a connection at startup purely to read
+          # JDBC metadata, and the whole test needs a live Postgres again.
+          allow_jdbc_metadata_access: false
+
+keycloak:
+  admin:
+    server-url: http://localhost:8081
+    client-id: test-client
+    client-secret: test-secret
+    realm: master
+    target-realm: test
+    send-verification-email: false
+
+app:
+  cors:
+    allowed-origin-patterns:
+      - "http://localhost:[*]"
+  storefront:
+    base-domain: localhost
+    protocol: http
+    path-prefix: /store
+    subdomain-enabled: false
+  security:
+    credential-encryption-key: ""
+  telegram:
+    api-base-url: http://localhost:9000
+    webhook-base-url: ""
+    payment-poll-interval-ms: 5000
+    payment-poll-initial-delay-ms: 10000
+  facebook:
+    app-id: ""
+    app-secret: ""
+    redirect-uri: ""
+    frontend-result-url: ""
+    webhook-verify-token: test-token
+  bakong:
+    base-url: http://localhost:9000
+    timeout: 8s
+
+minio:
+  endpoint: http://localhost:9000
+  access-key: test
+  secret-key: test
+  bucket:
+    assets: test-bucket
+
+logging:
+  level:
+    root: WARN

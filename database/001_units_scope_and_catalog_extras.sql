@@ -48,7 +48,9 @@ BEGIN
         WHERE rel.relname = 'units'
           AND con.contype = 'u'
           AND (
-              SELECT array_agg(att.attname ORDER BY att.attname)
+              -- Cast to text: `attname` is `name`, and Postgres 18 dropped the
+              -- implicit `name[]` = `text[]` comparison this relied on.
+              SELECT array_agg(att.attname::text ORDER BY att.attname)
               FROM unnest(con.conkey) AS k(attnum)
               JOIN pg_attribute att
                 ON att.attrelid = con.conrelid AND att.attnum = k.attnum
@@ -69,7 +71,9 @@ BEGIN
           -- Partial ones are the replacements added below, not the old index.
           AND i.indpred IS NULL
           AND (
-              SELECT array_agg(att.attname ORDER BY att.attname)
+              -- Cast to text: `attname` is `name`, and Postgres 18 dropped the
+              -- implicit `name[]` = `text[]` comparison this relied on.
+              SELECT array_agg(att.attname::text ORDER BY att.attname)
               FROM unnest(i.indkey::smallint[]) AS k(attnum)
               JOIN pg_attribute att
                 ON att.attrelid = i.indrelid AND att.attnum = k.attnum

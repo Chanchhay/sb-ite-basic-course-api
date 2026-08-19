@@ -84,6 +84,37 @@ public interface SaleRepository extends JpaRepository<Sale, UUID> {
         java.math.BigDecimal getCost();
     }
 
+    /**
+     * What each channel took, per day, over a range.
+     *
+     * Native rather than JPQL because grouping by calendar day needs the
+     * database's own date formatting — there is no portable way to truncate a
+     * timestamp in JPQL. A day with no sales on a channel has no row; the
+     * caller fills the gaps for whatever range it asked for.
+     */
+    @Query(value = """
+            select to_char(sold_at, 'YYYY-MM-DD') as day,
+                   channel as channel,
+                   coalesce(sum(total_amount), 0) as revenue
+            from sales
+            where business_owner_id = :businessId
+              and (cast(:from as timestamp) is null or sold_at >= :from)
+              and (cast(:to as timestamp) is null or sold_at <= :to)
+            group by to_char(sold_at, 'YYYY-MM-DD'), channel
+            order by day
+            """, nativeQuery = true)
+    List<DailyChannelRevenueProjection> dailyRevenueByChannel(
+            @Param("businessId") UUID businessId,
+            @Param("from") LocalDateTime from,
+            @Param("to") LocalDateTime to
+    );
+
+    interface DailyChannelRevenueProjection {
+        String getDay();
+        String getChannel();
+        java.math.BigDecimal getRevenue();
+    }
+
     interface MonthlyCountProjection {
         String getMonth();
         long getCount();

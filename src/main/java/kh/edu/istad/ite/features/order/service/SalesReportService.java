@@ -1,13 +1,16 @@
 package kh.edu.istad.ite.features.order.service;
 
+import kh.edu.istad.ite.features.order.dto.DailyChannelRevenue;
 import kh.edu.istad.ite.features.order.dto.SalesProfitResponse;
 import kh.edu.istad.ite.features.order.repository.SaleRepository;
+import kh.edu.istad.ite.shared.enums.OrderChannel;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -96,6 +99,19 @@ public class SalesReportService {
                         ? null
                         : profit.multiply(BigDecimal.valueOf(100))
                                 .divide(takings, 2, RoundingMode.HALF_UP));
+    }
+
+    public List<DailyChannelRevenue> dailyRevenueByChannel(
+            UUID businessId,
+            LocalDateTime from,
+            LocalDateTime to) {
+
+        return saleRepository.dailyRevenueByChannel(businessId, from, to).stream()
+                .map(row -> new DailyChannelRevenue(
+                        LocalDate.parse(row.getDay()),
+                        OrderChannel.valueOf(row.getChannel()),
+                        money(row.getRevenue())))
+                .toList();
     }
 
     private static BigDecimal orZero(BigDecimal value) {
