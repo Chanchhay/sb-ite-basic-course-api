@@ -4,12 +4,16 @@ import kh.edu.istad.ite.features.channel.entity.SalesChannel;
 import kh.edu.istad.ite.features.channel.repository.SalesChannelRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.CommandLineRunner;
+import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
 
 @Component
 @RequiredArgsConstructor
+// Off under "test": this runner hits the database on startup, and the context
+// test is built to boot without one.
+@Profile("!test")
 public class SalesChannelSeeder implements CommandLineRunner {
 
     private final SalesChannelRepository salesChannelRepository;

@@ -2,23 +2,27 @@ package kh.edu.istad.ite.features.social.facebook;
 
 import kh.edu.istad.ite.config.props.FacebookProps;
 import kh.edu.istad.ite.config.security.BusinessSecurityValidator;
+import kh.edu.istad.ite.config.security.SecurityUtils;
+import kh.edu.istad.ite.features.business.entity.Business;
+import kh.edu.istad.ite.features.business.repository.BusinessRepository;
+import kh.edu.istad.ite.features.social.dto.FacebookPageSettingResponse;
 import kh.edu.istad.ite.features.social.service.BusinessFacebookPageService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.util.UriComponentsBuilder;
 
 import java.net.URI;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-
 
 @RestController
 @RequiredArgsConstructor
@@ -31,6 +35,91 @@ public class FacebookConnectController {
     private final FacebookGraphClient graphClient;
     private final BusinessFacebookPageService pageService;
     private final BusinessSecurityValidator businessSecurityValidator;
+    private final BusinessRepository businessRepository;
+
+    private Business findMyBusiness() {
+        return businessRepository.findByKeycloakUserId(UUID.fromString(SecurityUtils.extractUserId()))
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Business has not been found"));
+    }
+
+    @GetMapping("/api/v1/businesses/social-settings/facebook")
+    public ResponseEntity<FacebookPageSettingResponse> getMyFacebookPageSetting() {
+        UUID businessId = findMyBusiness().getId();
+        return pageService.findByBusinessId(businessId)
+                .map(page -> ResponseEntity.ok(new FacebookPageSettingResponse(
+                        page.getId(),
+                        businessId,
+                        page.getPageId(),
+                        page.getPageName(),
+                        true,
+                        Boolean.TRUE.equals(page.getIsActive()),
+                        page.getWelcomeMessage()
+                )))
+                .orElseGet(() -> ResponseEntity.ok(new FacebookPageSettingResponse(
+                        null,
+                        businessId,
+                        null,
+                        null,
+                        false,
+                        false,
+                        null
+                )));
+    }
+
+    @GetMapping("/api/v1/businesses/social-settings/facebook/connect-url")
+    public Map<String, String> getMyConnectUrl() {
+        UUID businessId = findMyBusiness().getId();
+        String url = UriComponentsBuilder
+                .fromUriString("https://www.facebook.com/" + facebookProps.getApiVersion() + "/dialog/oauth")
+                .queryParam("client_id", facebookProps.getAppId())
+                .queryParam("redirect_uri", facebookProps.getRedirectUri())
+                .queryParam("state", businessId.toString())
+                .queryParam("scope", SCOPES)
+                .queryParam("response_type", "code")
+                .build()
+                .toUriString();
+
+        return Map.of("url", url);
+    }
+
+    @DeleteMapping("/api/v1/businesses/social-settings/facebook")
+    public ResponseEntity<Void> disconnectMyFacebookPage() {
+        UUID businessId = findMyBusiness().getId();
+        pageService.disconnectPage(businessId);
+        return ResponseEntity.noContent().build();
+    }
+
+    @GetMapping("/api/v1/businesses/{businessId}/social/facebook")
+    public ResponseEntity<FacebookPageSettingResponse> getFacebookPageSetting(@PathVariable UUID businessId) {
+        businessSecurityValidator.validateBusinessOwner(businessId);
+
+        return pageService.findByBusinessId(businessId)
+                .map(page -> ResponseEntity.ok(new FacebookPageSettingResponse(
+                        page.getId(),
+                        businessId,
+                        page.getPageId(),
+                        page.getPageName(),
+                        true,
+                        Boolean.TRUE.equals(page.getIsActive()),
+                        page.getWelcomeMessage()
+                )))
+                .orElseGet(() -> ResponseEntity.ok(new FacebookPageSettingResponse(
+                        null,
+                        businessId,
+                        null,
+                        null,
+                        false,
+                        false,
+                        null
+                )));
+    }
+
+    @DeleteMapping("/api/v1/businesses/{businessId}/social/facebook")
+    public ResponseEntity<Void> disconnectFacebookPage(@PathVariable UUID businessId) {
+        businessSecurityValidator.validateBusinessOwner(businessId);
+        pageService.disconnectPage(businessId);
+        return ResponseEntity.noContent().build();
+    }
 
     /** Called by the dashboard. Requires the caller to be that business's owner. */
     @GetMapping("/api/v1/businesses/{businessId}/social/facebook/connect-url")
@@ -83,19 +172,17 @@ public class FacebookConnectController {
                 return redirectToDashboard("facebook_no_pages");
             }
 
-            // V1 simplification: BusinessFacebookPage is one-to-one, so we connect the first
-            // Page returned. An owner who manages several Pages and wants a specific one is a
-            // later improvement (would need a page-picker step before saving).
-            Map<String, Object> firstPage = pages.get(0);
-            String pageId = String.valueOf(firstPage.get("id"));
-            String pageName = String.valueOf(firstPage.get("name"));
-            String pageAccessToken = String.valueOf(firstPage.get("access_token"));
-
-            pageService.registerPage(businessId, pageId, pageName, pageAccessToken);
+            for (Map<String, Object> pageMap : pages) {
+                String pageId = String.valueOf(pageMap.get("id"));
+                String pageName = String.valueOf(pageMap.get("name"));
+                String pageAccessToken = String.valueOf(pageMap.get("access_token"));
+                log.info("Registering Facebook Page [{}] ({}) for business [{}]", pageName, pageId, businessId);
+                pageService.registerPage(businessId, pageId, pageName, pageAccessToken);
+            }
 
             return redirectToDashboard("facebook_connected");
         } catch (Exception e) {
-            log.error("Facebook connect failed for business {}: {}", businessId, e.getMessage());
+            log.error("Facebook connect failed for business " + businessId, e);
             return redirectToDashboard("facebook_connect_failed");
         }
     }

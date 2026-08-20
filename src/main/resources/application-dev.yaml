@@ -7,7 +7,7 @@ server:
 
 spring:
   scalar:
-    url: ${SERVER_URL:localhost://8080}/v3/api-docs
+    url: ${SERVER_URL:http://localhost:8080}/v3/api-docs
     path: /docs
     enabled: true
 
@@ -21,7 +21,7 @@ spring:
     oauth2:
       resourceserver:
         jwt:
-          issuer-uri: ${ISSUER_URI}
+          issuer-uri: ${ISSUER_URI:https://auth.chanchhay.site/realms/istad-fluxipos-auth}
 
   jpa:
     hibernate:
@@ -33,7 +33,7 @@ spring:
 
   datasource:
     driver-class-name: org.postgresql.Driver
-    url: jdbc:postgresql://${PGHOST:localhost}:${PGPORT:5432}/${PGDATABASE:fluxibix}
+    url: jdbc:postgresql://${PGHOST:localhost}:${PGPORT:1681}/${PGDATABASE:fluxibix}
     username: ${DB_USER}
     password: ${DB_PASS}
 
@@ -56,8 +56,8 @@ app:
       - "https://fluxibiz.store"
       - "https://administrator.fluxibiz.store"
   storefront:
-    base-domain: ${BASE_STOREFRONT_DOMAIN}
-    protocol: https
+    base-domain: ${BASE_STOREFRONT_DOMAIN:fluxibiz.store}
+    protocol: ${STOREFRONT_PROTOCOL:https}
     path-prefix: /store
     subdomain-enabled: true
   security:
@@ -70,15 +70,21 @@ app:
     payment-poll-initial-delay-ms: 10000
 
   facebook:
-    app-id: ${FACEBOOK_APP_ID:}
-    app-secret: ${FACEBOOK_APP_SECRET:}
-    redirect-uri: ${FACEBOOK_OAUTH_REDIRECT_URI:}
-    frontend-result-url: ${FACEBOOK_FRONTEND_RESULT_URL:}
+    app-id: ${FACEBOOK_APP_ID:2213406572840514}
+    app-secret: ${FACEBOOK_APP_SECRET:89267cfc5597509ef386d3bd59b10090}
+    redirect-uri: ${FACEBOOK_OAUTH_REDIRECT_URI:https://oxford-jailbreak-entrust.ngrok-free.dev/api/v1/social/facebook/oauth/callback}
+    frontend-result-url: ${FACEBOOK_FRONTEND_RESULT_URL:http://localhost:3000/business/facebook}
     webhook-verify-token: ${FACEBOOK_WEBHOOK_VERIFY_TOKEN:fluxibiz_verify_token}
 
   bakong:
     base-url: https://api-bakong.nbc.gov.kh
     timeout: 8s
+
+  aba-payway:
+    enabled: ${ABA_PAYWAY_ENABLED:false}
+    base-url: https://checkout-sandbox.payway.com.kh
+    merchant-id: ${ABA_MERCHANT_ID:}
+    api-key: ${ABA_API_KEY:}
 
 minio:
   endpoint: ${MINIO_ENDPOINT}

@@ -55,8 +55,11 @@ public class FacebookCartService {
             ci.setCart(cart);
             ci.setItem(item);
             ci.setQuantity(1);
-            ci.setPriceSnapshot(item.getPrice());
+            ci.setPriceSnapshot(item.getPrice() != null ? item.getPrice() : BigDecimal.ZERO);
             cartItemRepository.save(ci);
+            if (cart.getItems() == null) {
+                cart.setItems(new java.util.ArrayList<>());
+            }
             cart.getItems().add(ci);
         }
 

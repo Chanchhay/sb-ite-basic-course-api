@@ -38,6 +38,9 @@ public class SecurityConfig {
                 http.sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS));
                 http.authorizeHttpRequests(endpoints -> endpoints
                         // Public endpoints
+                        // The container's HEALTHCHECK probes this unauthenticated;
+                        // only /health is exposed, so nothing else is reachable.
+                        .requestMatchers(HttpMethod.GET, "/actuator/health", "/actuator/health/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/storefronts/*").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/storefronts/*/items").permitAll()
                         .requestMatchers(
@@ -48,8 +51,7 @@ public class SecurityConfig {
                         .requestMatchers("/scalar/**").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/v1/auth/register", "/api/v1/auth/register/**").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/v1/webhooks/telegram/**").permitAll()
-                        .requestMatchers("/api/v1/social/facebook/webhook", "/api/v1/social/facebook/webhook/setup").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/api/v1/social/facebook/oauth/callback").permitAll()
+                        .requestMatchers("/api/v1/social/facebook/webhook", "/api/v1/social/facebook/webhook/**", "/api/webhook", "/api/webhook/**", "/api/v1/social/facebook/webhook/setup").permitAll()                        .requestMatchers(HttpMethod.GET, "/api/v1/social/facebook/oauth/callback").permitAll()
                         .requestMatchers(
                                 "/ws/customer-display",
                                 "/ws/customer-display/**",

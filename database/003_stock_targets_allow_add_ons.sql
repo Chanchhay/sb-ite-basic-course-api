@@ -12,6 +12,12 @@
 --
 -- Run after the app has booted once on the new code, so `add_on_id` exists.
 -- Safe to run more than once.
+--
+-- Amended: the constraint alone was not enough. A database could already hold
+-- layers and entries pointing at neither an item nor an add-on, and one such
+-- row is all it takes for ADD CONSTRAINT to fail — so on any database with one
+-- this script had quietly never applied at all. Untargeted rows that nothing
+-- has drawn stock from are now cleared first.
 
 BEGIN;
 
@@ -30,6 +36,29 @@ BEGIN
         RAISE NOTICE 'add_on_id not present yet — boot the app, then re-run.';
         RETURN;
     END IF;
+
+    -- Rows that already belong to nothing, from before there was a constraint
+    -- to stop them being written. They cannot be traced back to an item or an
+    -- add-on, so there is nothing to repair them into — and left in place a
+    -- single one of them fails the check below for the whole table.
+    --
+    -- Only untargeted rows, and only ones nothing has drawn stock from. A
+    -- layer with consumptions against it is a real balance whose target was
+    -- lost, and that is a repair to make by hand with the invoices in front of
+    -- you, not a row to delete on boot.
+    DELETE FROM stock_layers l
+    WHERE l.item_id IS NULL
+      AND l.add_on_id IS NULL
+      AND NOT EXISTS (
+          SELECT 1 FROM stock_consumptions c WHERE c.stock_layer_id = l.id
+      );
+
+    DELETE FROM stock_entries e
+    WHERE e.item_id IS NULL
+      AND e.add_on_id IS NULL
+      AND NOT EXISTS (
+          SELECT 1 FROM stock_consumptions c WHERE c.stock_entry_id = e.id
+      );
 
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
