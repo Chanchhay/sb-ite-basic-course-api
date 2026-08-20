@@ -22,6 +22,10 @@ public record CreateOrderRequest(
         @PositiveOrZero
         BigDecimal discountAmount,
 
+        UUID discountId,
+
+        String discountCode,
+
         TaxInclusionType taxInclusionType,
 
         @PositiveOrZero

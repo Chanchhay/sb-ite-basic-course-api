@@ -40,11 +40,31 @@ public class CouponServiceImpl implements CouponService {
         Business business = businessHelper.findOwnedBusiness(businessId);
         Discount discount = findDiscount(request.discountId(), businessId);
 
+        if (!Boolean.TRUE.equals(discount.getRequiresCoupon())) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "Selected discount rule does not require a coupon code. Please edit the discount rule and enable 'Requires Coupon Code' first."
+            );
+        }
+
         String code = TextHelper.trimRequired(request.code(), "Coupon code cannot be empty").toUpperCase();
         if (couponRepository.existsByBusinessIdAndCodeIgnoreCase(businessId, code)) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "A coupon with code '" + code + "' already exists in your store.");
         }
         validateDateRange(request.startsAt(), request.endsAt());
+
+        if (discount.getStartsAt() != null && request.startsAt().isBefore(discount.getStartsAt())) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "Coupon start date cannot be earlier than the linked discount start date (" + discount.getStartsAt() + ")"
+            );
+        }
+        if (discount.getEndsAt() != null && request.endsAt().isAfter(discount.getEndsAt())) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "Coupon end date cannot be later than the linked discount end date (" + discount.getEndsAt() + ")"
+            );
+        }
 
         Coupon coupon = new Coupon();
         coupon.setBusiness(business);
@@ -56,7 +76,7 @@ public class CouponServiceImpl implements CouponService {
         coupon.setMinPurchaseAmount(request.minPurchaseAmount());
         coupon.setStartsAt(request.startsAt());
         coupon.setEndsAt(request.endsAt());
-        coupon.setStatus(CouponStatus.ACTIVE);
+        coupon.setStatus(request.status() != null ? request.status() : CouponStatus.ACTIVE);
 
         try {
             return couponMapper.toResponse(couponRepository.saveAndFlush(coupon));
