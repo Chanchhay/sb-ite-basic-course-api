@@ -46,4 +46,13 @@ public class BusinessFacebookPageService {
     public Optional<BusinessFacebookPage> findByPageId(String pageId) {
         return repository.findByPageId(pageId);
     }
+
+    public Optional<BusinessFacebookPage> findByBusinessId(UUID businessId) {
+        return repository.findByBusinessId(businessId);
+    }
+
+    @Transactional
+    public void disconnectPage(UUID businessId) {
+        repository.findByBusinessId(businessId).ifPresent(repository::delete);
+    }
 }

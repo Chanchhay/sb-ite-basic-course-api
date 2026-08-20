@@ -32,9 +32,19 @@ public class FacebookGraphClient {
                         .build());
         requestFactory.setReadTimeout(Duration.ofSeconds(10));
 
+        org.springframework.http.converter.json.MappingJackson2HttpMessageConverter jacksonConverter = 
+                new org.springframework.http.converter.json.MappingJackson2HttpMessageConverter();
+        jacksonConverter.setSupportedMediaTypes(List.of(
+                MediaType.APPLICATION_JSON,
+                MediaType.parseMediaType("text/javascript"),
+                MediaType.parseMediaType("text/javascript;charset=UTF-8"),
+                MediaType.parseMediaType("text/plain")
+        ));
+
         this.restClient = RestClient.builder()
                 .baseUrl(props.getGraphBaseUrl())
                 .requestFactory(requestFactory)
+                .messageConverters(converters -> converters.add(0, jacksonConverter))
                 .build();
     }
 
@@ -135,11 +145,17 @@ public class FacebookGraphClient {
 
     public void sendImage(String pageId, String pageAccessToken, String psid, byte[] imageBytes) {
         try {
-            MultipartBodyBuilder bodyBuilder = new MultipartBodyBuilder();
-            bodyBuilder.part("recipient", "{\"id\":\"" + psid + "\"}").contentType(MediaType.APPLICATION_JSON);
-            bodyBuilder.part("message", "{\"attachment\":{\"type\":\"image\", \"payload\":{\"is_reusable\":false}}}")
-                    .contentType(MediaType.APPLICATION_JSON);
-            bodyBuilder.part("filedata", imageBytes, MediaType.IMAGE_PNG).filename("khqr.png");
+            org.springframework.util.MultiValueMap<String, Object> body = new org.springframework.util.LinkedMultiValueMap<>();
+            body.add("recipient", "{\"id\":\"" + psid + "\"}");
+            body.add("message", "{\"attachment\":{\"type\":\"image\", \"payload\":{\"is_reusable\":false}}}");
+
+            org.springframework.core.io.ByteArrayResource contentsAsResource = new org.springframework.core.io.ByteArrayResource(imageBytes) {
+                @Override
+                public String getFilename() {
+                    return "khqr.png";
+                }
+            };
+            body.add("filedata", contentsAsResource);
 
             restClient.post()
                     .uri(uriBuilder -> uriBuilder
@@ -147,7 +163,7 @@ public class FacebookGraphClient {
                             .queryParam("access_token", pageAccessToken)
                             .build(apiVersion, pageId))
                     .contentType(MediaType.MULTIPART_FORM_DATA)
-                    .body(bodyBuilder.build())
+                    .body(body)
                     .retrieve()
                     .toBodilessEntity();
 
@@ -208,6 +224,28 @@ public class FacebookGraphClient {
         } catch (Exception e) {
             // Non-fatal: page is still registered/usable, it just won't show the menu button until this succeeds.
             log.error("Failed to configure Messenger profile: {}", e.getMessage());
+        }
+    }
+
+    public void whitelistDomain(String pageAccessToken, List<String> domains) {
+        try {
+            Map<String, Object> body = Map.of(
+                    "whitelisted_domains", domains
+            );
+
+            restClient.post()
+                    .uri(uriBuilder -> uriBuilder
+                            .path("/{apiVersion}/me/messenger_profile")
+                            .queryParam("access_token", pageAccessToken)
+                            .build(apiVersion))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(body)
+                    .retrieve()
+                    .toBodilessEntity();
+
+            log.info("Whitelisted domains for Messenger: {}", domains);
+        } catch (Exception e) {
+            log.error("Failed to whitelist domains for Messenger: {}", e.getMessage());
         }
     }
 
