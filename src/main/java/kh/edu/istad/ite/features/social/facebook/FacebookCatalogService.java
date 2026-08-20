@@ -61,7 +61,6 @@ public class FacebookCatalogService {
         graphClient.sendButtonTemplate(page.getPageId(), page.getPageAccessTokenEncrypted(), psid, text, buttons);
     }
 
-    /** Sends a carousel of items (image + title + price) the customer can tap to view detail. */
     public void showCatalog(BusinessFacebookPage page, String psid) {
         UUID businessId = page.getBusiness().getId();
         Specification<Item> spec = Specification.where(ItemSpecifications.hasBusinessId(businessId))
@@ -78,12 +77,11 @@ public class FacebookCatalogService {
 
         List<Map<String, Object>> elements = new ArrayList<>();
         for (Item item : itemsPage.getContent()) {
-            elements.add(buildElement(item, page.getBusiness(), true));
+            elements.add(buildElement(item, page.getBusiness()));
         }
         graphClient.sendGenericTemplate(page.getPageId(), page.getPageAccessTokenEncrypted(), psid, elements);
     }
 
-    /** Sends one item as a card (image + title + price), then a follow-up text with the full detail. */
     public void showItemDetail(BusinessFacebookPage page, String psid, UUID itemId) {
         Optional<Item> found = itemRepository.findByIdAndBusinessId(itemId, page.getBusiness().getId());
         if (found.isEmpty()) {
@@ -92,16 +90,21 @@ public class FacebookCatalogService {
             return;
         }
         Item item = found.get();
-
-        graphClient.sendGenericTemplate(page.getPageId(), page.getPageAccessTokenEncrypted(), psid,
-                List.of(buildElement(item, page.getBusiness(), false)));
+ //show item again with detail
+//        graphClient.sendGenericTemplate(page.getPageId(), page.getPageAccessTokenEncrypted(), psid,
+//                List.of(buildElement(item, page.getBusiness(), false)));
 
         graphClient.sendTextMessage(page.getPageId(), page.getPageAccessTokenEncrypted(), psid,
                 buildDetailText(item, page.getBusiness()));
+        List<Map<String, Object>> buttons = List.of(
+                Map.of("type", "postback", "title", "🛒 ថែមចូលកន្ត្រក", "payload", "CART_ADD:" + item.getId()),
+                Map.of("type", "postback", "title", "🗂️ ត្រឡប់ទៅផលិតផល", "payload", "CATALOG")
+        );
+        graphClient.sendButtonTemplate(page.getPageId(), page.getPageAccessTokenEncrypted(), psid,
+                "ចង់ធ្វើអ្វីបន្ត?", buttons);
     }
 
-    /** image_url + title + subtitle(price · stock) + button, for a catalog card or a single-item card. */
-    private Map<String, Object> buildElement(Item item, Business business, boolean forCatalogList) {
+    private Map<String, Object> buildElement(Item item, Business business) {
         String subtitle = truncate(
                 formatPrice(effectivePrice(item, business), business) + " · " + stockLabel(item, business),
                 SUBTITLE_MAX);
@@ -111,15 +114,16 @@ public class FacebookCatalogService {
                 .map(image -> minioService.getPublicUrl(image.getImageKey()))
                 .or(() -> Optional.ofNullable(item.getImageUrl()));
 
-        Map<String, Object> button = forCatalogList
-                ? Map.of("type", "postback", "title", "🔍 មើលលម្អិត", "payload", "ITEM:" + item.getId())
-                : Map.of("type", "postback", "title", "🛒 ថែមចូលកន្ត្រក", "payload", "CART_ADD:" + item.getId());
+        List<Map<String, Object>> buttons = List.of(
+                Map.of("type", "postback", "title", "🔍 លម្អិត", "payload", "ITEM:" + item.getId()),
+                Map.of("type", "postback", "title", "🛒 ថែមចូលកន្ត្រក", "payload", "CART_ADD:" + item.getId())
+        );
 
         Map<String, Object> element = new LinkedHashMap<>();
         element.put("title", truncate(item.getName(), TITLE_MAX));
         element.put("subtitle", subtitle);
         imageUrl.ifPresent(url -> element.put("image_url", url));
-        element.put("buttons", List.of(button));
+        element.put("buttons", buttons);
         return element;
     }
 

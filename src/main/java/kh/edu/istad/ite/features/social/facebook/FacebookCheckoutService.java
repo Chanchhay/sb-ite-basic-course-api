@@ -1,5 +1,6 @@
 package kh.edu.istad.ite.features.social.facebook;
 
+import kh.edu.istad.ite.config.props.StorefrontProps;
 import kh.edu.istad.ite.config.security.CredentialCipher;
 import kh.edu.istad.ite.features.business.entity.Business;
 import kh.edu.istad.ite.features.business.repository.BusinessRepository;
@@ -85,6 +86,7 @@ public class FacebookCheckoutService {
     private final ReceiptService receiptService;
     private final ApplicationEventPublisher eventPublisher;
     private final FacebookGraphClient graphClient;
+    private final StorefrontProps storefrontProps;
 
     public record CheckoutDraft(
             java.util.UUID orderId,
@@ -488,16 +490,42 @@ public class FacebookCheckoutService {
         try {
             CheckoutDraft draft = createCheckout(page.getBusiness().getId(), session.getCustomer().getId());
             
+            String baseDomain = storefrontProps.getProtocol() + "://" + storefrontProps.getBaseDomain();
+            String checkoutWebUrl = baseDomain + "/m-app/" + page.getBusiness().getId() + "/checkout?orderId=" + draft.orderId();
+            
+            log.info("Generated Messenger checkoutWebUrl: {}", checkoutWebUrl);
+            
+            boolean isHttpsAndNoPort = checkoutWebUrl.startsWith("https://") && !checkoutWebUrl.substring(8).contains(":");
+
+            if (isHttpsAndNoPort) {
+                graphClient.whitelistDomain(page.getPageAccessTokenEncrypted(), List.of(baseDomain));
+            }
+
             String text = "✅ ការបញ្ជាទិញបានបង្កើតដោយជោគជ័យ!\n\n" +
                           "វិក្កយបត្រ៖ " + draft.invoiceNumber() + "\n" +
                           "ចំនួនទំនិញ៖ " + draft.itemCount() + "\n" +
                           "សរុបទឹកប្រាក់៖ $" + draft.total().setScale(2) + "\n\n" +
-                          "សូមស្កេនកូដ KHQR ខាងក្រោមដើម្បីទូទាត់ប្រាក់៖";
-                          
-            graphClient.sendImage(page.getPageId(), page.getPageAccessTokenEncrypted(), psid, draft.qrPng());
-            graphClient.sendButtonTemplate(page.getPageId(), page.getPageAccessTokenEncrypted(), psid, text, java.util.List.of(
-                java.util.Map.of("type", "postback", "title", "❌ បោះបង់ការបញ្ជាទិញ", "payload", "ORDER_CANCEL:" + draft.orderId())
-            ));
+                          "សូមចុចប៊ូតុងខាងក្រោមដើម្បីទូទាត់ប្រាក់ ៖";
+
+            Map<String, Object> webUrlButton = new java.util.HashMap<>();
+            webUrlButton.put("type", "web_url");
+            webUrlButton.put("url", checkoutWebUrl);
+            webUrlButton.put("title", "💳 គិតលុយ (Pay Now)");
+            webUrlButton.put("webview_height_ratio", "tall");
+            if (isHttpsAndNoPort) {
+                webUrlButton.put("messenger_extensions", true);
+            }
+
+            List<Map<String, Object>> buttons = List.of(
+                    webUrlButton,
+                    Map.of(
+                            "type", "postback",
+                            "title", "❌ បោះបង់ការបញ្ជាទិញ",
+                            "payload", "ORDER_CANCEL:" + draft.orderId()
+                    )
+            );
+
+            graphClient.sendButtonTemplate(page.getPageId(), page.getPageAccessTokenEncrypted(), psid, text, buttons);
             
         } catch (RuntimeException e) {
             graphClient.sendTextMessage(page.getPageId(), page.getPageAccessTokenEncrypted(), psid, "⚠️ " + e.getMessage());
