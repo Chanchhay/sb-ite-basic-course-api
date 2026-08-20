@@ -32,6 +32,9 @@ public class OrderMapper {
                 order.getInvoiceNumber(),
                 order.getChannel(),
                 order.getStatus(),
+                // Set by the service layer, which is the one with sale data —
+                // the mapper only ever sees the order.
+                null,
                 order.getSubtotal(),
                 order.getDiscountAmount(),
                 order.getTaxRate(),

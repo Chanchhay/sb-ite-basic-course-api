@@ -1,12 +1,17 @@
 package kh.edu.istad.ite.features.order;
 
+import jakarta.validation.Valid;
+import kh.edu.istad.ite.features.order.dto.CollectPayLaterRequest;
 import kh.edu.istad.ite.features.order.dto.DailyChannelRevenue;
+import kh.edu.istad.ite.features.order.dto.SaleResponse;
 import kh.edu.istad.ite.features.order.dto.SalesProfitResponse;
 import kh.edu.istad.ite.features.order.service.SalesReportService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -45,5 +50,19 @@ public class SalesReportController {
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime to) {
 
         return salesReportService.dailyRevenueByChannel(businessId, from, to);
+    }
+
+    @GetMapping("/pay-later")
+    public List<SaleResponse> payLaterSales(@PathVariable UUID businessId) {
+        return salesReportService.payLaterSales(businessId);
+    }
+
+    @PatchMapping("/pay-later/{saleId}/collect")
+    public SaleResponse collectPayLater(
+            @PathVariable UUID businessId,
+            @PathVariable UUID saleId,
+            @Valid @RequestBody CollectPayLaterRequest request) {
+
+        return salesReportService.collectPayLater(businessId, saleId, request);
     }
 }

@@ -2,6 +2,7 @@ package kh.edu.istad.ite.features.order.dto;
 
 import kh.edu.istad.ite.shared.enums.OrderChannel;
 import kh.edu.istad.ite.shared.enums.OrderStatus;
+import kh.edu.istad.ite.shared.enums.PaymentMethodType;
 import kh.edu.istad.ite.shared.enums.TaxInclusionType;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
@@ -24,6 +25,8 @@ public class OrderResponse {
     private String invoiceNumber;
     private OrderChannel channel;
     private OrderStatus status;
+    /** How the sale that closed this order was paid. Null while still PENDING. */
+    private PaymentMethodType paymentMethod;
     private BigDecimal subtotal;
     private BigDecimal discountAmount;
     private BigDecimal taxRate;

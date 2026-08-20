@@ -1,12 +1,19 @@
 package kh.edu.istad.ite.features.order.service;
 
+import kh.edu.istad.ite.features.order.dto.CollectPayLaterRequest;
 import kh.edu.istad.ite.features.order.dto.DailyChannelRevenue;
+import kh.edu.istad.ite.features.order.dto.SaleResponse;
 import kh.edu.istad.ite.features.order.dto.SalesProfitResponse;
+import kh.edu.istad.ite.features.order.entity.Sale;
+import kh.edu.istad.ite.features.order.mapper.OrderMapper;
 import kh.edu.istad.ite.features.order.repository.SaleRepository;
 import kh.edu.istad.ite.shared.enums.OrderChannel;
+import kh.edu.istad.ite.shared.helper.BusinessHelper;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -22,7 +29,11 @@ import java.util.UUID;
 @Transactional(readOnly = true)
 public class SalesReportService {
 
+    private static final String CURRENCY_KHR = "KHR";
+
     private final SaleRepository saleRepository;
+    private final BusinessHelper businessHelper;
+    private final OrderMapper orderMapper;
 
     public SalesProfitResponse profitByChannel(
             UUID businessId,
@@ -105,6 +116,51 @@ public class SalesReportService {
                         OrderChannel.valueOf(row.getChannel()),
                         money(row.getRevenue())))
                 .toList();
+    }
+
+    /** Every sale rung up as "pay later" that hasn't been collected yet. */
+    public List<SaleResponse> payLaterSales(UUID businessId) {
+        businessHelper.findAccessibleBusiness(businessId);
+
+        return saleRepository.findUnsettledByBusinessId(businessId).stream()
+                .map(orderMapper::toSaleResponse)
+                .toList();
+    }
+
+    /** Settles a pay-later sale once the money actually comes in. */
+    @Transactional
+    public SaleResponse collectPayLater(UUID businessId, UUID saleId, CollectPayLaterRequest request) {
+        businessHelper.findAccessibleBusiness(businessId);
+
+        Sale sale = saleRepository.findById(saleId)
+                .filter(s -> s.getBusiness().getId().equals(businessId))
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Sale has not been found"));
+
+        if (sale.getPaidAmount().compareTo(sale.getTotalAmount()) >= 0) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "This sale has already been settled");
+        }
+
+        if (kh.edu.istad.ite.shared.enums.PaymentMethodType.PAY_LATER.equals(request.paymentMethod())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Collecting a sale requires an actual payment method");
+        }
+
+        int scale = CURRENCY_KHR.equalsIgnoreCase(sale.getCurrency()) ? 0 : 2;
+        BigDecimal owed = sale.getTotalAmount().subtract(sale.getPaidAmount());
+        BigDecimal received = request.receivedAmount() == null
+                ? owed
+                : request.receivedAmount().setScale(scale, RoundingMode.HALF_UP);
+
+        if (received.compareTo(owed) < 0) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "Received " + received + " is less than the amount owed " + owed);
+        }
+
+        sale.setPaidAmount(sale.getTotalAmount());
+        sale.setChangeAmount(received.subtract(owed).setScale(scale, RoundingMode.HALF_UP));
+        sale.setPaymentMethod(request.paymentMethod());
+
+        return orderMapper.toSaleResponse(saleRepository.save(sale));
     }
 
     private static BigDecimal orZero(BigDecimal value) {

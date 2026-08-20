@@ -6,6 +6,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -16,7 +17,14 @@ public interface SaleRepository extends JpaRepository<Sale, UUID> {
 
     boolean existsByOrderId(UUID orderId);
 
+    /** How each of these orders was paid, for a page of order history rows. */
+    List<Sale> findByOrder_IdIn(Collection<UUID> orderIds);
+
     List<Sale> findAllByBusinessIdOrderBySoldAtDesc(UUID businessId);
+
+    /** Sales rung up as "pay later" that still owe money. */
+    @Query("select s from Sale s where s.business.id = :businessId and s.paidAmount < s.totalAmount order by s.soldAt desc")
+    List<Sale> findUnsettledByBusinessId(@Param("businessId") UUID businessId);
 
     long countBySoldAtGreaterThanEqual(LocalDateTime since);
 
@@ -73,14 +81,7 @@ public interface SaleRepository extends JpaRepository<Sale, UUID> {
         java.math.BigDecimal getCost();
     }
 
-    /**
-     * What each channel took, per day, over a range.
-     *
-     * Native rather than JPQL because grouping by calendar day needs the
-     * database's own date formatting — there is no portable way to truncate a
-     * timestamp in JPQL. A day with no sales on a channel has no row; the
-     * caller fills the gaps for whatever range it asked for.
-     */
+
     @Query(value = """
             select to_char(sold_at, 'YYYY-MM-DD') as day,
                    channel as channel,
