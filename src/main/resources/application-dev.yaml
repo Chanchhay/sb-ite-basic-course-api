@@ -21,7 +21,7 @@ spring:
     oauth2:
       resourceserver:
         jwt:
-          issuer-uri: ${ISSUER_URI}
+          issuer-uri: ${ISSUER_URI:https://auth.chanchhay.site/realms/istad-fluxipos-auth}
 
   jpa:
     hibernate:
