@@ -30,8 +30,11 @@ import java.util.Optional;
 import java.util.UUID;
 
 
+import org.springframework.transaction.annotation.Transactional;
+
 @Service
 @RequiredArgsConstructor
+@Transactional(readOnly = true)
 public class FacebookCatalogService {
 
     // Messenger Generic Template hard limits.
