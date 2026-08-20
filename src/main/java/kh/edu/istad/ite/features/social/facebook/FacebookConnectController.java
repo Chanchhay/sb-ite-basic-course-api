@@ -172,16 +172,17 @@ public class FacebookConnectController {
                 return redirectToDashboard("facebook_no_pages");
             }
 
-            Map<String, Object> firstPage = pages.get(0);
-            String pageId = String.valueOf(firstPage.get("id"));
-            String pageName = String.valueOf(firstPage.get("name"));
-            String pageAccessToken = String.valueOf(firstPage.get("access_token"));
-
-            pageService.registerPage(businessId, pageId, pageName, pageAccessToken);
+            for (Map<String, Object> pageMap : pages) {
+                String pageId = String.valueOf(pageMap.get("id"));
+                String pageName = String.valueOf(pageMap.get("name"));
+                String pageAccessToken = String.valueOf(pageMap.get("access_token"));
+                log.info("Registering Facebook Page [{}] ({}) for business [{}]", pageName, pageId, businessId);
+                pageService.registerPage(businessId, pageId, pageName, pageAccessToken);
+            }
 
             return redirectToDashboard("facebook_connected");
         } catch (Exception e) {
-            log.error("Facebook connect failed for business {}: {}", businessId, e.getMessage());
+            log.error("Facebook connect failed for business " + businessId, e);
             return redirectToDashboard("facebook_connect_failed");
         }
     }
