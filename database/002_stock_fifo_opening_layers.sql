@@ -14,17 +14,31 @@
 -- Run once, after the app has booted on the new code (Hibernate creates
 -- `stock_layers` and `stock_consumptions`). Safe to run again: items that
 -- already have a layer are skipped.
+--
+-- Amended: it was not, quite. The skip compares `l.item_id = e.item_id`, and
+-- once add-ons started recording stock with a null `item_id` that comparison
+-- was null rather than true for them — so every run re-opened a layer against
+-- no item at all, and once 003 had added its constraint the insert failed and
+-- took the boot down with it. Only items are considered now.
 
 BEGIN;
 
 WITH latest_entry AS (
     -- The newest movement per item carries the running balance.
+    --
+    -- Items only. When this was written every movement had one; add-ons came
+    -- later and hold stock in their own column, leaving `item_id` null. Those
+    -- rows would otherwise collapse into a single null group and open one
+    -- layer belonging to neither an item nor an add-on — which is exactly what
+    -- 003 adds a constraint to forbid. Add-on stock is not this script's to
+    -- open: it was never costed before add-ons existed.
     SELECT DISTINCT ON (item_id)
             item_id,
             business_owner_id,
             quantity_after,
             created_date
     FROM stock_entries
+    WHERE item_id IS NOT NULL
     ORDER BY item_id, created_date DESC, id DESC
 ),
 latest_cost AS (
@@ -34,6 +48,7 @@ latest_cost AS (
             unit_cost
     FROM stock_entries
     WHERE unit_cost IS NOT NULL
+      AND item_id IS NOT NULL
     ORDER BY item_id, created_date DESC, id DESC
 )
 INSERT INTO stock_layers (

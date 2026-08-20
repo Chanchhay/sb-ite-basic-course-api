@@ -43,6 +43,25 @@ public class FilterSpecification<T> {
                         return LocalDate.parse(value).atStartOfDay();
                     }
                 }
+            } else if (javaType.equals(java.time.Instant.class)) {
+                // A column that stores a moment rather than a reading of a
+                // clock. An offset in the value is honoured; without one the
+                // text is read in the server's own zone, which is what a
+                // caller sending "the start of today" means by it.
+                try {
+                    return java.time.ZonedDateTime.parse(value).toInstant();
+                } catch (DateTimeParseException e1) {
+                    try {
+                        String normalised = value.contains(" ") ? value.replace(" ", "T") : value;
+                        return LocalDateTime.parse(normalised)
+                                .atZone(java.time.ZoneId.systemDefault())
+                                .toInstant();
+                    } catch (DateTimeParseException e2) {
+                        return LocalDate.parse(value.trim())
+                                .atStartOfDay(java.time.ZoneId.systemDefault())
+                                .toInstant();
+                    }
+                }
             } else if (javaType.equals(LocalDate.class)) {
                 if (value.contains("T")) {
                     return LocalDate.parse(value.substring(0, value.indexOf("T")));

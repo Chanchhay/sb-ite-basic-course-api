@@ -1,13 +1,37 @@
 # Database scripts
 
-Hand-run SQL. There is no migration tool in this project — Hibernate runs with
+There is no migration tool in this project — Hibernate runs with
 `ddl-auto: update`, so it creates new tables and adds new columns on boot by
 itself. What it will **never** do is drop or alter something that already
 exists: a constraint that has become wrong, a column that changed meaning, data
 that needs backfilling. That is what lives here.
 
-Run the scripts in number order. Each one is written to be safe to run twice —
-if it has already been applied, running it again does nothing.
+**These run on boot.** `SchemaScriptRunner` applies them in number order, after
+Hibernate has done its part, and records each one in a `schema_scripts` table so
+it runs once. They used to be hand-run, which is exactly as reliable as somebody
+remembering: `orders.tax_amount` sat missing for weeks because Hibernate could
+not add it, logged the failure, and booted anyway. In a container it was worse
+than forgetfulness — the image holds only the jar, so the scripts were not
+present to run at all. They are packaged into it now (see `processResources` in
+`build.gradle`), which is why they must stay in this directory.
+
+A script that fails **stops the boot**. An app serving requests against a schema
+it could not finish preparing is the failure this is here to prevent, so it is
+loud rather than survivable. Set `app.database.auto-migrate: false` to skip the
+whole step if you need to boot and repair by hand.
+
+## Writing one
+
+Number it after the last, and make it safe to run twice — that is what lets a
+database where the scripts were already applied by hand adopt the runner
+cleanly: its `schema_scripts` table starts empty, every script runs again, and
+every one finds its work already done.
+
+Never edit a script that has shipped. The runner notices (it stores a checksum),
+warns, and does **not** re-run it, because re-running an edited script is how a
+careful change becomes a destructive one. Add a new number instead.
+
+To run one by hand anyway — against a database the app is not booting on, say:
 
 ```bash
 psql "postgresql://$DB_USER@localhost:1681/fluxibix" -f database/001_units_scope_and_catalog_extras.sql
@@ -56,3 +80,4 @@ the app after these changes creates:
 | `001_units_scope_and_catalog_extras.sql` | Drops the global unique index on `units.slug` so two businesses can both own a "Sack", and backfills `symbol`/`category` on existing units. |
 | `002_stock_fifo_opening_layers.sql` | Opens one FIFO batch per item from its current balance, so stock that predates batch tracking can still be costed. Run after booting on the new code. |
 | `003_stock_targets_allow_add_ons.sql` | Drops `NOT NULL` on `stock_entries.item_id` / `stock_layers.item_id` and adds a check that exactly one target is set, so add-ons can hold stock. Run after booting on the new code. |
+| `005_add_tax_amount.sql` | Adds `orders.tax_amount` / `sales.tax_amount` with a default of zero. Postgres refuses a NOT NULL column with no default on a table that already has rows, so Hibernate cannot add these itself on any database with trading history. |

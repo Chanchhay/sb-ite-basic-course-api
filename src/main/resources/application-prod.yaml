@@ -37,7 +37,8 @@ spring:
       # `update` because this deployment starts from an empty database and
       # there is no migration tool: Hibernate creates every table, column and
       # foreign key from the entities. It will never drop or narrow anything,
-      # so database/ stays the escape hatch for changes it cannot make.
+      # so database/ stays the escape hatch for changes it cannot make — and
+      # SchemaScriptRunner applies those scripts on boot, after this has run.
       ddl-auto: update
     show-sql: true
     open-in-view: false
