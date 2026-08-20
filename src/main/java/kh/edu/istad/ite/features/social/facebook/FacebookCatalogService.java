@@ -29,11 +29,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
-/**
- * Renders items (image, title, price, detail) for the Messenger bot,
- * mirroring what TelegramWebhookServiceImpl/TelegramUIHelper does for Telegram,
- * but using Messenger's Generic Template card instead of Markdown captions.
- */
+
 @Service
 @RequiredArgsConstructor
 public class FacebookCatalogService {
@@ -91,9 +87,6 @@ public class FacebookCatalogService {
         }
         Item item = found.get();
  //show item again with detail
-//        graphClient.sendGenericTemplate(page.getPageId(), page.getPageAccessTokenEncrypted(), psid,
-//                List.of(buildElement(item, page.getBusiness(), false)));
-
         graphClient.sendTextMessage(page.getPageId(), page.getPageAccessTokenEncrypted(), psid,
                 buildDetailText(item, page.getBusiness()));
         List<Map<String, Object>> buttons = List.of(
@@ -112,7 +105,8 @@ public class FacebookCatalogService {
         Optional<String> imageUrl = item.getImages().stream()
                 .findFirst()
                 .map(image -> minioService.getPublicUrl(image.getImageKey()))
-                .or(() -> Optional.ofNullable(item.getImageUrl()));
+                .or(() -> Optional.ofNullable(item.getImageUrl()))
+                .filter(url -> url != null && url.startsWith("https://"));
 
         List<Map<String, Object>> buttons = List.of(
                 Map.of("type", "postback", "title", "🔍 លម្អិត", "payload", "ITEM:" + item.getId()),
