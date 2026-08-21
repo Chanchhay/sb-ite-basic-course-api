@@ -1,11 +1,14 @@
 package kh.edu.istad.ite.features.payment.abapay;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import kh.edu.istad.ite.config.props.AbaPayWayProps;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
@@ -32,6 +35,7 @@ public class AbaPayWayClient {
 
     private final AbaPayWayProps props;
     private final RestTemplate restTemplate = new RestTemplate();
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     public Optional<String> createAbapayDeeplink(String tranId, BigDecimal amount, String currency, String returnUrl) {
         if (!props.isEnabled()) {
@@ -53,7 +57,13 @@ public class AbaPayWayClient {
             String reqTime = LocalDateTime.now().format(REQ_TIME);
             String amountStr = amount.setScale(2, java.math.RoundingMode.HALF_UP).toString();
             String b64ReturnUrl = Base64.getEncoder().encodeToString(returnUrl.getBytes(StandardCharsets.UTF_8));
-            String itemsB64 = "";
+
+            // Every field below (present or blank) participates in the hash, and the
+            // ORDER is fixed by ABA's docs — it is NOT the same as the order fields
+            // appear in the request form. Getting this order wrong is indistinguishable
+            // from a network failure: PayWay just silently rejects with "Wrong Hash"
+            // and an empty-ish response, which is exactly what we were seeing.
+            String items = "";
             String shipping = "";
             String firstname = "";
             String lastname = "";
@@ -67,12 +77,8 @@ public class AbaPayWayClient {
             String customFields = "";
             String returnParams = "";
 
-            // Official ABA PayWay HMAC-SHA512 concatenation order
-            String toHash = reqTime
-                    + props.getMerchantId()
-                    + cleanTranId
-                    + amountStr
-                    + itemsB64
+            String toHash = reqTime + props.getMerchantId() + cleanTranId + amountStr
+                    + items
                     + shipping
                     + firstname
                     + lastname
@@ -87,7 +93,6 @@ public class AbaPayWayClient {
                     + currency
                     + customFields
                     + returnParams;
-
             String hash = hmacSha512Base64(toHash, props.getApiKey());
 
             MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
@@ -95,7 +100,7 @@ public class AbaPayWayClient {
             form.add("merchant_id", props.getMerchantId());
             form.add("tran_id", cleanTranId);
             form.add("amount", amountStr);
-            form.add("items", itemsB64);
+            form.add("items", items);
             form.add("shipping", shipping);
             form.add("firstname", firstname);
             form.add("lastname", lastname);
@@ -115,38 +120,42 @@ public class AbaPayWayClient {
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
 
-            @SuppressWarnings("unchecked")
-            Map<String, Object> response = restTemplate.postForObject(
+            // Use exchange() + String (not postForObject + Map) so a non-2xx status or an
+            // unparsable body is fully visible in the log instead of collapsing to "null" —
+            // that blind spot is exactly what made the previous bug hard to diagnose.
+            ResponseEntity<String> httpResponse = restTemplate.exchange(
                     props.getBaseUrl() + "/api/payment-gateway/v1/payments/purchase",
+                    HttpMethod.POST,
                     new HttpEntity<>(form, headers),
-                    Map.class
+                    String.class
             );
 
-            log.info("ABA PayWay API raw response for tranId={}: {}", cleanTranId, response);
+            log.info("ABA PayWay HTTP {} for tranId={}: {}",
+                    httpResponse.getStatusCode(), cleanTranId, httpResponse.getBody());
 
-            if (response != null) {
-                @SuppressWarnings("unchecked")
-                Map<String, Object> statusMap = (Map<String, Object>) response.get("status");
-                if (statusMap != null) {
-                    log.info("ABA PayWay response status: code={}, message={}", statusMap.get("code"), statusMap.get("message"));
-                }
-
-                if (response.get("abapay_deeplink") != null) {
-                    return Optional.of(response.get("abapay_deeplink").toString());
-                }
-                if (response.get("deeplink") != null) {
-                    return Optional.of(response.get("deeplink").toString());
-                }
-                if (response.get("app_checkout_url") != null) {
-                    return Optional.of(response.get("app_checkout_url").toString());
-                }
-                @SuppressWarnings("unchecked")
-                Map<String, Object> data = (Map<String, Object>) response.get("data");
-                if (data != null && data.get("abapay_deeplink") != null) {
-                    return Optional.of(data.get("abapay_deeplink").toString());
-                }
+            if (!httpResponse.getStatusCode().is2xxSuccessful() || !StringUtils.hasText(httpResponse.getBody())) {
+                return Optional.empty();
             }
-            log.warn("ABA PayWay response missing deeplink key: {}", response);
+
+            @SuppressWarnings("unchecked")
+            Map<String, Object> response = objectMapper.readValue(httpResponse.getBody(), Map.class);
+
+            if (response.get("abapay_deeplink") != null) {
+                return Optional.of(response.get("abapay_deeplink").toString());
+            }
+            if (response.get("deeplink") != null) {
+                return Optional.of(response.get("deeplink").toString());
+            }
+            if (response.get("app_checkout_url") != null) {
+                return Optional.of(response.get("app_checkout_url").toString());
+            }
+            @SuppressWarnings("unchecked")
+            Map<String, Object> data = (Map<String, Object>) response.get("data");
+            if (data != null && data.get("abapay_deeplink") != null) {
+                return Optional.of(data.get("abapay_deeplink").toString());
+            }
+
+            log.warn("ABA PayWay response missing deeplink key for tranId={}: {}", cleanTranId, response);
             return Optional.empty();
         } catch (Exception e) {
             log.error("ABA PayWay createAbapayDeeplink failed for tranId={}", tranId, e);
