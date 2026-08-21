@@ -220,7 +220,7 @@ public class FacebookWebhookController {
             return;
         }
 
-        if ("CATALOG".equals(payload) || (payload != null && (payload.contains("CATALOG") || payload.contains("មើលផលិតផល")))) {
+        if ("CATALOG".equals(payload)) {
             catalogService.showCatalog(page, psid);
             return;
         }
@@ -233,10 +233,7 @@ public class FacebookWebhookController {
     private boolean isCatalogCommand(String text) {
         if (text == null) return false;
         String normalized = text.trim().toLowerCase();
-        return normalized.contains("catalog") 
-                || normalized.contains("menu")
-                || normalized.contains("ម៉ឺនុយ") 
-                || normalized.contains("ផលិតផល")
-                || normalized.contains("មើលផលិតផល");
+        return normalized.equals("catalog") || normalized.equals("menu")
+                || normalized.equals("ម៉ឺនុយ") || normalized.equals("ផលិតផល");
     }
 }
