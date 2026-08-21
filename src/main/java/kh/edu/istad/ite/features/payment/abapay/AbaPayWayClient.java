@@ -9,6 +9,7 @@ import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
+import org.springframework.util.StringUtils;
 import org.springframework.web.client.RestTemplate;
 
 import javax.crypto.Mac;
@@ -33,7 +34,13 @@ public class AbaPayWayClient {
     private final RestTemplate restTemplate = new RestTemplate();
 
     public Optional<String> createAbapayDeeplink(String tranId, BigDecimal amount, String currency, String returnUrl) {
-        if (!props.isEnabled() || props.getMerchantId() == null || props.getApiKey() == null) {
+        if (!props.isEnabled()) {
+            log.warn("ABA PayWay is disabled (app.aba-payway.enabled=false)");
+            return Optional.empty();
+        }
+        if (!StringUtils.hasText(props.getMerchantId()) || !StringUtils.hasText(props.getApiKey())) {
+            log.warn("ABA PayWay missing merchantId or apiKey (merchantId={}, apiKeyPresent={})",
+                    props.getMerchantId(), StringUtils.hasText(props.getApiKey()));
             return Optional.empty();
         }
 
@@ -46,17 +53,41 @@ public class AbaPayWayClient {
             String reqTime = LocalDateTime.now().format(REQ_TIME);
             String amountStr = amount.setScale(2, java.math.RoundingMode.HALF_UP).toString();
             String b64ReturnUrl = Base64.getEncoder().encodeToString(returnUrl.getBytes(StandardCharsets.UTF_8));
+            String itemsB64 = "";
+            String shipping = "";
+            String firstname = "";
+            String lastname = "";
+            String email = "";
+            String phone = "";
+            String type = "purchase";
+            String paymentOption = "abapay_deeplink";
+            String cancelUrl = "";
+            String continueSuccessUrl = "";
+            String returnDeeplink = "";
+            String customFields = "";
+            String returnParams = "";
 
-            // Hash = HMAC-SHA512(base64) over concatenated fields, per ABA's docs.
-            String toHash = reqTime + props.getMerchantId() + cleanTranId + amountStr
-                    + "" // items (empty)
-                    + "" // shipping (empty)
+            // Official ABA PayWay HMAC-SHA512 concatenation order
+            String toHash = reqTime
+                    + props.getMerchantId()
+                    + cleanTranId
+                    + amountStr
+                    + itemsB64
+                    + shipping
+                    + firstname
+                    + lastname
+                    + email
+                    + phone
+                    + type
+                    + paymentOption
                     + b64ReturnUrl
-                    + "" // continue_success_url
-                    + "" // return_deeplink
+                    + cancelUrl
+                    + continueSuccessUrl
+                    + returnDeeplink
                     + currency
-                    + "" // custom_fields
-                    + "abapay_deeplink"; // payment_option
+                    + customFields
+                    + returnParams;
+
             String hash = hmacSha512Base64(toHash, props.getApiKey());
 
             MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
@@ -64,9 +95,21 @@ public class AbaPayWayClient {
             form.add("merchant_id", props.getMerchantId());
             form.add("tran_id", cleanTranId);
             form.add("amount", amountStr);
-            form.add("currency", currency);
-            form.add("payment_option", "abapay_deeplink");
+            form.add("items", itemsB64);
+            form.add("shipping", shipping);
+            form.add("firstname", firstname);
+            form.add("lastname", lastname);
+            form.add("email", email);
+            form.add("phone", phone);
+            form.add("type", type);
+            form.add("payment_option", paymentOption);
             form.add("return_url", b64ReturnUrl);
+            form.add("cancel_url", cancelUrl);
+            form.add("continue_success_url", continueSuccessUrl);
+            form.add("return_deeplink", returnDeeplink);
+            form.add("currency", currency);
+            form.add("custom_fields", customFields);
+            form.add("return_params", returnParams);
             form.add("hash", hash);
 
             HttpHeaders headers = new HttpHeaders();
@@ -79,10 +122,31 @@ public class AbaPayWayClient {
                     Map.class
             );
 
-            if (response != null && response.get("abapay_deeplink") != null) {
-                return Optional.of(response.get("abapay_deeplink").toString());
+            log.info("ABA PayWay API raw response for tranId={}: {}", cleanTranId, response);
+
+            if (response != null) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> statusMap = (Map<String, Object>) response.get("status");
+                if (statusMap != null) {
+                    log.info("ABA PayWay response status: code={}, message={}", statusMap.get("code"), statusMap.get("message"));
+                }
+
+                if (response.get("abapay_deeplink") != null) {
+                    return Optional.of(response.get("abapay_deeplink").toString());
+                }
+                if (response.get("deeplink") != null) {
+                    return Optional.of(response.get("deeplink").toString());
+                }
+                if (response.get("app_checkout_url") != null) {
+                    return Optional.of(response.get("app_checkout_url").toString());
+                }
+                @SuppressWarnings("unchecked")
+                Map<String, Object> data = (Map<String, Object>) response.get("data");
+                if (data != null && data.get("abapay_deeplink") != null) {
+                    return Optional.of(data.get("abapay_deeplink").toString());
+                }
             }
-            log.warn("ABA PayWay response missing abapay_deeplink: {}", response);
+            log.warn("ABA PayWay response missing deeplink key: {}", response);
             return Optional.empty();
         } catch (Exception e) {
             log.error("ABA PayWay createAbapayDeeplink failed for tranId={}", tranId, e);
