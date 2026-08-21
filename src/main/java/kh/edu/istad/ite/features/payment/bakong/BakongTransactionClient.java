@@ -9,13 +9,16 @@ import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 
 import java.math.BigDecimal;
+import java.util.HashMap;
 import java.util.Map;
+import java.util.Optional;
 
 @Component
 @Slf4j
 public class BakongTransactionClient {
 
     private static final String CHECK_PATH = "/v1/check_transaction_by_md5";
+    private static final String DEEPLINK_PATH = "/v1/generate_deeplink_by_qr";
     private static final int RESPONSE_CODE_SUCCESS = 0;
 
     private final RestClient restClient;
@@ -50,6 +53,48 @@ public class BakongTransactionClient {
         } catch (RestClientException exception) {
             log.error("Bakong check failed for md5 {}: {}", md5, exception.getMessage());
             return BakongCheckResult.unverifiable("Could not reach Bakong: " + exception.getMessage());
+        }
+    }
+
+    public Optional<String> generateDeeplinkByQr(String accessToken, String qr, String callbackUrl, String appName) {
+        try {
+            Map<String, Object> sourceInfo = new HashMap<>();
+            sourceInfo.put("appIconUrl", "");
+            sourceInfo.put("appName", appName);
+            sourceInfo.put("appDeepLinkCallback", callbackUrl != null ? callbackUrl : "");
+
+            Map<String, Object> body = restClient.post()
+                    .uri(DEEPLINK_PATH)
+                    .header("Authorization", "Bearer " + accessToken)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(Map.of("qr", qr, "sourceInfo", sourceInfo))
+                    .retrieve()
+                    .body(new org.springframework.core.ParameterizedTypeReference<Map<String, Object>>() {});
+
+            if (body == null) {
+                return Optional.empty();
+            }
+
+            Number responseCode = (Number) body.get("responseCode");
+            if (responseCode == null || responseCode.intValue() != RESPONSE_CODE_SUCCESS) {
+                log.warn("Bakong generate_deeplink_by_qr rejected: {}", body.get("responseMessage"));
+                return Optional.empty();
+            }
+
+            Object data = body.get("data");
+            if (data instanceof Map<?, ?> map && map.get("shortLink") != null) {
+                return Optional.of(String.valueOf(map.get("shortLink")));
+            }
+            return Optional.empty();
+
+        } catch (HttpClientErrorException.Unauthorized | HttpClientErrorException.Forbidden exception) {
+            log.error("Bakong rejected the API token while generating a deeplink — the shop must renew it. {}",
+                    exception.getMessage());
+            return Optional.empty();
+
+        } catch (RestClientException exception) {
+            log.error("Bakong generate_deeplink_by_qr failed: {}", exception.getMessage());
+            return Optional.empty();
         }
     }
 

@@ -80,6 +80,9 @@ app:
     base-url: https://api-bakong.nbc.gov.kh
     timeout: 8s
 
+  public-api:
+    base-url: ${SERVER_URL:http://localhost:8080}
+
   aba-payway:
     enabled: ${ABA_PAYWAY_ENABLED:false}
     base-url: https://checkout-sandbox.payway.com.kh
