@@ -123,7 +123,15 @@ public class PublicOrderController {
             return null;
         }
 
-        String accessToken = credentialCipher.decrypt(settingOpt.get().getApiTokenEncrypted());
+        String accessToken;
+        try {
+            accessToken = credentialCipher.decrypt(settingOpt.get().getApiTokenEncrypted());
+        } catch (Exception exception) {
+            log.error("Could not decrypt Bakong API token for business {} — is CREDENTIAL_ENCRYPTION_KEY set? {}",
+                    order.getBusiness().getId(), exception.getMessage());
+            return null;
+        }
+
         String appName = order.getBusiness().getDisplayName() != null
                 ? order.getBusiness().getDisplayName()
                 : "iPOS";
