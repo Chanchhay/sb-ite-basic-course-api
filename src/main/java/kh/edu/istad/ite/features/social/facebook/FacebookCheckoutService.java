@@ -63,7 +63,7 @@ import java.util.Map;
 public class FacebookCheckoutService {
 
     private static final String CURRENCY_KHR = "KHR";
-    private static final int QR_VALIDITY_MINUTES = 5;
+    private static final int QR_VALIDITY_MINUTES = 2;
     private static final int QR_IMAGE_SIZE = 512;
     private static final DateTimeFormatter INVOICE_DATE = DateTimeFormatter.ofPattern("yyyyMMdd");
 

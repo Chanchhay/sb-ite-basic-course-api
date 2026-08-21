@@ -65,9 +65,9 @@ public class PublicOrderController {
                         order.getTotal() != null ? order.getTotal() : BigDecimal.ZERO,
                         order.getCurrency() != null ? order.getCurrency() : "USD",
                         publicApiProps.getBaseUrl() + "/api/v1/public/orders/" + orderId + "/status")
-                .orElse(null); // no fake fallback scheme — an empty value lets the
-        // frontend disable the ABA button instead of pretending
-        // it will open an app that doesn't recognise the link
+                .orElseGet(() -> StringUtils.hasText(qrPayload)
+                        ? "abamobile://qr?data=" + org.springframework.web.util.UriUtils.encode(qrPayload, java.nio.charset.StandardCharsets.UTF_8)
+                        : "");
 
         Map<String, Object> response = new HashMap<>();
         response.put("orderId", order.getId());

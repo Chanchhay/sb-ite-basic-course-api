@@ -13,5 +13,5 @@ public class AbaPayWayProps {
     private String baseUrl = "https://checkout-sandbox.payway.com.kh";
     private String merchantId;
     private String apiKey;
-    private boolean enabled = false;
+    private boolean enabled = true;
 }
