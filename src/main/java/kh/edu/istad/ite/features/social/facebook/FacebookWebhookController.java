@@ -131,8 +131,11 @@ public class FacebookWebhookController {
 
         if (isCatalogCommand(text)) {
             catalogService.showCatalog(page, senderId);
+        } else if (text != null && (text.contains("ប្រភេទទំនិញ") || text.toLowerCase().contains("category"))) {
+            catalogService.showCategories(page, senderId);
+        } else if (text != null && text.trim().length() >= 2) {
+            catalogService.searchItems(page, senderId, text.trim());
         } else {
-
             catalogService.sendWelcomeMenu(page, senderId);
         }
     }
@@ -220,7 +223,22 @@ public class FacebookWebhookController {
             return;
         }
 
-        if ("CATALOG".equals(payload)) {
+        if ("CATALOG_CATEGORIES".equals(payload)) {
+            catalogService.showCategories(page, psid);
+            return;
+        }
+
+        if (payload.startsWith("CATALOG_CAT:")) {
+            try {
+                UUID categoryId = UUID.fromString(payload.substring("CATALOG_CAT:".length()));
+                catalogService.showCatalogByCategory(page, psid, categoryId);
+            } catch (IllegalArgumentException e) {
+                log.warn("Invalid CATALOG_CAT payload: {}", payload);
+            }
+            return;
+        }
+
+        if ("CATALOG".equals(payload) || (payload != null && (payload.contains("CATALOG") || payload.contains("មើលផលិតផល")))) {
             catalogService.showCatalog(page, psid);
             return;
         }
@@ -233,7 +251,10 @@ public class FacebookWebhookController {
     private boolean isCatalogCommand(String text) {
         if (text == null) return false;
         String normalized = text.trim().toLowerCase();
-        return normalized.equals("catalog") || normalized.equals("menu")
-                || normalized.equals("ម៉ឺនុយ") || normalized.equals("ផលិតផល");
+        return normalized.contains("catalog") 
+                || normalized.contains("menu")
+                || normalized.contains("ម៉ឺនុយ") 
+                || normalized.contains("ផលិតផល")
+                || normalized.contains("មើលផលិតផល");
     }
 }

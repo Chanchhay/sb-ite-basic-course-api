@@ -78,7 +78,7 @@ import lombok.extern.slf4j.Slf4j;
 public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService {
 
     private static final String CURRENCY_KHR = "KHR";
-    private static final int QR_VALIDITY_MINUTES = 5;
+    private static final int QR_VALIDITY_MINUTES = 2;
     private static final int QR_IMAGE_SIZE = 512;
     private static final String TERMINAL_LABEL = "WEB";
     private static final DateTimeFormatter INVOICE_DATE = DateTimeFormatter.ofPattern("yyyyMMdd");
