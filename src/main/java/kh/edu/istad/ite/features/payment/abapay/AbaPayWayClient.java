@@ -38,12 +38,17 @@ public class AbaPayWayClient {
         }
 
         try {
+            String cleanTranId = tranId != null ? tranId.replace("-", "") : "";
+            if (cleanTranId.length() > 20) {
+                cleanTranId = cleanTranId.substring(0, 20);
+            }
+
             String reqTime = LocalDateTime.now().format(REQ_TIME);
             String amountStr = amount.setScale(2, java.math.RoundingMode.HALF_UP).toString();
             String b64ReturnUrl = Base64.getEncoder().encodeToString(returnUrl.getBytes(StandardCharsets.UTF_8));
 
             // Hash = HMAC-SHA512(base64) over concatenated fields, per ABA's docs.
-            String toHash = reqTime + props.getMerchantId() + tranId + amountStr
+            String toHash = reqTime + props.getMerchantId() + cleanTranId + amountStr
                     + "" // items (empty)
                     + "" // shipping (empty)
                     + b64ReturnUrl
@@ -57,7 +62,7 @@ public class AbaPayWayClient {
             MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
             form.add("req_time", reqTime);
             form.add("merchant_id", props.getMerchantId());
-            form.add("tran_id", tranId);
+            form.add("tran_id", cleanTranId);
             form.add("amount", amountStr);
             form.add("currency", currency);
             form.add("payment_option", "abapay_deeplink");
