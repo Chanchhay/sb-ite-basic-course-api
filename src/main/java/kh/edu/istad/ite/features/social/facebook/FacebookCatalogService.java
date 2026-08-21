@@ -202,7 +202,11 @@ public class FacebookCatalogService {
     public void showCategories(BusinessFacebookPage page, String psid) {
         UUID businessId = page.getBusiness().getId();
         List<kh.edu.istad.ite.features.catalog.entity.ItemGroup> categories =
-                itemGroupRepository.findByBusinessIdAndParentIsNullOrderByNameAsc(businessId);
+                itemGroupRepository.findByBusinessIdAndParentIsNotNullOrderByNameAsc(businessId);
+
+        if (categories.isEmpty()) {
+            categories = itemGroupRepository.findByBusinessIdAndParentIsNullOrderByNameAsc(businessId);
+        }
 
         if (categories.isEmpty()) {
             graphClient.sendTextMessage(page.getPageId(), page.getPageAccessTokenEncrypted(), psid,
