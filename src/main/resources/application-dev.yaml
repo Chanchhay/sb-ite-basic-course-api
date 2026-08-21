@@ -29,11 +29,11 @@ spring:
     show-sql: true
     properties:
       hibernate:
-        format_sql: true
+        format_sql: trueb
 
   datasource:
     driver-class-name: org.postgresql.Driver
-    url: jdbc:postgresql://${PGHOST:localhost}:${PGPORT:1681}/${PGDATABASE:fluxibix}
+    url: jdbc:postgresql://${PGHOST:localhost}:${PGPORT:5432}/${PGDATABASE:fluxibix}
     username: ${DB_USER}
     password: ${DB_PASS}
 

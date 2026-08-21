@@ -383,14 +383,14 @@ public class ItemServiceImpl implements ItemService {
         ItemGroup itemGroup = itemGroupRepository.findByIdAndBusinessId(itemGroupId, businessId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Item group has not been found"));
 
-        // An item is filed on a sub group, never on a top-level one. A parent
-        // is a heading: what it holds is the sum of its children, so an item
-        // sitting directly on it would be counted outside every child and
-        // again in the parent's own total.
-        if (itemGroup.getParent() == null) {
+        //An item may now be filed directly on a main (parent) item group or
+        // on one of its sub groups.Both are valid picks in the "Category"
+        // field on item creation/update.
+        if (itemGroup.getParent() == null
+                && itemGroupRepository.existsByBusinessIdAndParentId(businessId, itemGroup.getId())) {
             throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST,
-                    "Items must be filed under a sub group, not a main item group"
+                    "This category has sub-categories; choose one of its sub-categories instead"
             );
         }
 
