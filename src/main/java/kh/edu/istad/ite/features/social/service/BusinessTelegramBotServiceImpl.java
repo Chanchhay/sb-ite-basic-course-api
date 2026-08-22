@@ -1,5 +1,6 @@
 package kh.edu.istad.ite.features.social.service;
 
+import kh.edu.istad.ite.shared.helper.BusinessHelper;
 import kh.edu.istad.ite.config.props.TelegramProps;
 import kh.edu.istad.ite.config.security.CredentialCipher;
 import kh.edu.istad.ite.config.security.SecurityUtils;
@@ -25,6 +26,7 @@ import java.util.UUID;
 public class BusinessTelegramBotServiceImpl implements BusinessTelegramBotService {
 
     private final BusinessRepository businessRepository;
+    private final BusinessHelper businessHelper;
     private final BusinessTelegramBotRepository telegramBotRepository;
     private final CredentialCipher credentialCipher;
     private final TelegramBotClient telegramBotClient;
@@ -112,8 +114,7 @@ public class BusinessTelegramBotServiceImpl implements BusinessTelegramBotServic
     }
 
     private Business findMyBusiness() {
-        return businessRepository.findByKeycloakUserId(UUID.fromString(SecurityUtils.extractUserId()))
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Business has not been found"));
+        return businessHelper.currentBusiness();
     }
 
     private void requireWebhookBaseUrlConfigured() {

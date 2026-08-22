@@ -131,8 +131,11 @@ public class FacebookWebhookController {
 
         if (isCatalogCommand(text)) {
             catalogService.showCatalog(page, senderId);
+        } else if (text != null && (text.contains("ប្រភេទទំនិញ") || text.toLowerCase().contains("category"))) {
+            catalogService.showCategories(page, senderId);
+        } else if (text != null && text.trim().length() >= 2) {
+            catalogService.searchItems(page, senderId, text.trim());
         } else {
-
             catalogService.sendWelcomeMenu(page, senderId);
         }
     }
@@ -217,6 +220,21 @@ public class FacebookWebhookController {
 
         if ("ORDER_HISTORY".equals(payload)) {
             customerService.handleOrderHistory(page, session, psid);
+            return;
+        }
+
+        if ("CATALOG_CATEGORIES".equals(payload)) {
+            catalogService.showCategories(page, psid);
+            return;
+        }
+
+        if (payload.startsWith("CATALOG_CAT:")) {
+            try {
+                UUID categoryId = UUID.fromString(payload.substring("CATALOG_CAT:".length()));
+                catalogService.showCatalogByCategory(page, psid, categoryId);
+            } catch (IllegalArgumentException e) {
+                log.warn("Invalid CATALOG_CAT payload: {}", payload);
+            }
             return;
         }
 

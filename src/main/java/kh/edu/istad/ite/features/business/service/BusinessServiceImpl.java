@@ -76,10 +76,10 @@ public class BusinessServiceImpl implements BusinessService {
     @Override
     @Transactional(readOnly = true)
     public BusinessResponse getMyBusiness() {
-        UUID keycloakUserId = AuthHelper.currentUserId();
-        Business business = businessRepository.findByKeycloakUserId(keycloakUserId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Business has not been found"));
-        return businessMapper.toResponse(business);
+        // Owner or staff. The dashboard resolves every other business id
+        // through this one call, so answering only for owners left staff with
+        // an application in which nothing loaded at all.
+        return businessMapper.toResponse(businessHelper.currentBusiness());
     }
 
     @Override

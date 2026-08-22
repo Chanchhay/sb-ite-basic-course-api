@@ -1,21 +1,27 @@
 package kh.edu.istad.ite.features.order;
 
+import kh.edu.istad.ite.config.props.PublicApiProps;
+import kh.edu.istad.ite.config.security.CredentialCipher;
 import kh.edu.istad.ite.features.order.entity.Order;
 import kh.edu.istad.ite.features.order.repository.OrderRepository;
 import kh.edu.istad.ite.features.payment.abapay.AbaPayWayClient;
+import kh.edu.istad.ite.features.payment.bakong.BakongTransactionClient;
+import kh.edu.istad.ite.features.payment.entity.BusinessPaymentSetting;
 import kh.edu.istad.ite.features.payment.entity.PaymentQrCode;
 import kh.edu.istad.ite.features.payment.khqr.QrImageRenderer;
+import kh.edu.istad.ite.features.payment.repository.BusinessPaymentSettingRepository;
 import kh.edu.istad.ite.features.payment.repository.PaymentQrCodeRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.math.BigDecimal;
-import java.net.URLEncoder;
-import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
@@ -24,14 +30,22 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/api/v1/public/orders")
 @RequiredArgsConstructor
+@Slf4j
 public class PublicOrderController {
 
     private final OrderRepository orderRepository;
     private final PaymentQrCodeRepository paymentQrCodeRepository;
     private final QrImageRenderer qrImageRenderer;
     private final AbaPayWayClient abaPayWayClient;
+    private final BusinessPaymentSettingRepository paymentSettingRepository;
+    private final BakongTransactionClient bakongTransactionClient;
+    private final CredentialCipher credentialCipher;
+    private final PublicApiProps publicApiProps;
 
     @GetMapping("/{orderId}/status")
+    @Transactional(readOnly = true) // order.getBusiness() below is LAZY — without this
+    // it throws LazyInitializationException the same
+    // way the Facebook catalog bug did.
     public ResponseEntity<Map<String, Object>> getOrderStatus(@PathVariable UUID orderId) {
         Order order = orderRepository.findById(orderId).orElse(null);
         if (order == null) {
@@ -43,21 +57,17 @@ public class PublicOrderController {
         String qrPayload = qrCodeOpt.map(PaymentQrCode::getQrPayload).orElse(null);
         String qrImageUri = qrPayload != null ? qrImageRenderer.toPngDataUri(qrPayload, 512) : null;
 
-        String bakongDeepLink = null;
-        String abaCustomDeeplink = null;
-        if (qrPayload != null && !qrPayload.isBlank()) {
-            String encodedQr = URLEncoder.encode(qrPayload, StandardCharsets.UTF_8);
-            bakongDeepLink = "bakong://qr?data=" + encodedQr;
-            abaCustomDeeplink = "abamobile://qr?data=" + encodedQr;
-        }
+        String bakongDeepLink = resolveBakongDeepLink(order, qrPayload, orderId);
 
         String abapayDeeplink = abaPayWayClient
                 .createAbapayDeeplink(
                         order.getId().toString(),
                         order.getTotal() != null ? order.getTotal() : BigDecimal.ZERO,
                         order.getCurrency() != null ? order.getCurrency() : "USD",
-                        "https://your-domain/api/v1/public/orders/" + orderId + "/status")
-                .orElse(abaCustomDeeplink);
+                        publicApiProps.getBaseUrl() + "/api/v1/public/orders/" + orderId + "/status")
+                .orElseGet(() -> StringUtils.hasText(qrPayload)
+                        ? "abamobile://qr?data=" + org.springframework.web.util.UriUtils.encode(qrPayload, java.nio.charset.StandardCharsets.UTF_8)
+                        : "");
 
         Map<String, Object> response = new HashMap<>();
         response.put("orderId", order.getId());
@@ -91,6 +101,44 @@ public class PublicOrderController {
         });
 
         return ResponseEntity.ok(Map.of("message", "Simulated payment successful", "status", "PAID"));
+    }
+
+    /**
+     * Turns the KHQR payload into a real link the Bakong app (and other
+     * KHQR-participating bank apps) will actually open, via Bakong's own
+     * generate_deeplink_by_qr endpoint — using the business's own saved
+     * Bakong API token, the same one already used for payment status checks.
+     */
+    private String resolveBakongDeepLink(Order order, String qrPayload, UUID orderId) {
+        if (!StringUtils.hasText(qrPayload)) {
+            return null;
+        }
+
+        Optional<BusinessPaymentSetting> settingOpt =
+                paymentSettingRepository.findByBusiness_Id(order.getBusiness().getId());
+
+        if (settingOpt.isEmpty() || !StringUtils.hasText(settingOpt.get().getApiTokenEncrypted())) {
+            log.warn("No Bakong API token saved for business {} — cannot generate a real app deeplink for order {}",
+                    order.getBusiness().getId(), orderId);
+            return null;
+        }
+
+        String accessToken;
+        try {
+            accessToken = credentialCipher.decrypt(settingOpt.get().getApiTokenEncrypted());
+        } catch (Exception exception) {
+            log.error("Could not decrypt Bakong API token for business {} — is CREDENTIAL_ENCRYPTION_KEY set? {}",
+                    order.getBusiness().getId(), exception.getMessage());
+            return null;
+        }
+
+        String appName = order.getBusiness().getDisplayName() != null
+                ? order.getBusiness().getDisplayName()
+                : "iPOS";
+
+        return bakongTransactionClient
+                .generateDeeplinkByQr(accessToken, qrPayload, null, appName)
+                .orElse(null);
     }
 
 }

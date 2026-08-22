@@ -25,6 +25,9 @@ public interface BusinessRepository extends JpaRepository<Business, UUID>, JpaSp
 
     Optional<Business> findByIdAndKeycloakUserId(UUID id, UUID keycloakUserId);
 
+    /** Ownership check for `BusinessAccessAuthorizationManager`, on every request. */
+    boolean existsByIdAndKeycloakUserId(UUID id, UUID keycloakUserId);
+
     long countByStatus(BusinessOwnerStatus status);
 
     long countByIsClosedTrue();

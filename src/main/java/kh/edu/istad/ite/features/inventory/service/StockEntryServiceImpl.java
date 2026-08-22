@@ -34,6 +34,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -80,7 +81,15 @@ public class StockEntryServiceImpl implements StockEntryService {
         }
 
         boolean incoming = quantityChange.compareTo(BigDecimal.ZERO) > 0;
-        validateMoneyFields(entryType, incoming, request);
+        /*
+         * An adjustment that moves nothing: the count is already right and
+         * what is being corrected is the cost or the batch details recorded
+         * beside it. It is neither stock arriving nor stock leaving, so no
+         * batch is opened and none is drawn down.
+         */
+        boolean standing = entryType == StockEntryType.ADJUSTMENT
+                && quantityChange.compareTo(BigDecimal.ZERO) == 0;
+        validateMoneyFields(entryType, incoming, standing, request);
 
         StockEntry stockEntry = new StockEntry();
         stockEntry.setBusiness(business);
@@ -91,6 +100,10 @@ public class StockEntryServiceImpl implements StockEntryService {
         stockEntry.setQuantityChange(quantityChange);
         stockEntry.setQuantityBefore(quantityBefore);
         stockEntry.setQuantityAfter(quantityAfter);
+        validateBatchFields(entryType, incoming, request);
+        stockEntry.setLotNumber(TextHelper.trimToNull(request.lotNumber()));
+        stockEntry.setManufacturedAt(request.manufacturedAt());
+        stockEntry.setExpiresAt(request.expiresAt());
         stockEntry.setBatchData(request.batchData());
         stockEntry.setReferenceType(TextHelper.trimToNull(request.referenceType()));
         stockEntry.setReferenceId(request.referenceId());
@@ -99,7 +112,16 @@ public class StockEntryServiceImpl implements StockEntryService {
         stockEntry.setUnitSalePrice(normalizeUnitCost(request.unitSalePrice()));
         applyEnteredAmount(stockEntry, target, request, quantityChange);
 
-        if (incoming) {
+        if (standing) {
+            /*
+             * The correction is written to the ledger and stops there. The
+             * batches already holding this stock keep the cost they were
+             * received at, so what the shelf is worth does not move on the
+             * strength of a note about it.
+             */
+            stockEntry.setUnitCost(normalizeUnitCost(request.unitCost()));
+            stockEntryRepository.saveAndFlush(stockEntry);
+        } else if (incoming) {
             // The cost is what was paid; with nothing typed the batch inherits
             // what stock currently costs rather than pretending it was free.
             BigDecimal unitCost = normalizeUnitCost(request.unitCost());
@@ -108,7 +130,7 @@ public class StockEntryServiceImpl implements StockEntryService {
             }
             stockEntry.setUnitCost(unitCost);
             stockEntryRepository.saveAndFlush(stockEntry);
-            openLayer(stockEntry, unitCost, quantityChange);
+            openLayer(stockEntry, unitCost, quantityChange, receivedAt(request));
         } else {
             stockEntryRepository.saveAndFlush(stockEntry);
             consumeLayers(stockEntry, quantityChange.abs());
@@ -267,13 +289,17 @@ public class StockEntryServiceImpl implements StockEntryService {
      * Cost belongs on the way in and sale price on the way out, and neither
      * crosses over. They shared one field once; a sale price typed into it
      * became the item's cost for every movement after it.
+     *
+     * An adjustment that moves no quantity is the one place a cost is allowed
+     * outside an arrival: correcting the cost is the whole point of it.
      */
     private void validateMoneyFields(
             StockEntryType entryType,
             boolean incoming,
+            boolean standing,
             CreateStockEntryRequest request
     ) {
-        if (!incoming && request.unitCost() != null) {
+        if (!incoming && !standing && request.unitCost() != null) {
             throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST,
                     "Outgoing stock is costed from what it was bought for, so unitCost cannot be set"
@@ -426,7 +452,98 @@ public class StockEntryServiceImpl implements StockEntryService {
                 ));
     }
 
-    private void openLayer(StockEntry stockEntry, BigDecimal unitCost, BigDecimal quantity) {
+    /**
+     * When a delivery arrived: what was said, or now if nothing was.
+     *
+     * A delivery recorded two days late still belongs where it happened in the
+     * queue. A date in the future is refused — it would put the batch behind
+     * stock that has not been bought yet, and there is no reading of it that
+     * is not a typo.
+     */
+    private LocalDateTime receivedAt(CreateStockEntryRequest request) {
+        if (request.receivedAt() == null) {
+            return LocalDateTime.now();
+        }
+        if (request.receivedAt().isAfter(LocalDateTime.now())) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "Stock cannot have arrived in the future"
+            );
+        }
+
+        return request.receivedAt();
+    }
+
+    /**
+     * Lot and dates belong to stock arriving, the same way a cost does.
+     *
+     * On a sale or a stock-out there is no batch to describe: which one the
+     * stock left is worked out from the queue, not typed. Recording an expiry
+     * there would read as a fact about the movement and be one about nothing.
+     *
+     * An adjustment is exempt whichever way it moves. Correcting what a batch
+     * is — a lot number keyed in wrong, a date read off the carton at
+     * stocktake — is a thing an adjustment is for, and refusing it on a
+     * correction that also counts a few units off would leave the operator
+     * splitting one real event into two movements to record it.
+     */
+    private void validateBatchFields(
+            StockEntryType entryType,
+            boolean incoming,
+            CreateStockEntryRequest request
+    ) {
+        boolean describesBatch = request.lotNumber() != null
+                || request.manufacturedAt() != null
+                || request.expiresAt() != null
+                || request.receivedAt() != null;
+
+        if (describesBatch && !incoming && entryType != StockEntryType.ADJUSTMENT) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "Lot and expiry describe stock arriving, not stock leaving"
+            );
+        }
+
+        if (request.manufacturedAt() != null
+                && request.expiresAt() != null
+                && request.expiresAt().isBefore(request.manufacturedAt())) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "This batch expires before it was made — check the dates"
+            );
+        }
+
+        /*
+         * A batch cannot be put on the shelf already expired.
+         *
+         * A date behind us is a typo every time, and an expensive one: the
+         * queue is ordered by expiry, so the batch would go straight to the
+         * front and be the next thing sold. Stock that really has gone off is
+         * written off, not received.
+         *
+         * Today is allowed — it expires at the end of the day, not the start.
+         */
+        if (request.expiresAt() != null && request.expiresAt().isBefore(LocalDate.now())) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "That expiry date has already passed. Write the stock off instead."
+            );
+        }
+
+        if (request.manufacturedAt() != null && request.manufacturedAt().isAfter(LocalDate.now())) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "Stock cannot have been made in the future"
+            );
+        }
+    }
+
+    private void openLayer(
+            StockEntry stockEntry,
+            BigDecimal unitCost,
+            BigDecimal quantity,
+            LocalDateTime receivedAt
+    ) {
         StockLayer layer = new StockLayer();
         layer.setBusiness(stockEntry.getBusiness());
         layer.setItem(stockEntry.getItem());
@@ -436,14 +553,23 @@ public class StockEntryServiceImpl implements StockEntryService {
         layer.setUnitCost(unitCost == null ? BigDecimal.ZERO.setScale(2) : unitCost);
         layer.setQuantityReceived(quantity);
         layer.setQuantityRemaining(quantity);
-        layer.setReceivedAt(LocalDateTime.now());
+        layer.setReceivedAt(receivedAt);
+        layer.setLotNumber(stockEntry.getLotNumber());
+        layer.setManufacturedAt(stockEntry.getManufacturedAt());
+        layer.setExpiresAt(stockEntry.getExpiresAt());
         layer.setBatchData(stockEntry.getBatchData());
         stockLayerRepository.saveAndFlush(layer);
     }
 
     /**
-     * Takes the quantity from the oldest batches first and records what each
-     * one gave up, then writes the movement's own cost from the total.
+     * Takes the quantity from the batches nearest their date first — then the
+     * oldest of those that never expire — and records what each one gave up,
+     * then writes the movement's own cost from the total.
+     *
+     * A batch already past its date is still drawn from. The stock is on the
+     * shelf and the balance says so; refusing the movement would stop a till
+     * mid-sale over a date nobody has got round to writing off. It is flagged
+     * where the batches are read instead.
      *
      * If the layers do not cover it — the item was stocked before batches were
      * kept — the shortfall is costed at whatever the item costs now. Refusing
@@ -502,7 +628,7 @@ public class StockEntryServiceImpl implements StockEntryService {
         );
     }
 
-    /** What the next unit out will cost: the oldest batch still holding any. */
+    /** What the next unit out will cost: the batch at the head of the queue. */
     private BigDecimal currentUnitCost(UUID businessId, StockTarget target) {
         return stockLayerRepository
                 .findOpenLayers(businessId, target.itemId(), target.variantId(), target.addOnId())
@@ -644,11 +770,14 @@ public class StockEntryServiceImpl implements StockEntryService {
     }
 
     /**
-     * What one unit of this item currently costs — the oldest batch still
-     * holding stock, which is the one the next sale will draw from.
+     * What one unit of this item currently costs — the batch at the head of
+     * the queue, which is the one the next sale will draw from.
      *
      * It used to read the most recent movement's `unitCost`, which meant a
      * hand-typed stock-out set the cost of everything sold afterwards.
+     *
+     * The head of the queue, not the oldest delivery: a short-dated batch that
+     * arrived yesterday is what the next sale will actually cost.
      */
     @Override
     @Transactional(readOnly = true)
@@ -701,7 +830,15 @@ public class StockEntryServiceImpl implements StockEntryService {
     @Transactional(readOnly = true)
     public StockEntryResponse findStockEntryById(UUID businessId, UUID stockEntryId) {
         businessHelper.findOwnedBusiness(businessId);
-        return stockEntryMapper.toResponse(findStockEntry(stockEntryId, businessId));
+        StockEntry stockEntry = findStockEntry(stockEntryId, businessId);
+
+        // Only here. A movement's own cost is a single number, and the batches
+        // behind it are what makes that number explicable — but only to
+        // somebody who has opened this one movement to ask.
+        return stockEntryMapper.toResponse(
+                stockEntry,
+                stockConsumptionRepository.findBreakdown(stockEntry.getId())
+        );
     }
 
     @Override
@@ -758,15 +895,15 @@ public class StockEntryServiceImpl implements StockEntryService {
      * Each delivery kept the price it arrived at, so the value of what is left
      * is the sum across those batches rather than one cost times a quantity —
      * two deliveries at different prices are both on the shelf, and no single
-     * multiplier is right for them. The unit cost quoted alongside is the
-     * oldest batch's, which is what the next unit out will be costed at.
+     * multiplier is right for them. The unit cost quoted alongside is the head
+     * of the queue's, which is what the next unit out will be costed at.
      */
     private Map<StockEntry.TargetKey, StockValue> openStockValues(UUID businessId) {
         Map<StockEntry.TargetKey, BigDecimal> totals = new LinkedHashMap<>();
         Map<StockEntry.TargetKey, BigDecimal> oldestCost = new LinkedHashMap<>();
 
-        // Oldest first, so the first batch seen for a target is the one the
-        // next sale will draw from.
+        // In consumption order, so the first batch seen for a target is the
+        // one the next sale will draw from.
         for (StockLayer layer : stockLayerRepository.findAllOpenLayers(businessId)) {
             StockEntry.TargetKey key = new StockEntry.TargetKey(
                     layer.getItem() == null ? null : layer.getItem().getId(),
@@ -801,7 +938,7 @@ public class StockEntryServiceImpl implements StockEntryService {
         List<StockBatchResponse> batches = new java.util.ArrayList<>(layers.size());
         int position = 1;
 
-        // Already oldest first, which is the order they will be sold in — so
+        // Already in consumption order — soonest to expire, then oldest — so
         // the position is simply where each one sits in the answer.
         for (StockLayer layer : layers) {
             BigDecimal unitCost = layer.getUnitCost() == null
@@ -820,6 +957,10 @@ public class StockEntryServiceImpl implements StockEntryService {
                     remaining,
                     remaining.multiply(unitCost).setScale(2, RoundingMode.HALF_UP),
                     layer.getReceivedAt(),
+                    layer.getLotNumber(),
+                    layer.getManufacturedAt(),
+                    layer.getExpiresAt(),
+                    layer.isExpired(),
                     position++));
         }
 
@@ -949,7 +1090,16 @@ public class StockEntryServiceImpl implements StockEntryService {
             BigDecimal quantityChange,
             boolean itemHasStockEntries
     ) {
-        if (quantityChange.compareTo(BigDecimal.ZERO) == 0) {
+        /*
+         * A movement moves stock, so zero says nothing — with one exception.
+         *
+         * An adjustment is also how a cost or a batch detail gets corrected on
+         * stock that is already counted right. That correction has no quantity
+         * to it, and refusing it would leave the operator inventing a change
+         * of one up and one down to record what they actually meant.
+         */
+        if (quantityChange.compareTo(BigDecimal.ZERO) == 0
+                && entryType != StockEntryType.ADJUSTMENT) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Quantity change cannot be zero");
         }
 

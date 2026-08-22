@@ -22,6 +22,7 @@ import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Map;
 import java.util.UUID;
@@ -106,9 +107,39 @@ public class StockLayer extends BasedAuditingEntity {
     @Column(name = "quantity_remaining", nullable = false, precision = 18, scale = 3)
     private BigDecimal quantityRemaining;
 
-    /** What FIFO orders by, so a backdated delivery still queues correctly. */
+    /** When the stock actually arrived, which is what a queue with no expiry orders by. */
     @Column(name = "received_at", nullable = false)
     private LocalDateTime receivedAt;
+
+    /**
+     * The supplier's own reference for this delivery.
+     *
+     * What a recall is answered with: a supplier names a lot, and the shop has
+     * to be able to say whether it ever held it and what became of it.
+     */
+    @Column(name = "lot_number", length = 80)
+    private String lotNumber;
+
+    /** When it was made. Recorded for traceability; nothing is ordered by it. */
+    @Column(name = "manufactured_at")
+    private LocalDate manufacturedAt;
+
+    /**
+     * When this batch goes off, and what the queue is ordered by before
+     * anything else.
+     *
+     * Arrival order is the wrong rotation for anything perishable: a delivery
+     * that came in today can be short-dated and have to leave before stock
+     * that has sat here a fortnight. Null means the batch does not expire, and
+     * those queue behind everything that does.
+     */
+    @Column(name = "expires_at")
+    private LocalDate expiresAt;
+
+    /** Whether this batch is already past its date, as of today. */
+    public boolean isExpired() {
+        return expiresAt != null && expiresAt.isBefore(LocalDate.now());
+    }
 
     /** Lot and expiry as recorded on the way in, carried for traceability. */
     @JdbcTypeCode(SqlTypes.JSON)

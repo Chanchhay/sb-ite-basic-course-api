@@ -78,7 +78,7 @@ import lombok.extern.slf4j.Slf4j;
 public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService {
 
     private static final String CURRENCY_KHR = "KHR";
-    private static final int QR_VALIDITY_MINUTES = 5;
+    private static final int QR_VALIDITY_MINUTES = 2;
     private static final int QR_IMAGE_SIZE = 512;
     private static final String TERMINAL_LABEL = "WEB";
     private static final DateTimeFormatter INVOICE_DATE = DateTimeFormatter.ofPattern("yyyyMMdd");
@@ -461,16 +461,34 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
                     continue;
                 }
 
-                stockEntryService.recordAddOnSale(
+                // What the extra actually cost, from the batches it emptied.
+                // Kept on the line as well as added to the sale, so the item
+                // report and the statement stay the same number: the line's
+                // price already includes this add-on, so its cost belongs
+                // beside it.
+                BigDecimal addOnCost = stockEntryService.recordAddOnSale(
                         business,
                         chosen.getAddOn(),
                         chosen.getUsePerOrder()
                                 .multiply(BigDecimal.valueOf(line.getQuantity())),
                         order.getId(),
-                        order.getInvoiceNumber());
+                        order.getInvoiceNumber()).getCostOfGoods();
+
+                if (addOnCost == null) {
+                    addOnCost = BigDecimal.ZERO;
+                }
+
+                chosen.setCost(addOnCost.setScale(2, RoundingMode.HALF_UP));
+                totalCost = totalCost.add(addOnCost);
             }
 
-            totalCost = totalCost.add(unitCost.multiply(BigDecimal.valueOf(line.getQuantity())));
+            // Times the base quantity, not the quantity rung up. `unitCost`
+            // is what one *base* unit cost — it came back from the movement
+            // that took `baseQuantity()` off the shelf — so a case of
+            // twenty-four costed at the price of one unit understated this
+            // sale by a factor of twenty-four, and flattered the margin by the
+            // same.
+            totalCost = totalCost.add(unitCost.multiply(line.baseQuantity()));
             itemCount += line.getQuantity();
         }
 

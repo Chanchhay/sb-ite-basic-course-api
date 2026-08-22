@@ -66,7 +66,7 @@ app:
   telegram:
     api-base-url: https://api.telegram.org
     webhook-base-url: ${TELEGRAM_WEBHOOK_BASE_URL:}
-    payment-poll-interval-ms: 5000
+    payment-poll-interval-ms: 10000
     payment-poll-initial-delay-ms: 10000
 
   facebook:
@@ -80,8 +80,11 @@ app:
     base-url: https://api-bakong.nbc.gov.kh
     timeout: 8s
 
+  public-api:
+    base-url: ${SERVER_URL:http://localhost:8080}
+
   aba-payway:
-    enabled: ${ABA_PAYWAY_ENABLED:false}
+    enabled: false
     base-url: https://checkout-sandbox.payway.com.kh
     merchant-id: ${ABA_MERCHANT_ID:}
     api-key: ${ABA_API_KEY:}
