@@ -131,7 +131,9 @@ public class StorefrontServiceImpl implements StorefrontService {
     public SlugAvailabilityResponse checkSlugAvailability(String slug) {
         String normalized = normalizeSlug(slug);
 
-        UUID currentBusinessId = businessRepository.findByKeycloakUserId(currentUserId())
+        // A caller with no business at all is allowed here: rejectionReason
+        // treats null as "nothing of mine to clash with".
+        UUID currentBusinessId = businessHelper.currentBusinessOrEmpty()
                 .map(Business::getId)
                 .orElse(null);
 
@@ -427,8 +429,7 @@ public class StorefrontServiceImpl implements StorefrontService {
     }
 
     private Business findMyBusiness() {
-        return businessRepository.findByKeycloakUserId(currentUserId())
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Business has not been found"));
+        return businessHelper.currentBusiness();
     }
 
     private UUID currentUserId() {

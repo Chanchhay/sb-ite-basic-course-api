@@ -410,7 +410,13 @@ public class FacebookCheckoutService {
                     order.getChannel(),
                     line.baseQuantity());
 
-            totalCost = totalCost.add(unitCost.multiply(BigDecimal.valueOf(line.getQuantity())));
+            // Times the base quantity, not the quantity rung up. `unitCost`
+            // is what one *base* unit cost — it came back from the movement
+            // that took `baseQuantity()` off the shelf — so a case of
+            // twenty-four costed at the price of one unit understated this
+            // sale by a factor of twenty-four, and flattered the margin by the
+            // same.
+            totalCost = totalCost.add(unitCost.multiply(line.baseQuantity()));
             itemCount += line.getQuantity();
         }
 

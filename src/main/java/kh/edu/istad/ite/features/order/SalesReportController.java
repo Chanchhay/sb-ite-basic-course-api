@@ -1,8 +1,11 @@
 package kh.edu.istad.ite.features.order;
 
 import kh.edu.istad.ite.features.order.dto.DailyChannelRevenue;
+import kh.edu.istad.ite.features.order.dto.ItemProfitResponse;
+import kh.edu.istad.ite.features.order.dto.PeriodProfitResponse;
 import kh.edu.istad.ite.features.order.dto.SalesProfitResponse;
 import kh.edu.istad.ite.features.order.service.SalesReportService;
+import kh.edu.istad.ite.shared.enums.ReportGranularity;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -39,6 +42,42 @@ public class SalesReportController {
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime to) {
 
         return salesReportService.profitByChannel(businessId, from, to);
+    }
+
+    /**
+     * The accounting statement: the same takings, period by period.
+     *
+     * The granularity decides how finely the range is cut. It defaults to
+     * daily, which is the answer to "how did today go" — the question a shop
+     * asks most and the one it would otherwise have to configure its way to.
+     */
+    @GetMapping("/profit/periods")
+    public PeriodProfitResponse profitByPeriod(
+            @PathVariable UUID businessId,
+            @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime from,
+            @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime to,
+            @RequestParam(defaultValue = "DAY") ReportGranularity granularity) {
+
+        return salesReportService.profitByPeriod(businessId, from, to, granularity);
+    }
+
+    /**
+     * The same takings, but broken down by what was sold.
+     *
+     * What the statement cannot say: which items carried a good month, and
+     * which sold well and kept nothing.
+     */
+    @GetMapping("/profit/items")
+    public ItemProfitResponse profitByItem(
+            @PathVariable UUID businessId,
+            @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime from,
+            @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime to) {
+
+        return salesReportService.profitByItem(businessId, from, to);
     }
 
     /**

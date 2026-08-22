@@ -16,5 +16,15 @@ public interface UserProfileRepository extends JpaRepository<UserProfile, UUID> 
 
     boolean existsByUserIdAndBusinessIdAndStaffStatus(UUID userId, UUID businessId, RecordStatus staffStatus);
 
+    /**
+     * The business a staff member works in, for callers that know who is asking
+     * but not which business. `userId` is the primary key, so this is at most
+     * one row; the status and business conditions are what make it a lookup
+     * rather than a `findById`. Owners are resolved by ownership before this is
+     * tried — they have a profile too, but no business on it.
+     */
+    Optional<UserProfile> findFirstByUserIdAndStaffStatusAndBusinessIsNotNull(
+            UUID userId, RecordStatus staffStatus);
+
     long countByBusinessIdAndStaffStatus(UUID businessId, RecordStatus staffStatus);
 }
