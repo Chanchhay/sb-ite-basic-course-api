@@ -62,6 +62,7 @@ public class ItemMapper {
                 item.getPrice(),
                 item.getCompareAtPrice(),
                 item.getItemType(),
+                item.getTrackInventory(),
                 item.getAttributes() == null ? null : item.getAttributes().stream()
                         .map(this::toAttributeResponse)
                         .toList(),

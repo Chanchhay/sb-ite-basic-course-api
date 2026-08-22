@@ -61,6 +61,7 @@ public class OrderMapper {
                 item.getUnitPrice(),
                 item.getDiscountAmount(),
                 item.getLineTotal(),
+                item.getItem() == null ? Boolean.TRUE : item.getItem().getTrackInventory(),
                 item.getAddOns() == null ? List.of() : item.getAddOns().stream()
                         .map(addOn -> new OrderItemResponse.OrderItemAddOnResponse(
                                 addOn.getAddOn() == null ? null : addOn.getAddOn().getId(),

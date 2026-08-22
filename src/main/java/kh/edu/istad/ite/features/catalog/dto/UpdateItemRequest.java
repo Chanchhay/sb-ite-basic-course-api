@@ -51,6 +51,8 @@ public record UpdateItemRequest(
 
         ItemType itemType,
 
+        Boolean trackInventory,
+
         List<@Valid ItemAttributeRequest> attributes,
 
         /**

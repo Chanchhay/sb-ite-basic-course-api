@@ -24,6 +24,7 @@ import kh.edu.istad.ite.features.channel.repository.ItemChannelRepository;
 import kh.edu.istad.ite.features.channel.entity.ItemChannel;
 import org.springframework.web.multipart.MultipartFile;
 import kh.edu.istad.ite.shared.enums.ItemStatus;
+import kh.edu.istad.ite.shared.enums.ItemType;
 import kh.edu.istad.ite.shared.helper.BusinessHelper;
 import kh.edu.istad.ite.shared.helper.SlugHelper;
 import kh.edu.istad.ite.shared.helper.TextHelper;
@@ -111,6 +112,11 @@ public class ItemServiceImpl implements ItemService {
         item.setBarcode(TextHelper.trimToNull(request.barcode()));
         item.setPrice(normalizePrice(request.price()));
         item.setItemType(request.itemType());
+        if (request.trackInventory() != null) {
+            item.setTrackInventory(request.trackInventory());
+        } else {
+            item.setTrackInventory(request.itemType() == ItemType.PHYSICAL);
+        }
         if (files != null && !files.isEmpty()) {
             for (MultipartFile file : files) {
                 String imageKey = minioService.uploadAsset(file);
@@ -204,6 +210,9 @@ public class ItemServiceImpl implements ItemService {
         }
         if (request.itemType() != null) {
             item.setItemType(request.itemType());
+        }
+        if (request.trackInventory() != null) {
+            item.setTrackInventory(request.trackInventory());
         }
         if (files != null && !files.isEmpty()) {
             for (MultipartFile file : files) {

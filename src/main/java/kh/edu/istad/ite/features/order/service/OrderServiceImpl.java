@@ -416,11 +416,13 @@ public class OrderServiceImpl implements OrderService {
         // channel's share stops the whole sale here rather than halfway
         // through the ledger. Items whose stock is shared are untouched by it.
         for (OrderItem line : order.getItems()) {
-            itemChannelStockService.requireAllocation(
-                    line.getItem(),
-                    line.getVariant(),
-                    order.getChannel(),
-                    line.baseQuantity());
+            if (line.getItem() != null && line.getItem().isStockTracked()) {
+                itemChannelStockService.requireAllocation(
+                        line.getItem(),
+                        line.getVariant(),
+                        order.getChannel(),
+                        line.baseQuantity());
+            }
         }
 
         int scale = scaleFor(order);
@@ -430,36 +432,41 @@ public class OrderServiceImpl implements OrderService {
         int itemCount = 0;
 
         for (OrderItem line : order.getItems()) {
-            // The sale consumes stock batches oldest first, so its own entry
-            // already carries what those units cost. Asking the item again
-            // afterwards would price the sale at whatever is left on the shelf.
-            BigDecimal unitCost = stockEntryService.recordSale(
-                    business,
-                    line.getItem(),
-                    line.getVariant(),
-                    // A case of twenty-four takes twenty-four off the shelf;
-                    // the ledger still reads back as the one case that sold.
-                    line.baseQuantity(),
-                    BigDecimal.valueOf(line.getQuantity()),
-                    line.getUnit(),
-                    order.getId(),
-                    order.getInvoiceNumber()
-            ).getUnitCost();
+            boolean isTracked = line.getItem() != null && line.getItem().isStockTracked();
+            BigDecimal unitCost = BigDecimal.ZERO;
 
-            if (unitCost == null) {
-                unitCost = BigDecimal.ZERO;
+            if (isTracked) {
+                // The sale consumes stock batches oldest first, so its own entry
+                // already carries what those units cost. Asking the item again
+                // afterwards would price the sale at whatever is left on the shelf.
+                var saleEntry = stockEntryService.recordSale(
+                        business,
+                        line.getItem(),
+                        line.getVariant(),
+                        // A case of twenty-four takes twenty-four off the shelf;
+                        // the ledger still reads back as the one case that sold.
+                        line.baseQuantity(),
+                        BigDecimal.valueOf(line.getQuantity()),
+                        line.getUnit(),
+                        order.getId(),
+                        order.getInvoiceNumber()
+                );
+
+                if (saleEntry != null && saleEntry.getUnitCost() != null) {
+                    unitCost = saleEntry.getUnitCost();
+                }
+
+                // The sale uses up the channel's share of the shelf as well as the
+                // shelf itself. Does nothing for an item whose stock is shared,
+                // which is most of them.
+                itemChannelStockService.consume(
+                        line.getItem(),
+                        line.getVariant(),
+                        order.getChannel(),
+                        line.baseQuantity());
             }
 
             line.setUnitCost(unitCost.setScale(2, RoundingMode.HALF_UP));
-
-            // The sale uses up the channel's share of the shelf as well as the
-            // shelf itself. Does nothing for an item whose stock is shared,
-            // which is most of them.
-            itemChannelStockService.consume(
-                    line.getItem(),
-                    line.getVariant(),
-                    order.getChannel(),
-                    line.baseQuantity());
 
             // The extras go out with it: a tub of pearls empties whether it
             // was scooped into one drink or ten.
