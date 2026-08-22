@@ -160,8 +160,7 @@ public class BakongSettingServiceImpl implements BakongSettingService {
     }
 
     private Business findMyBusiness() {
-        return businessRepository.findByKeycloakUserId(UUID.fromString(SecurityUtils.extractUserId()))
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Business has not been found"));
+        return businessHelper.currentBusiness();
     }
 
     private String trimToNull(String value) {

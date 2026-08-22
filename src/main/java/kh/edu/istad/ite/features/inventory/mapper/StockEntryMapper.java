@@ -1,13 +1,18 @@
 package kh.edu.istad.ite.features.inventory.mapper;
 
+import kh.edu.istad.ite.features.inventory.dto.StockConsumptionResponse;
 import kh.edu.istad.ite.features.inventory.dto.StockEntryResponse;
 import kh.edu.istad.ite.features.inventory.dto.StockSummaryResponse;
 import kh.edu.istad.ite.features.catalog.mapper.UnitMapper;
+import kh.edu.istad.ite.features.inventory.entity.StockConsumption;
+import kh.edu.istad.ite.features.inventory.entity.StockLayer;
 import kh.edu.istad.ite.features.inventory.entity.StockEntry;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.UUID;
 
 @Component
@@ -20,6 +25,19 @@ public class StockEntryMapper {
     }
 
     public StockEntryResponse toResponse(StockEntry stockEntry) {
+        return toResponse(stockEntry, List.of());
+    }
+
+    /**
+     * A movement, with the batches it drew from spelled out.
+     *
+     * Only the endpoint that returns one movement asks for these. On a list
+     * they would be a query per row to answer something no row is showing.
+     */
+    public StockEntryResponse toResponse(
+            StockEntry stockEntry,
+            List<StockConsumption> consumptions
+    ) {
         return new StockEntryResponse(
                 stockEntry.getId(),
                 stockEntry.getBusiness().getId(),
@@ -38,13 +56,40 @@ public class StockEntryMapper {
                 stockEntry.getEnteredUnit() == null
                         ? null
                         : unitMapper.toResponse(stockEntry.getEnteredUnit()),
+                stockEntry.getLotNumber(),
+                stockEntry.getManufacturedAt(),
+                stockEntry.getExpiresAt(),
                 stockEntry.getBatchData(),
                 stockEntry.getReferenceType(),
                 stockEntry.getReferenceId(),
                 stockEntry.getReferenceNumber(),
                 stockEntry.getReason(),
+                consumptions.stream().map(this::toConsumption).toList(),
                 stockEntry.getCreatedBy(),
                 stockEntry.getCreatedDate()
+        );
+    }
+
+    /**
+     * One batch a movement took from, and what that share of it cost.
+     *
+     * The cost is multiplied out here rather than stored: the pair it comes
+     * from is what was recorded, and a total kept beside them is one more
+     * thing that can disagree with them.
+     */
+    private StockConsumptionResponse toConsumption(StockConsumption consumption) {
+        StockLayer layer = consumption.getStockLayer();
+
+        return new StockConsumptionResponse(
+                layer.getId(),
+                layer.getLotNumber(),
+                layer.getExpiresAt(),
+                layer.getReceivedAt(),
+                consumption.getQuantity(),
+                consumption.getUnitCost(),
+                consumption.getQuantity()
+                        .multiply(consumption.getUnitCost())
+                        .setScale(2, RoundingMode.HALF_UP)
         );
     }
 

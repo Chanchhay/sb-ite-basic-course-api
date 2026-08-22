@@ -65,4 +65,19 @@ public class OrderItemAddOn {
     /** Base units of the add-on one selection consumes. */
     @Column(name = "use_per_order", nullable = false, precision = 12, scale = 3)
     private BigDecimal usePerOrder = BigDecimal.ONE;
+
+    /**
+     * What this extra cost, batch by batch, when it left the shelf.
+     *
+     * The price of an add-on already rides on the line it garnished, so its
+     * cost has to as well or the line reports a margin it never made. Taken
+     * from the movement that consumed it rather than from what the add-on
+     * costs today — the same rule the item's own cost follows.
+     *
+     * Zero on a line sold before add-on cost was counted. Those sales recorded
+     * no add-on cost in their totals either, so the books still agree with
+     * themselves; they simply both understate what those extras cost.
+     */
+    @Column(nullable = false, precision = 14, scale = 2)
+    private BigDecimal cost = BigDecimal.ZERO;
 }
