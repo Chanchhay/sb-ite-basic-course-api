@@ -57,7 +57,7 @@ app:
       - "https://administrator.fluxibiz.store"
   storefront:
     base-domain: ${BASE_STOREFRONT_DOMAIN:fluxibiz.store}
-    protocol: ${STOREFRONT_PROTOCOL:https}
+    protocol: ${STOREFRONT_PROTOCOL:http}
     path-prefix: /store
     subdomain-enabled: true
   security:
