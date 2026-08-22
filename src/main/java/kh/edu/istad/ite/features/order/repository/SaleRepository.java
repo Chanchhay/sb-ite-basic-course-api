@@ -50,6 +50,17 @@ public interface SaleRepository extends JpaRepository<Sale, UUID> {
             + "group by s.business.id, s.business.displayName order by count(s) desc")
     List<ActiveBusinessProjection> findMostActiveBusinessesSince(@Param("since") LocalDateTime since);
 
+    /**
+     * What each channel took and what it cost, over a range.
+     *
+     * Grouped in the database rather than totalled by the caller: a shop that
+     * has been trading a year has more sales than any one read should carry,
+     * and a total that quietly stops at a thousand rows is worse than none.
+     *
+     * Cost is the sum of what the stock actually cost, batch by batch, as it
+     * was recorded at the moment of each sale — not what the shelf costs
+     * today. That is the whole point of keeping it on the sale.
+     */
     @Query("""
             select s.channel as channel,
                    count(s) as sales,

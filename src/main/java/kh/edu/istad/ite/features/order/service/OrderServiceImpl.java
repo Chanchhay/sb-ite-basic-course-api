@@ -84,7 +84,7 @@ import lombok.RequiredArgsConstructor;
 public class OrderServiceImpl implements OrderService {
 
     private static final String CURRENCY_KHR = "KHR";
-    private static final int QR_VALIDITY_MINUTES = 5;
+    private static final int QR_VALIDITY_MINUTES = 2;
     private static final DateTimeFormatter INVOICE_DATE = DateTimeFormatter.ofPattern("yyyyMMdd");
 
     private final BusinessHelper businessHelper;

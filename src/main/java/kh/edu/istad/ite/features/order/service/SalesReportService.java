@@ -23,7 +23,14 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
-
+/**
+ * What the shop made, per channel it sells on.
+ *
+ * The arithmetic is trivial; the reason it lives here rather than on the
+ * screen is that the rows come out of a {@code group by} the caller never
+ * sees. A client totalling its own pages can only ever total the pages it
+ * asked for, and quietly under-reports the moment a shop has a good year.
+ */
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
