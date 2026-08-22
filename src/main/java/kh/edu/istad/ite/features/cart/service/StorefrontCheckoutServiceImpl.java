@@ -605,7 +605,7 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
      */
     private boolean hasEnoughStock(
             UUID businessId, Item item, ItemVariant variant, BigDecimal requestedBaseQuantity) {
-        if (item.getItemType() != ItemType.PHYSICAL) {
+        if (!item.isStockTracked()) {
             return true;
         }
 

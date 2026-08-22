@@ -103,6 +103,13 @@ public class Item extends BasedAuditingEntity {
     @Column(name = "item_type", nullable = false, length = 20)
     private ItemType itemType = ItemType.PHYSICAL;
 
+    @Column(name = "track_inventory", nullable = false, columnDefinition = "boolean default true")
+    private Boolean trackInventory = true;
+
+    public boolean isStockTracked() {
+        return Boolean.TRUE.equals(trackInventory);
+    }
+
     @OneToMany(mappedBy = "item", cascade = CascadeType.ALL, orphanRemoval = true)
     @OrderBy("position ASC")
     private List<ItemImage> images = new ArrayList<>();

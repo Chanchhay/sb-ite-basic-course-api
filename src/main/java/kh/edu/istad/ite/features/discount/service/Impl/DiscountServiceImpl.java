@@ -468,8 +468,9 @@ public class DiscountServiceImpl implements DiscountService {
     }
 
     private void validateValue(DiscountType type, BigDecimal value) {
-        if (value.compareTo(BigDecimal.ZERO) <= 0) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "value must be greater than zero");
+        if (value == null) return;
+        if (value.compareTo(BigDecimal.ZERO) < 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "value cannot be negative");
         }
         if (type == DiscountType.PERCENTAGE && value.compareTo(BigDecimal.valueOf(100)) > 0) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Percentage value cannot exceed 100");

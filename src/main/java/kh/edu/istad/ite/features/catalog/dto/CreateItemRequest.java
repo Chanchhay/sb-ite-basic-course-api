@@ -59,6 +59,8 @@ public record CreateItemRequest(
         @NotNull(message = "itemType cannot be null")
         ItemType itemType,
 
+        Boolean trackInventory,
+
         List<@Valid ItemAttributeRequest> attributes,
 
         /**

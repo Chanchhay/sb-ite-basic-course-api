@@ -34,7 +34,7 @@ public record UpdateDiscountRequest(
         @Max(value = 1000, message = "minQuantity must be at most 1000")
         Integer minQuantity,
 
-        @DecimalMin(value = "0.0", inclusive = false, message = "value must be greater than zero")
+        @DecimalMin(value = "0.0", inclusive = true, message = "value cannot be negative")
         @Digits(integer = 10, fraction = 2, message = "value must have at most 10 integer digits and 2 decimal places")
         BigDecimal value,
 

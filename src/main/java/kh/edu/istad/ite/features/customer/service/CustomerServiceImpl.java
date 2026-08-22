@@ -63,7 +63,7 @@ public class CustomerServiceImpl implements CustomerService {
         try {
             return customerMapper.toResponse(customerRepository.saveAndFlush(customer));
         } catch (DataIntegrityViolationException e) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "Customer already exists", e);
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "A customer with this phone number or email already exists.", e);
         }
     }
 
@@ -123,7 +123,7 @@ public class CustomerServiceImpl implements CustomerService {
         try {
             return customerMapper.toResponse(customerRepository.saveAndFlush(customer));
         } catch (DataIntegrityViolationException e) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "Customer already exists", e);
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "A customer with this phone number or email already exists.", e);
         }
     }
 
@@ -254,7 +254,7 @@ public class CustomerServiceImpl implements CustomerService {
         customerRepository.findByBusiness_IdAndGlobalCustomer_Id(businessId, globalCustomer.getId())
                 .filter(existing -> !existing.getId().equals(currentCustomerId))
                 .ifPresent(existing -> {
-                    throw new ResponseStatusException(HttpStatus.CONFLICT, "Customer already exists for this business");
+                    throw new ResponseStatusException(HttpStatus.CONFLICT, "A customer with this phone number or email already exists.");
                 });
     }
 

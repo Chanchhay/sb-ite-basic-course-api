@@ -195,6 +195,12 @@ public class StockEntryServiceImpl implements StockEntryService {
         }
 
         Item item = findItem(itemId, businessId);
+        if (Boolean.FALSE.equals(item.getTrackInventory())) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "\"" + item.getName() + "\" does not track inventory"
+            );
+        }
         ItemVariant variant = findVariant(variantId, item, businessId);
 
         if (variant == null && hasOptions(item) && !holdsUnassignedStock(businessId, item)) {
@@ -665,6 +671,14 @@ public class StockEntryServiceImpl implements StockEntryService {
             UUID orderId,
             String invoiceNumber
     ) {
+        if (item != null && !item.isStockTracked()) {
+            StockEntry emptyEntry = new StockEntry();
+            emptyEntry.setBusiness(business);
+            emptyEntry.setItem(item);
+            emptyEntry.setVariant(variant);
+            emptyEntry.setUnitCost(BigDecimal.ZERO);
+            return emptyEntry;
+        }
         // The till knows which option was rung up, so the sale comes off that
         // option's count. A line with none — an item sold without options, or
         // one rung up before it had any — falls to the item's own balance
@@ -1008,6 +1022,11 @@ public class StockEntryServiceImpl implements StockEntryService {
      * its last entry was the answer; now that answer is a sum.
      */
     private StockSummaryResponse itemTotal(UUID businessId, UUID itemId) {
+        Item item = itemRepository.findById(itemId).orElse(null);
+        if (item != null && !item.isStockTracked()) {
+            return stockEntryMapper.emptySummary(itemId);
+        }
+
         List<StockEntry> entries = stockEntryRepository
                 .findAllByBusiness_IdAndItem_IdOrderByCreatedDateDescIdDesc(businessId, itemId);
 
