@@ -87,11 +87,19 @@ public class OrderMapper {
             return null;
         }
 
+        kh.edu.istad.ite.features.customer.entity.Customer customer = sale.getCustomer();
+        kh.edu.istad.ite.features.customer.entity.GlobalCustomer globalCustomer =
+                customer == null ? null : customer.getGlobalCustomer();
+
         return new SaleResponse(
                 sale.getId(),
                 sale.getOrder().getId(),
                 sale.getInvoiceNumber(),
                 sale.getCashierId(),
+                customer == null ? null : customer.getId(),
+                globalCustomer == null ? null : globalCustomer.getFullName(),
+                globalCustomer == null ? null : globalCustomer.getPhoneNumber(),
+                globalCustomer == null ? null : globalCustomer.getEmail(),
                 sale.getChannel(),
                 sale.getSubtotal(),
                 sale.getDiscountAmount(),
