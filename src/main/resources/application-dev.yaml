@@ -84,7 +84,7 @@ app:
     base-url: ${SERVER_URL:http://localhost:8080}
 
   aba-payway:
-    enabled: ${ABA_PAYWAY_ENABLED:true}
+    enabled: false
     base-url: https://checkout-sandbox.payway.com.kh
     merchant-id: ${ABA_MERCHANT_ID:}
     api-key: ${ABA_API_KEY:}
