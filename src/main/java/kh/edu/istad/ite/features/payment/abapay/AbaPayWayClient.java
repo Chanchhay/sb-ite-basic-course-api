@@ -64,7 +64,7 @@ public class AbaPayWayClient {
             // from a network failure: PayWay just silently rejects with "Wrong Hash"
             // and an empty-ish response, which is exactly what we were seeing.
             String items = "";
-            String shipping = "";
+            String shipping = "0.00";
             String firstname = "";
             String lastname = "";
             String email = "";
