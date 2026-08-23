@@ -15,6 +15,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
+import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.http.HttpStatus;
@@ -223,7 +224,15 @@ public class OrderServiceImpl implements OrderService {
     @Transactional(readOnly = true)
     public OrderResponse findOrderById(UUID businessId, UUID orderId) {
         businessHelper.findAccessibleBusiness(businessId);
-        return orderMapper.toResponse(findOrder(businessId, orderId));
+        Order order = findOrder(businessId, orderId);
+        OrderResponse response = orderMapper.toResponse(order);
+
+        if (OrderStatus.PAID.equals(order.getStatus())) {
+            saleRepository.findByOrderId(order.getId())
+                    .ifPresent(sale -> response.setPaymentMethod(sale.getPaymentMethod()));
+        }
+
+        return response;
     }
 
     @Override
@@ -329,14 +338,20 @@ public class OrderServiceImpl implements OrderService {
             effectiveTotal = order.getTotal().add(taxAmount).setScale(scale, RoundingMode.HALF_UP);
         }
 
-        BigDecimal received = request.receivedAmount() == null
-                ? effectiveTotal
-                : request.receivedAmount().setScale(scale, RoundingMode.HALF_UP);
+        BigDecimal received;
+        if (PaymentMethodType.PAY_LATER.equals(request.paymentMethod())) {
+            // Pay later collects nothing right now — whatever the client sent is ignored.
+            received = BigDecimal.ZERO.setScale(scale, RoundingMode.HALF_UP);
+        } else {
+            received = request.receivedAmount() == null
+                    ? effectiveTotal
+                    : request.receivedAmount().setScale(scale, RoundingMode.HALF_UP);
 
-        if (received.compareTo(effectiveTotal) < 0) {
-            throw new ResponseStatusException(
-                    HttpStatus.BAD_REQUEST,
-                    "Received " + received + " is less than the total " + effectiveTotal);
+            if (received.compareTo(effectiveTotal) < 0) {
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST,
+                        "Received " + received + " is less than the total " + effectiveTotal);
+            }
         }
 
         return toSaleResponse(settle(business, order, request, request.paymentMethod(), received, request.note()));
@@ -882,8 +897,27 @@ public class OrderServiceImpl implements OrderService {
         Specification<Order> businessSpec = (root, query, cb) ->
                 cb.equal(root.get("business").get("id"), businessId);
 
-        return PageResponse.from(
-                orderRepository.findAll(businessSpec.and(spec), pageable).map(orderMapper::toResponse));
+        Page<Order> orders = orderRepository.findAll(businessSpec.and(spec), pageable);
+
+        // One bulk lookup for the whole page rather than one per row — a sale
+        // only exists for a PAID order, so a page of PENDING carts costs
+        // nothing extra here.
+        List<UUID> paidOrderIds = orders.getContent().stream()
+                .filter(order -> OrderStatus.PAID.equals(order.getStatus()))
+                .map(Order::getId)
+                .toList();
+
+        java.util.Map<UUID, PaymentMethodType> paymentMethodByOrderId = paidOrderIds.isEmpty()
+                ? java.util.Map.of()
+                : saleRepository.findByOrder_IdIn(paidOrderIds).stream()
+                        .collect(java.util.stream.Collectors.toMap(
+                                sale -> sale.getOrder().getId(), Sale::getPaymentMethod));
+
+        return PageResponse.from(orders.map(order -> {
+            OrderResponse response = orderMapper.toResponse(order);
+            response.setPaymentMethod(paymentMethodByOrderId.get(order.getId()));
+            return response;
+        }));
     }
 
     @Override

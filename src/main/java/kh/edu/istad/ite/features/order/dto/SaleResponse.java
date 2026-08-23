@@ -21,6 +21,11 @@ public class SaleResponse {
     private UUID orderId;
     private String invoiceNumber;
     private UUID cashierId;
+    /** Null for a walk-in sale never linked to a customer record. */
+    private UUID customerId;
+    private String customerName;
+    private String customerPhone;
+    private String customerEmail;
     private OrderChannel channel;
     private BigDecimal subtotal;
     private BigDecimal discountAmount;

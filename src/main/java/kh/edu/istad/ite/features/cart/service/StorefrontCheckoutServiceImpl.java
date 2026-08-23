@@ -65,8 +65,10 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import kh.edu.istad.ite.features.social.service.TelegramAlertService;
 import lombok.RequiredArgsConstructor;
@@ -113,8 +115,13 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
         Business business = businessRepository.findById(request.businessId())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Shop has not been found"));
 
+        boolean payLater = PaymentMethodType.PAY_LATER.equals(request.paymentMethod());
+
         requireShoppable(business);
-        businessHelper.requireFeature(business.getId(), BusinessFeature.KHQR_PAYMENT);
+        // Pay Later never touches Bakong, so it doesn't need KHQR configured for this shop.
+        if (!payLater) {
+            businessHelper.requireFeature(business.getId(), BusinessFeature.KHQR_PAYMENT);
+        }
 
 
         Order openOrder = findOpenOrder(shopper).orElse(null);
@@ -126,9 +133,10 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
                             + ". Finish or cancel it before paying another shop.");
         }
 
-        // Same store, still pending: reissue a QR rather than stacking orders.
+        // Same store, still pending: settle it the way this request asks for,
+        // rather than stacking orders.
         if (openOrder != null) {
-            return issueQrFor(business, openOrder);
+            return payLater ? settlePayLater(business, openOrder) : issueQrFor(business, openOrder);
         }
 
         Customer customer = customerIdentityService.customerFor(business, shopper);
@@ -208,7 +216,7 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
                 saved.getId(), saved.getInvoiceNumber(), business.getId(),
                 saved.getTotal(), saved.getCurrency());
 
-        return issueQrFor(business, saved);
+        return payLater ? settlePayLater(business, saved) : issueQrFor(business, saved);
     }
 
 
@@ -322,7 +330,8 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
         qrCode.setPaidAt(paidAt);
         paymentQrCodeRepository.save(qrCode);
 
-        settle(business, order);
+        settle(business, order, PaymentMethodType.DIGITAL, order.getTotal(),
+                "Paid via Bakong KHQR on the web storefront");
         closeCart(order);
 
         telegramAlertService.sendQrPaymentAlert(order);
@@ -415,7 +424,36 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
                 expiresAtLocal);
     }
 
-    private void settle(Business business, Order order) {
+
+    private StorefrontCheckoutResponse settlePayLater(Business business, Order order) {
+        int scale = scaleFor(order.getCurrency());
+
+        settle(business, order, PaymentMethodType.PAY_LATER,
+                BigDecimal.ZERO.setScale(scale, RoundingMode.HALF_UP),
+                "Pay later - collect from customer");
+        closeCart(order);
+
+        log.info("Storefront order {} ({}) settled as Pay Later at business {} for {} {}",
+                order.getId(), order.getInvoiceNumber(), business.getId(),
+                order.getTotal(), order.getCurrency());
+
+        return new StorefrontCheckoutResponse(
+                order.getId(),
+                order.getInvoiceNumber(),
+                business.getId(),
+                business.getDisplayName(),
+                business.getSlug(),
+                order.getItems().stream().mapToInt(OrderItem::getQuantity).sum(),
+                order.getTotal(),
+                order.getCurrency(),
+                null,
+                null,
+                null,
+                null);
+    }
+
+    private void settle(Business business, Order order, PaymentMethodType paymentMethod,
+                         BigDecimal paidAmount, String note) {
         if (!OrderStatus.PENDING.equals(order.getStatus())) {
             // Two polls can land at once; only the first one settles.
             return;
@@ -507,15 +545,15 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
         sale.setSubtotal(order.getSubtotal());
         sale.setDiscountAmount(order.getDiscountAmount());
         sale.setTotalAmount(order.getTotal());
-        sale.setPaidAmount(order.getTotal());
+        sale.setPaidAmount(paidAmount.setScale(scale, RoundingMode.HALF_UP));
         sale.setChangeAmount(BigDecimal.ZERO.setScale(scale, RoundingMode.HALF_UP));
         sale.setTotalCost(totalCost.setScale(2, RoundingMode.HALF_UP));
         sale.setCurrency(order.getCurrency());
         sale.setDisplayCurrency(order.getDisplayCurrency());
         sale.setDisplayExchangeRate(order.getDisplayExchangeRate());
-        sale.setPaymentMethod(PaymentMethodType.DIGITAL);
+        sale.setPaymentMethod(paymentMethod);
         sale.setItemCount(itemCount);
-        sale.setNote("Paid via Bakong KHQR on the web storefront");
+        sale.setNote(note);
         sale.setSoldAt(LocalDateTime.now());
 
         saleRepository.save(sale);
@@ -757,7 +795,16 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
         GlobalCustomer shopper = currentShopper();
         List<UUID> customerIds = customerIdsOf(shopper);
         List<Order> orders = orderRepository.findAllOrdersForShopper(customerIds);
-        return orders.stream().map(this::toStorefrontOrderResponse).toList();
+
+        List<UUID> orderIds = orders.stream().map(Order::getId).toList();
+        Map<UUID, Sale> saleByOrderId = orderIds.isEmpty()
+                ? Map.of()
+                : saleRepository.findByOrder_IdIn(orderIds).stream()
+                        .collect(Collectors.toMap(sale -> sale.getOrder().getId(), sale -> sale));
+
+        return orders.stream()
+                .map(order -> toStorefrontOrderResponse(order, saleByOrderId.get(order.getId())))
+                .toList();
     }
 
     @Override
@@ -765,10 +812,26 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
     public StorefrontOrderResponse getMyOrderReceipt(UUID orderId) {
         GlobalCustomer shopper = currentShopper();
         Order order = requireOwnOrder(shopper, orderId);
-        return toStorefrontOrderResponse(order);
+        Sale sale = saleRepository.findByOrderId(orderId).orElse(null);
+        return toStorefrontOrderResponse(order, sale);
     }
 
-    private StorefrontOrderResponse toStorefrontOrderResponse(Order order) {
+    /** Mirrors the label the frontend already renders for KHQR orders, but reads
+     * the real payment method once a Sale exists instead of always claiming KHQR. */
+    private String paymentMethodLabel(PaymentMethodType method) {
+        if (method == null) {
+            // Order still pending (no Sale settled yet): keep the pre-existing label.
+            return "Bakong KHQR";
+        }
+
+        return switch (method) {
+            case PAY_LATER -> "Pay Later";
+            case CASH -> "Cash";
+            case DIGITAL -> "Bakong KHQR";
+        };
+    }
+
+    private StorefrontOrderResponse toStorefrontOrderResponse(Order order, Sale sale) {
         Business b = order.getBusiness();
         Customer c = order.getCustomer();
         GlobalCustomer gc = c != null ? c.getGlobalCustomer() : null;
@@ -811,7 +874,7 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
                 gc != null ? gc.getPhoneNumber() : null,
                 order.getStatus(),
                 order.getChannel() != null ? order.getChannel().name() : "WEB",
-                "Bakong KHQR",
+                paymentMethodLabel(sale == null ? null : sale.getPaymentMethod()),
                 order.getSubtotal() != null ? order.getSubtotal() : BigDecimal.ZERO,
                 order.getDiscountAmount() != null ? order.getDiscountAmount() : BigDecimal.ZERO,
                 order.getTotal() != null ? order.getTotal() : BigDecimal.ZERO,

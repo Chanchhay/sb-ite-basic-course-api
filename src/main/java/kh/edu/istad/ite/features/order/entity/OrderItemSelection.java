@@ -16,22 +16,7 @@ import lombok.Setter;
 
 import java.util.UUID;
 
-/**
- * An option chosen on one order line — "Sugar Level: 50%".
- *
- * Distinct from both of the things it sits beside. A variant is a different
- * thing to sell, with its own price and its own shelf; an add-on is something
- * extra that costs money and consumes stock. A selection is neither: it changes
- * nothing about what is charged or what comes off the shelf, and only says how
- * the thing should be made. Which is exactly why it was possible to drop it for
- * so long without anything failing — the money still balanced, and only the
- * customer noticed, when their drink came out at full sugar.
- *
- * The name and value are copied here as text rather than pointed at the item's
- * attribute, for the same reason the add-on beside it copies its name and
- * price: a shop that renames "Sugar Level" to "Sweetness" next month must not
- * change what last month's ticket said.
- */
+
 @Entity
 @Getter
 @Setter
