@@ -21,12 +21,10 @@ public record CreateCouponRequest(
 
         @Positive(message = "usageLimit must be positive")
         @Min(value = 1, message = "usageLimit must be at least 1")
-        @Max(value = 100, message = "usageLimit must be at most 100")
         Integer usageLimit,
 
         @Positive(message = "usageLimitPerCustomer must be positive")
         @Min(value = 1, message = "usageLimitPerCustomer must be at least 1")
-        @Max(value = 100, message = "usageLimitPerCustomer must be at most 100")
         Integer usageLimitPerCustomer,
 
         @DecimalMin(value = "0.0", inclusive = true, message = "minPurchaseAmount must be at least zero")
@@ -36,7 +34,6 @@ public record CreateCouponRequest(
         LocalDateTime startsAt,
         @NotNull(message = "endsAt cannot be null")
         LocalDateTime endsAt,
-        @NotNull(message = "status cannot be null")
         CouponStatus status
 ) {
 }

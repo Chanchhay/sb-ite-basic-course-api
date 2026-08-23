@@ -1,5 +1,6 @@
 package kh.edu.istad.ite.features.social.facebook;
 
+import kh.edu.istad.ite.shared.helper.BusinessHelper;
 import kh.edu.istad.ite.config.props.FacebookProps;
 import kh.edu.istad.ite.config.security.BusinessSecurityValidator;
 import kh.edu.istad.ite.config.security.SecurityUtils;
@@ -36,10 +37,10 @@ public class FacebookConnectController {
     private final BusinessFacebookPageService pageService;
     private final BusinessSecurityValidator businessSecurityValidator;
     private final BusinessRepository businessRepository;
+    private final BusinessHelper businessHelper;
 
     private Business findMyBusiness() {
-        return businessRepository.findByKeycloakUserId(UUID.fromString(SecurityUtils.extractUserId()))
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Business has not been found"));
+        return businessHelper.currentBusiness();
     }
 
     @GetMapping("/api/v1/businesses/social-settings/facebook")

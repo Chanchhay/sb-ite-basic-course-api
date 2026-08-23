@@ -50,6 +50,13 @@ public interface OrderRepository extends JpaRepository<Order, UUID>, JpaSpecific
 
     long countByBusinessIdAndCustomerIdAndStatus(UUID businessId, UUID customerId, OrderStatus status);
 
+    long countByBusinessIdAndCustomerIdAndDiscountCodeIgnoreCaseAndStatusNot(
+            UUID businessId,
+            UUID customerId,
+            String discountCode,
+            OrderStatus status
+    );
+
 
     @Query("""
             SELECT DISTINCT o FROM Order o

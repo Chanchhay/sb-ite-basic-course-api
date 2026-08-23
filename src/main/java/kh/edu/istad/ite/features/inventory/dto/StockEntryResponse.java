@@ -4,7 +4,9 @@ import kh.edu.istad.ite.features.catalog.dto.UnitResponse;
 import kh.edu.istad.ite.shared.enums.StockEntryType;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -29,11 +31,23 @@ public record StockEntryResponse(
         BigDecimal unitSalePrice,
         BigDecimal enteredQuantity,
         UnitResponse enteredUnit,
+        /** The lot and dates this movement was recorded against. */
+        String lotNumber,
+        LocalDate manufacturedAt,
+        LocalDate expiresAt,
         Map<String, Object> batchData,
         String referenceType,
         UUID referenceId,
         String referenceNumber,
         String reason,
+        /**
+         * The batches this movement drew from, on the way out.
+         *
+         * Empty on the way in, where nothing has been consumed, and empty on
+         * the list endpoints — reading it for every row would be a query per
+         * movement to answer a question only the opened one is asking.
+         */
+        List<StockConsumptionResponse> consumedBatches,
         String createdBy,
         LocalDateTime createdDate
 ) {
