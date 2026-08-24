@@ -125,6 +125,15 @@ public class BusinessServiceImpl implements BusinessService {
         }
         if (request.provinceName() != null) {
             business.setProvinceName(TextHelper.trimToNull(request.provinceName()));
+            // The map picker setting a real province retires the old
+            // free-text field for this business — nothing should keep
+            // reading cityOrProvince once provinceName is driving it, so it
+            // shouldn't keep sitting in the row looking authoritative.
+            // Skipped only if this same request also touched cityOrProvince
+            // directly, so an explicit set still wins.
+            if (request.cityOrProvince() == null) {
+                business.setCityOrProvince(null);
+            }
         }
         if (request.districtName() != null) {
             business.setDistrictName(TextHelper.trimToNull(request.districtName()));

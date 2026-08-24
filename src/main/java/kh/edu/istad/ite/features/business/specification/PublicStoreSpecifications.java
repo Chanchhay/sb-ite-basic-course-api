@@ -51,16 +51,22 @@ public final class PublicStoreSpecifications {
             spec = spec.and((root, query, cb) -> cb.equal(root.get("businessCategory").get("id"), categoryId));
         }
 
-        // provinceName/districtName come from a geocoder rather than free
-        // typing, so a plain case-insensitive equality is enough — no need
-        // for the LIKE-pattern fuzziness keyword search uses below.
+        // Matches whichever field is a business's *effective* province —
+        // provinceName when the location rework has reached it, its old
+        // cityOrProvince text otherwise. The filter dropdown offers exactly
+        // this same COALESCE'd value (see findDistinctProvinceNames), so a
+        // business never becomes unreachable just for not having been
+        // migrated yet, and a plain equality is enough either way: neither
+        // side is free-typed once it's the value driving this filter — one
+        // comes from a geocoder, the other from the picklist itself.
         if (StringUtils.hasText(province)) {
             spec = spec.and((root, query, cb) -> cb.equal(
-                    cb.lower(root.get("provinceName")), province.trim().toLowerCase()
+                    cb.lower(cb.coalesce(root.get("provinceName"), root.get("cityOrProvince"))),
+                    province.trim().toLowerCase()
             ));
         } else if (StringUtils.hasText(cityOrProvince)) {
-            // Legacy free-text filter, only while a business may still have no
-            // provinceName set.
+            // Only reached by a caller that still sends the old standalone
+            // param name without `province` — kept for callers mid-rollout.
             spec = spec.and((root, query, cb) -> cb.equal(
                     cb.lower(root.get("cityOrProvince")), cityOrProvince.trim().toLowerCase()
             ));
