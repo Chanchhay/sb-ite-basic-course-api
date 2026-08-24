@@ -171,10 +171,19 @@ public class StorefrontServiceImpl implements StorefrontService {
         // at today's store counts; a count large enough for this full scan to
         // matter is the cue to move it into a native Haversine query instead.
         List<Business> matches = businessRepository.findAll(spec);
+        // java.util.Map.entry(k, v) — unlike AbstractMap.SimpleEntry — throws
+        // NPE on a null value via an internal Objects.requireNonNull, and
+        // distanceKm() returns null for any business with no saved
+        // coordinates. SimpleEntry holds it fine. The sort itself uses
+        // nullsLast rather than a ternary sentinel for the same reason: a
+        // primitive/boxed-Double ternary forces an unconditional unbox and
+        // throws on null regardless of which branch is picked.
         List<java.util.Map.Entry<Business, Double>> ranked = matches.stream()
-                .map(business -> java.util.Map.entry(business, distanceKm(business, lat, lng)))
+                .map(business -> (java.util.Map.Entry<Business, Double>)
+                        new java.util.AbstractMap.SimpleEntry<>(business, distanceKm(business, lat, lng)))
                 .sorted(Comparator.comparing(
-                        entry -> entry.getValue() == null ? Double.MAX_VALUE : entry.getValue()))
+                        java.util.Map.Entry::getValue,
+                        Comparator.nullsLast(Comparator.naturalOrder())))
                 .toList();
 
         int start = Math.min((int) pageable.getOffset(), ranked.size());
