@@ -117,6 +117,11 @@ public class StorefrontMapper {
     }
 
     public PublicStoreResponse toPublicResponse(Business business) {
+        return toPublicResponse(business, null);
+    }
+
+    /** {@code distanceKm} is null unless the caller supplied their own position. */
+    public PublicStoreResponse toPublicResponse(Business business, Double distanceKm) {
         boolean isClosed = Boolean.TRUE.equals(business.getIsClosed());
         return new PublicStoreResponse(
                 business.getId(),
@@ -126,6 +131,10 @@ public class StorefrontMapper {
                 toPublicUrl(business.getThumbnail()),
                 business.getAbout(),
                 business.getCityOrProvince(),
+                business.getProvinceName(),
+                business.getLatitude() == null ? null : business.getLatitude().doubleValue(),
+                business.getLongitude() == null ? null : business.getLongitude().doubleValue(),
+                distanceKm,
                 buildStorefrontUrl(business.getSlug()),
                 businessMapper.toSubCategoryResponse(business.getBusinessCategory()),
                 isClosed,
@@ -137,6 +146,11 @@ public class StorefrontMapper {
     }
 
     public PublicStoreDetailResponse toPublicDetailResponse(Business business) {
+        return toPublicDetailResponse(business, null);
+    }
+
+    /** {@code distanceKm} is null unless the caller supplied their own position. */
+    public PublicStoreDetailResponse toPublicDetailResponse(Business business, Double distanceKm) {
         boolean isClosed = Boolean.TRUE.equals(business.getIsClosed());
         ChannelScheduleDto onlineHours = onlineHoursOf(business);
         boolean openNow = isTakingWebOrders(business);
@@ -150,6 +164,11 @@ public class StorefrontMapper {
                 business.getPhoneNumber(),
                 business.getAddress(),
                 business.getCityOrProvince(),
+                business.getProvinceName(),
+                business.getDistrictName(),
+                business.getLatitude() == null ? null : business.getLatitude().doubleValue(),
+                business.getLongitude() == null ? null : business.getLongitude().doubleValue(),
+                distanceKm,
                 business.getGoogleMap(),
                 business.getWebsite(),
                 buildStorefrontUrl(business.getSlug()),

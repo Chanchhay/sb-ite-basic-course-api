@@ -28,16 +28,31 @@ public class PublicStoreController {
     @GetMapping
     public Page<PublicStoreResponse> getStores(
             @RequestParam(required = false) UUID categoryId,
+            @RequestParam(required = false) String province,
+            @RequestParam(required = false) String district,
             @RequestParam(required = false) String cityOrProvince,
             @RequestParam(required = false) String keyword,
+            /** Shopper's own position — when present, results sort nearest-first. */
+            @RequestParam(required = false) Double lat,
+            @RequestParam(required = false) Double lng,
             @PageableDefault(size = 12, sort = "displayName", direction = Sort.Direction.ASC) Pageable pageable
     ) {
-        return storefrontService.getPublicStores(categoryId, cityOrProvince, keyword, pageable);
+        return storefrontService.getPublicStores(categoryId, province, district, cityOrProvince, keyword, lat, lng, pageable);
+    }
+
+    /** Distinct province names actually used by listed stores — powers the /store filter without a seeded location table. */
+    @GetMapping("/provinces")
+    public List<String> getProvinces() {
+        return storefrontService.getDistinctProvinces();
     }
 
     @GetMapping("/{slug}")
-    public PublicStoreDetailResponse getStore(@PathVariable String slug) {
-        return storefrontService.getPublicStoreBySlug(slug);
+    public PublicStoreDetailResponse getStore(
+            @PathVariable String slug,
+            @RequestParam(required = false) Double lat,
+            @RequestParam(required = false) Double lng
+    ) {
+        return storefrontService.getPublicStoreBySlug(slug, lat, lng);
     }
 
     @GetMapping("/{slug}/items")
@@ -48,8 +63,10 @@ public class PublicStoreController {
     @GetMapping("/recommended")
     public Page<PublicStoreResponse> getRecommendedStores(
             @RequestParam(required = false) UUID categoryId,
+            @RequestParam(required = false) Double lat,
+            @RequestParam(required = false) Double lng,
             @PageableDefault(size = 12) Pageable pageable
     ) {
-        return storefrontService.getRecommendedStores(categoryId, pageable);
+        return storefrontService.getRecommendedStores(categoryId, lat, lng, pageable);
     }
 }

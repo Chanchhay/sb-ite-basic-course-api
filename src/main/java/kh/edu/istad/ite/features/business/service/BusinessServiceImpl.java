@@ -123,6 +123,21 @@ public class BusinessServiceImpl implements BusinessService {
         if (request.cityOrProvince() != null) {
             business.setCityOrProvince(TextHelper.trimToNull(request.cityOrProvince()));
         }
+        if (request.provinceName() != null) {
+            business.setProvinceName(TextHelper.trimToNull(request.provinceName()));
+        }
+        if (request.districtName() != null) {
+            business.setDistrictName(TextHelper.trimToNull(request.districtName()));
+        }
+        if (request.communeName() != null) {
+            business.setCommuneName(TextHelper.trimToNull(request.communeName()));
+        }
+        if (request.latitude() != null) {
+            business.setLatitude(request.latitude());
+        }
+        if (request.longitude() != null) {
+            business.setLongitude(request.longitude());
+        }
         if (request.website() != null) {
             business.setWebsite(TextHelper.trimToNull(request.website()));
         }

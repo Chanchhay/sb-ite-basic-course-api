@@ -10,6 +10,11 @@ public record PublicStoreResponse(
         String thumbnail,
         String about,
         String cityOrProvince,
+        String provinceName,
+        Double latitude,
+        Double longitude,
+        /** Straight-line distance from the shopper's position; null unless they shared it. */
+        Double distanceKm,
         String storefrontUrl,
         BusinessSubCategoryResponse category,
         Boolean isClosed,
