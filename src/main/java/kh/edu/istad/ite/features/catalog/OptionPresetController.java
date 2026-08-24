@@ -5,6 +5,10 @@ import kh.edu.istad.ite.features.catalog.dto.OptionPresetRequest;
 import kh.edu.istad.ite.features.catalog.dto.OptionPresetResponse;
 import kh.edu.istad.ite.features.catalog.service.OptionPresetService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -27,8 +31,11 @@ public class OptionPresetController {
     private final OptionPresetService optionPresetService;
 
     @GetMapping
-    public List<OptionPresetResponse> findAllOptionPresets(@PathVariable UUID businessId) {
-        return optionPresetService.findAllOptionPresets(businessId);
+    public Page<OptionPresetResponse> findAllOptionPresets(
+            @PathVariable UUID businessId,
+            @PageableDefault (sort = "name", direction = Sort.Direction.ASC)Pageable pageable
+            ) {
+        return optionPresetService.findAllOptionPresets(businessId , pageable);
     }
 
     @ResponseStatus(HttpStatus.CREATED)

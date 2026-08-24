@@ -15,6 +15,8 @@ import kh.edu.istad.ite.shared.helper.BusinessHelper;
 import kh.edu.istad.ite.shared.helper.TextHelper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -59,13 +61,11 @@ public class MembershipTypeServiceImpl implements MembershipTypeService {
 
     @Override
     @Transactional(readOnly = true)
-    public List<MembershipTypeResponse> findAllMembershipTypes(UUID businessId) {
+    public Page<MembershipTypeResponse> findAllMembershipTypes(UUID businessId, Pageable pageable) {
         businessHelper.findOwnedBusiness(businessId);
 
-        return membershipTypeRepository.findAllByBusinessIdOrderByTypeNameAsc(businessId)
-                .stream()
-                .map(membershipTypeMapper::toResponse)
-                .toList();
+        return membershipTypeRepository.findAllByBusinessId(businessId, pageable)
+                .map(membershipTypeMapper::toResponse);
     }
 
     @Override

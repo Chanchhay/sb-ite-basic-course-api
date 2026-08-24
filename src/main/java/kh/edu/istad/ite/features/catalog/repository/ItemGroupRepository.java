@@ -1,6 +1,8 @@
 package kh.edu.istad.ite.features.catalog.repository;
 
 import kh.edu.istad.ite.features.catalog.entity.ItemGroup;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.List;
@@ -10,6 +12,8 @@ import java.util.UUID;
 public interface ItemGroupRepository extends JpaRepository<ItemGroup, UUID> {
 
     List<ItemGroup> findByBusinessIdAndParentIsNullOrderByNameAsc(UUID businessId);
+
+    Page<ItemGroup> findByBusinessIdAndParentIsNull(UUID businessId, Pageable pageable);
 
     List<ItemGroup> findByBusinessIdAndParentIsNotNullOrderByNameAsc(UUID businessId);
 

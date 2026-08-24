@@ -1,6 +1,8 @@
 package kh.edu.istad.ite.features.catalog.repository;
 
 import kh.edu.istad.ite.features.catalog.entity.Unit;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 
@@ -21,6 +23,10 @@ public interface UnitRepository extends JpaRepository<Unit, UUID> {
 
     /** What one business may pick from: the platform's units and its own. */
     List<Unit> findByBusinessIsNullOrBusinessIdOrderByNameAsc(UUID businessId);
+
+//    Same as above, paginated.
+
+    Page<Unit> findByBusinessIsNullOrBusinessId(UUID businessId, Pageable pageable);
 
     /** A unit this business may edit. Platform units never match. */
     Optional<Unit> findByIdAndBusinessId(UUID id, UUID businessId);

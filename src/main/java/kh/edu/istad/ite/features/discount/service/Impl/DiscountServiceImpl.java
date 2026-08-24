@@ -22,6 +22,8 @@ import kh.edu.istad.ite.shared.helper.TextHelper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -103,16 +105,17 @@ public class DiscountServiceImpl implements DiscountService {
 
     @Override
     @Transactional(readOnly = true)
-    public List<DiscountResponse> findAllDiscounts(UUID businessId) {
+    public Page<DiscountResponse> findAllDiscounts(UUID businessId, Pageable pageable) {
+
         businessHelper.findOwnedBusiness(businessId);
 
-        return discountRepository.findAllByBusinessIdOrderByCreatedDateDesc(businessId)
-                .stream()
+        return discountRepository.findAllByBusinessId(businessId, pageable)
                 .map(discount -> {
                     List<DiscountTarget> targets = discountTargetRepository.findAllByDiscountId(discount.getId());
+
                     return discountMapper.toResponse(discount, targets);
-                })
-                .toList();
+                });
+
     }
 
     @Override

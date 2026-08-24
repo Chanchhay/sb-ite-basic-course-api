@@ -2,6 +2,8 @@ package kh.edu.istad.ite.features.catalog.service;
 
 import kh.edu.istad.ite.features.catalog.dto.BusinessUnitRequest;
 import kh.edu.istad.ite.features.catalog.dto.UnitResponse;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 
 import java.util.List;
 import java.util.UUID;
@@ -9,7 +11,7 @@ import java.util.UUID;
 public interface BusinessUnitService {
 
     /** Platform units plus this business's own, name-ordered. */
-    List<UnitResponse> findSelectableUnits(UUID businessId);
+    Page<UnitResponse> findSelectableUnits(UUID businessId , Pageable pageable);
 
     UnitResponse createUnit(UUID businessId, BusinessUnitRequest request);
 
