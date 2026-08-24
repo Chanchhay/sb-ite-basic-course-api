@@ -9,6 +9,7 @@ public record PublicStoreResponse(
         String logo,
         String thumbnail,
         String about,
+        String address,
         String cityOrProvince,
         String provinceName,
         Double latitude,
