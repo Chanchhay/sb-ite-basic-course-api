@@ -4,6 +4,8 @@ import kh.edu.istad.ite.features.catalog.dto.CreateItemGroupRequest;
 import kh.edu.istad.ite.features.catalog.dto.ItemGroupResponse;
 import kh.edu.istad.ite.features.catalog.dto.ItemSubGroupResponse;
 import kh.edu.istad.ite.features.catalog.dto.UpdateItemGroupRequest;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 
 import java.util.List;
 import java.util.UUID;
@@ -12,7 +14,7 @@ public interface ItemGroupService {
 
     ItemSubGroupResponse createItemGroup(UUID businessId, CreateItemGroupRequest request);
 
-    List<ItemGroupResponse> findAllItemGroups(UUID businessId);
+    Page<ItemGroupResponse> findAllItemGroups(UUID businessId, Pageable pageable);
 
     ItemSubGroupResponse updateItemGroup(UUID businessId, UUID itemGroupId, UpdateItemGroupRequest request);
 

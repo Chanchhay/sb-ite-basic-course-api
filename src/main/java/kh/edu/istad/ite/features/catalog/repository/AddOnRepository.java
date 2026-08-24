@@ -1,6 +1,8 @@
 package kh.edu.istad.ite.features.catalog.repository;
 
 import kh.edu.istad.ite.features.catalog.entity.AddOn;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.List;
@@ -10,6 +12,8 @@ import java.util.UUID;
 public interface AddOnRepository extends JpaRepository<AddOn, UUID> {
 
     List<AddOn> findByBusinessIdOrderByNameAsc(UUID businessId);
+
+    Page<AddOn> findByBusinessId(UUID businessId, Pageable pageable);
 
     List<AddOn> findByBusinessIdAndIdIn(UUID businessId, List<UUID> ids);
 

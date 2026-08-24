@@ -14,6 +14,8 @@ import kh.edu.istad.ite.shared.helper.SlugHelper;
 import kh.edu.istad.ite.shared.helper.TextHelper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -45,13 +47,11 @@ public class BusinessUnitServiceImpl implements BusinessUnitService {
 
     @Override
     @Transactional(readOnly = true)
-    public List<UnitResponse> findSelectableUnits(UUID businessId) {
+    public Page<UnitResponse> findSelectableUnits(UUID businessId, Pageable pageable) {
         businessHelper.findAccessibleBusiness(businessId);
 
-        return unitRepository.findByBusinessIsNullOrBusinessIdOrderByNameAsc(businessId)
-                .stream()
-                .map(unitMapper::toResponse)
-                .toList();
+        return unitRepository.findByBusinessIsNullOrBusinessId(businessId, pageable)
+                .map(unitMapper::toResponse);
     }
 
     @Override

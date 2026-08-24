@@ -18,6 +18,8 @@ import kh.edu.istad.ite.shared.helper.SlugHelper;
 import kh.edu.istad.ite.shared.helper.TextHelper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -70,13 +72,11 @@ public class AddOnServiceImpl implements AddOnService {
 
     @Override
     @Transactional(readOnly = true)
-    public List<AddOnResponse> findAllAddOns(UUID businessId) {
+    public Page<AddOnResponse> findAllAddOns(UUID businessId, Pageable pageable) {
         businessHelper.findAccessibleBusiness(businessId);
 
-        return addOnRepository.findByBusinessIdOrderByNameAsc(businessId)
-                .stream()
-                .map(addOnMapper::toResponse)
-                .toList();
+        return addOnRepository.findByBusinessId(businessId, pageable)
+                .map(addOnMapper::toResponse);
     }
 
     @Override

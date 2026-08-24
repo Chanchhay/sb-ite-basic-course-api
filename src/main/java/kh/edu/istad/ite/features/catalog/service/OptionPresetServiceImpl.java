@@ -12,6 +12,8 @@ import kh.edu.istad.ite.shared.helper.BusinessHelper;
 import kh.edu.istad.ite.shared.helper.TextHelper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -39,15 +41,15 @@ public class OptionPresetServiceImpl implements OptionPresetService {
     private final OptionPresetRepository optionPresetRepository;
     private final OptionPresetMapper optionPresetMapper;
 
+
     @Override
     @Transactional(readOnly = true)
-    public List<OptionPresetResponse> findAllOptionPresets(UUID businessId) {
+    public Page<OptionPresetResponse> findAllOptionPresets(UUID businessId, Pageable pageable) {
+
         businessHelper.findAccessibleBusiness(businessId);
 
-        return optionPresetRepository.findByBusinessIdOrderByNameAsc(businessId)
-                .stream()
-                .map(optionPresetMapper::toResponse)
-                .toList();
+        return optionPresetRepository.findByBusinessId(businessId, pageable)
+                .map(optionPresetMapper::toResponse);
     }
 
     @Override
