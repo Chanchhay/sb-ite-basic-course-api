@@ -40,6 +40,8 @@ public final class PublicStoreSpecifications {
 
     public static Specification<Business> withFilters(
             UUID categoryId,
+            String province,
+            String district,
             String cityOrProvince,
             String keyword
     ) {
@@ -49,9 +51,24 @@ public final class PublicStoreSpecifications {
             spec = spec.and((root, query, cb) -> cb.equal(root.get("businessCategory").get("id"), categoryId));
         }
 
-        if (StringUtils.hasText(cityOrProvince)) {
+        // provinceName/districtName come from a geocoder rather than free
+        // typing, so a plain case-insensitive equality is enough — no need
+        // for the LIKE-pattern fuzziness keyword search uses below.
+        if (StringUtils.hasText(province)) {
+            spec = spec.and((root, query, cb) -> cb.equal(
+                    cb.lower(root.get("provinceName")), province.trim().toLowerCase()
+            ));
+        } else if (StringUtils.hasText(cityOrProvince)) {
+            // Legacy free-text filter, only while a business may still have no
+            // provinceName set.
             spec = spec.and((root, query, cb) -> cb.equal(
                     cb.lower(root.get("cityOrProvince")), cityOrProvince.trim().toLowerCase()
+            ));
+        }
+
+        if (StringUtils.hasText(district)) {
+            spec = spec.and((root, query, cb) -> cb.equal(
+                    cb.lower(root.get("districtName")), district.trim().toLowerCase()
             ));
         }
 
@@ -60,7 +77,8 @@ public final class PublicStoreSpecifications {
             spec = spec.and((root, query, cb) -> cb.or(
                     cb.like(cb.lower(root.get("displayName")), pattern),
                     cb.like(cb.lower(root.get("about")), pattern),
-                    cb.like(cb.lower(root.get("cityOrProvince")), pattern)
+                    cb.like(cb.lower(root.get("cityOrProvince")), pattern),
+                    cb.like(cb.lower(root.get("provinceName")), pattern)
             ));
         }
 
