@@ -130,6 +130,7 @@ public class StorefrontMapper {
                 toPublicUrl(business.getLogo()),
                 toPublicUrl(business.getThumbnail()),
                 business.getAbout(),
+                business.getAddress(),
                 business.getCityOrProvince(),
                 business.getProvinceName(),
                 business.getLatitude() == null ? null : business.getLatitude().doubleValue(),
