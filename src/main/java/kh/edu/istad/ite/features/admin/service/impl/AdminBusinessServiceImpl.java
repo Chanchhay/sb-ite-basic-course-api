@@ -1,6 +1,7 @@
 package kh.edu.istad.ite.features.admin.service.impl;
 
 import kh.edu.istad.ite.features.admin.dto.request.BusinessStatusActionRequest;
+import kh.edu.istad.ite.features.admin.dto.response.ProvinceBackfillResponse;
 import kh.edu.istad.ite.features.admin.service.AdminAuditLogService;
 import kh.edu.istad.ite.features.admin.service.AdminBusinessService;
 import kh.edu.istad.ite.features.admin.specification.BusinessAdminSpecifications;
@@ -11,6 +12,7 @@ import kh.edu.istad.ite.features.business.repository.BusinessRepository;
 import kh.edu.istad.ite.shared.enums.AdminActionType;
 import kh.edu.istad.ite.shared.enums.AuditTargetType;
 import kh.edu.istad.ite.shared.enums.BusinessOwnerStatus;
+import kh.edu.istad.ite.shared.helper.CambodiaProvinceMatcher;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
@@ -20,6 +22,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 
 @Service
@@ -165,6 +169,39 @@ public class AdminBusinessServiceImpl implements AdminBusinessService {
 
         log.info("Super admin deleted business {}", businessId);
         return businessMapper.toResponse(saved);
+    }
+
+    @Override
+    @Transactional
+    public ProvinceBackfillResponse backfillProvinceNames() {
+        List<Business> candidates = businessRepository.findBackfillProvinceCandidates();
+        List<ProvinceBackfillResponse.UnmatchedBusiness> unmatched = new ArrayList<>();
+        int matchedCount = 0;
+
+        for (Business business : candidates) {
+            String matched = CambodiaProvinceMatcher.match(business.getCityOrProvince());
+
+            if (matched == null) {
+                unmatched.add(new ProvinceBackfillResponse.UnmatchedBusiness(
+                        business.getId(), business.getDisplayName(), business.getCityOrProvince()));
+                continue;
+            }
+
+            business.setProvinceName(matched);
+            businessRepository.save(business);
+            matchedCount++;
+
+            adminAuditLogService.record(
+                    AdminActionType.BUSINESS_PROVINCE_BACKFILLED,
+                    AuditTargetType.BUSINESS,
+                    business.getId(),
+                    business.getDisplayName(),
+                    "Auto-matched \"" + business.getCityOrProvince() + "\" -> \"" + matched + "\""
+            );
+        }
+
+        log.info("Province backfill: matched {} of {} candidates", matchedCount, candidates.size());
+        return new ProvinceBackfillResponse(matchedCount, unmatched.size(), unmatched);
     }
 
     private void audit(

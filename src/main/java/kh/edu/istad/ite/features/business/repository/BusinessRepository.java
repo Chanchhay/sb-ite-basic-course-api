@@ -80,25 +80,35 @@ public interface BusinessRepository extends JpaRepository<Business, UUID>, JpaSp
     )
     Page<Business> findRecommendedStores(@Param("categoryId") UUID categoryId, Pageable pageable);
 
-    /** Powers the /store location filter without a hand-seeded division table — it just reads what's already there. */
     @Query(
             value = """
-                    SELECT DISTINCT b.provinceName FROM Business b
+                    SELECT DISTINCT COALESCE(b.provinceName, b.cityOrProvince) FROM Business b
                     WHERE b.isListing = true
                       AND b.isEnabled = true
                       AND b.isClosed = false
                       AND b.status = kh.edu.istad.ite.shared.enums.BusinessOwnerStatus.ACTIVE
-                      AND b.provinceName IS NOT NULL
+                      AND COALESCE(b.provinceName, b.cityOrProvince) IS NOT NULL
                       AND NOT EXISTS (
                           SELECT f FROM BusinessFeatureFlag f
                           WHERE f.business = b
                             AND f.feature = kh.edu.istad.ite.shared.enums.BusinessFeature.STOREFRONT
                             AND f.enabled = false
                       )
-                    ORDER BY b.provinceName
+                    ORDER BY COALESCE(b.provinceName, b.cityOrProvince)
                     """
     )
     List<String> findDistinctProvinceNames();
+
+    /**
+     * Candidates for the one-time cityOrProvince -> provinceName backfill.
+     * Written as JPQL rather than a derived findBy... method name: Spring
+     * Data's method-name parser treats "Or" as the keyword wherever it
+     * appears, so findByCityOrProvinceIsNotNull... reads as "City" OR
+     * "ProvinceIsNotNull..." instead of the single property cityOrProvince,
+     * and fails to start at all ("No property 'city' found").
+     */
+    @Query("SELECT b FROM Business b WHERE b.cityOrProvince IS NOT NULL AND b.provinceName IS NULL")
+    List<Business> findBackfillProvinceCandidates();
 
     interface CategoryCountProjection {
         String getCategoryName();

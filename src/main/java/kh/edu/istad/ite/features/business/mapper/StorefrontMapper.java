@@ -56,6 +56,11 @@ public class StorefrontMapper {
         return minioService.getPublicUrl(key);
     }
 
+    /** provinceName once a business has been through the location rework, its old cityOrProvince text otherwise — same fallback the filter itself matches on. */
+    private String effectiveProvinceName(Business business) {
+        return business.getProvinceName() != null ? business.getProvinceName() : business.getCityOrProvince();
+    }
+
     public String resolveDiscountLabel(Business business) {
         if (business == null || business.getId() == null) {
             return null;
@@ -132,7 +137,7 @@ public class StorefrontMapper {
                 business.getAbout(),
                 business.getAddress(),
                 business.getCityOrProvince(),
-                business.getProvinceName(),
+                effectiveProvinceName(business),
                 business.getLatitude() == null ? null : business.getLatitude().doubleValue(),
                 business.getLongitude() == null ? null : business.getLongitude().doubleValue(),
                 distanceKm,
@@ -165,7 +170,7 @@ public class StorefrontMapper {
                 business.getPhoneNumber(),
                 business.getAddress(),
                 business.getCityOrProvince(),
-                business.getProvinceName(),
+                effectiveProvinceName(business),
                 business.getDistrictName(),
                 business.getLatitude() == null ? null : business.getLatitude().doubleValue(),
                 business.getLongitude() == null ? null : business.getLongitude().doubleValue(),
