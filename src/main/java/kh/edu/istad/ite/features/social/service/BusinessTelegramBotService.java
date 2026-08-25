@@ -14,4 +14,7 @@ public interface BusinessTelegramBotService {
     TelegramBotSettingResponse deactivate();
 
     void disconnect();
+
+    /** Toggles the bot's menu button between "Open Shop" (Mini App) and Telegram's default commands list. */
+    TelegramBotSettingResponse setMiniAppEnabled(boolean enabled);
 }

@@ -57,6 +57,70 @@ public class KeycloakBotAuthService {
     }
 
 
+    public record TokenResponse(String accessToken, String refreshToken, long expiresIn) {
+    }
+
+    /** Sets/resets a Keycloak user's password without needing the old one — used to mint a real login for a Telegram-verified identity that never had a password of its own. */
+    public boolean setPassword(String userId, String password) {
+        try {
+            RealmResource realmResource = keycloakAdminClient.realm(realm);
+            CredentialRepresentation credential = new CredentialRepresentation();
+            credential.setType(CredentialRepresentation.PASSWORD);
+            credential.setValue(password);
+            credential.setTemporary(false);
+            realmResource.users().get(userId).resetPassword(credential);
+            return true;
+        } catch (Exception e) {
+            log.error("Failed to set password for Keycloak user {}: {}", userId, e.getMessage(), e);
+            return false;
+        }
+    }
+
+    /**
+     * Direct Access Grant with a password this service itself just set —
+     * the only way to hand a caller a real, usable access token for a user
+     * who authenticated via Telegram rather than a Keycloak login form. The
+     * password is generated fresh and reset on every call, so nothing about
+     * it needs to be remembered afterward.
+     */
+    public TokenResponse passwordGrantTokens(String username, String password) {
+        try {
+            RestClient restClient = RestClient.builder()
+                    .baseUrl(serverUrl)
+                    .build();
+
+            MultiValueMap<String, String> formData = new LinkedMultiValueMap<>();
+            formData.add("grant_type", "password");
+            formData.add("client_id", clientId);
+            if (clientSecret != null && !clientSecret.isEmpty()) {
+                formData.add("client_secret", clientSecret);
+            }
+            formData.add("username", username);
+            formData.add("password", password);
+
+            Map<String, Object> tokenResponse = restClient.post()
+                    .uri("/realms/{realm}/protocol/openid-connect/token", realm)
+                    .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                    .body(formData)
+                    .retrieve()
+                    .body(new ParameterizedTypeReference<Map<String, Object>>() {});
+
+            if (tokenResponse == null || !tokenResponse.containsKey("access_token")) {
+                return null;
+            }
+
+            Object expiresIn = tokenResponse.get("expires_in");
+            return new TokenResponse(
+                    String.valueOf(tokenResponse.get("access_token")),
+                    String.valueOf(tokenResponse.get("refresh_token")),
+                    expiresIn instanceof Number number ? number.longValue() : 0L
+            );
+        } catch (Exception e) {
+            log.warn("Password-grant token fetch failed for {}: {}", username, e.getMessage());
+            return null;
+        }
+    }
+
     public boolean registerInKeycloak(String username, String password, String phoneNumber) {
         try {
             RealmResource realmResource = keycloakAdminClient.realm(realm);
