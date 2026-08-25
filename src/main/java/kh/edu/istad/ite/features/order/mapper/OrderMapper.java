@@ -45,6 +45,7 @@ public class OrderMapper {
                 order.getDisplayCurrency(),
                 order.getDisplayExchangeRate(),
                 order.getNote(),
+                order.isAwaitingPayLaterApproval(),
                 items,
                 order.getCreatedDate()
         );
