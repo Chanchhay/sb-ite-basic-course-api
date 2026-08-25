@@ -105,6 +105,16 @@ public class Order extends BasedAuditingEntity {
     @Column(columnDefinition = "text")
     private String note;
 
+    /**
+     * A storefront order placed with Pay Later sits here as PENDING and
+     * untouched — stock only leaves the shelf once the business owner
+     * approves it from the dashboard, unlike every other channel where
+     * confirming/paying and consuming stock happen in the same step.
+     */
+    @Column(name = "awaiting_pay_later_approval", nullable = false,
+            columnDefinition = "boolean not null default false")
+    private boolean awaitingPayLaterApproval = false;
+
     @OneToMany(mappedBy = "order", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     private List<OrderItem> items = new ArrayList<>();
 

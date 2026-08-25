@@ -38,6 +38,8 @@ public class OrderResponse {
     private String displayCurrency;
     private BigDecimal displayExchangeRate;
     private String note;
+    /** True only for a Pay Later web order still waiting on the owner to approve it. */
+    private boolean awaitingPayLaterApproval;
     private List<OrderItemResponse> items;
     private LocalDateTime createdDate;
 }

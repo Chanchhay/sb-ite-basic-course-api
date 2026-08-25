@@ -20,6 +20,7 @@ import kh.edu.istad.ite.features.customer.service.CustomerIdentityService;
 import kh.edu.istad.ite.features.inventory.dto.StockSummaryResponse;
 import kh.edu.istad.ite.features.channel.service.ItemChannelStockService;
 import kh.edu.istad.ite.features.inventory.service.StockEntryService;
+import kh.edu.istad.ite.features.order.dto.OrderResponse;
 import kh.edu.istad.ite.features.order.entity.Order;
 import kh.edu.istad.ite.features.order.entity.OrderItem;
 import kh.edu.istad.ite.features.order.entity.OrderItemAddOn;
@@ -93,6 +94,7 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
     private final CustomerIdentityService customerIdentityService;
     private final OrderRepository orderRepository;
     private final SaleRepository saleRepository;
+    private final kh.edu.istad.ite.features.order.mapper.OrderMapper orderMapper;
     private final BusinessPaymentSettingRepository paymentSettingRepository;
     private final PaymentQrCodeRepository paymentQrCodeRepository;
     private final KhqrGenerator khqrGenerator;
@@ -136,7 +138,7 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
         // Same store, still pending: settle it the way this request asks for,
         // rather than stacking orders.
         if (openOrder != null) {
-            return payLater ? settlePayLater(business, openOrder) : issueQrFor(business, openOrder);
+            return payLater ? requestPayLaterApproval(business, openOrder) : issueQrFor(business, openOrder);
         }
 
         Customer customer = customerIdentityService.customerFor(business, shopper);
@@ -216,7 +218,7 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
                 saved.getId(), saved.getInvoiceNumber(), business.getId(),
                 saved.getTotal(), saved.getCurrency());
 
-        return payLater ? settlePayLater(business, saved) : issueQrFor(business, saved);
+        return payLater ? requestPayLaterApproval(business, saved) : issueQrFor(business, saved);
     }
 
 
@@ -425,15 +427,16 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
     }
 
 
-    private StorefrontCheckoutResponse settlePayLater(Business business, Order order) {
-        int scale = scaleFor(order.getCurrency());
+    /**
+     * A Pay Later checkout never touches the shelf on its own — it just
+     * parks the order at PENDING for the business owner to look at. Stock
+     * only leaves once {@link #approvePayLaterOrder} runs.
+     */
+    private StorefrontCheckoutResponse requestPayLaterApproval(Business business, Order order) {
+        order.setAwaitingPayLaterApproval(true);
+        orderRepository.save(order);
 
-        settle(business, order, PaymentMethodType.PAY_LATER,
-                BigDecimal.ZERO.setScale(scale, RoundingMode.HALF_UP),
-                "Pay later - collect from customer");
-        closeCart(order);
-
-        log.info("Storefront order {} ({}) settled as Pay Later at business {} for {} {}",
+        log.info("Storefront order {} ({}) awaiting owner approval as Pay Later at business {} for {} {}",
                 order.getId(), order.getInvoiceNumber(), business.getId(),
                 order.getTotal(), order.getCurrency());
 
@@ -450,6 +453,34 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
                 null,
                 null,
                 null);
+    }
+
+    @Override
+    @Transactional
+    public OrderResponse approvePayLaterOrder(UUID businessId, UUID orderId) {
+        Business business = businessHelper.findAccessibleBusiness(businessId);
+
+        Order order = orderRepository.findByIdAndBusinessId(orderId, businessId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Order has not been found"));
+
+        if (!order.isAwaitingPayLaterApproval()) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT, "This order is not waiting on a Pay Later approval");
+        }
+
+        int scale = scaleFor(order.getCurrency());
+
+        order.setAwaitingPayLaterApproval(false);
+        settle(business, order, PaymentMethodType.PAY_LATER,
+                BigDecimal.ZERO.setScale(scale, RoundingMode.HALF_UP),
+                "Pay later - collect from customer");
+        closeCart(order);
+
+        log.info("Storefront order {} ({}) approved as Pay Later by owner at business {} for {} {}",
+                order.getId(), order.getInvoiceNumber(), business.getId(),
+                order.getTotal(), order.getCurrency());
+
+        return orderMapper.toResponse(order);
     }
 
     private void settle(Business business, Order order, PaymentMethodType paymentMethod,

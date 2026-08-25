@@ -19,6 +19,8 @@ public interface OrderService {
 
     OrderResponse cancelOrder(UUID businessId, UUID orderId);
 
+    OrderResponse confirmOrder(UUID businessId, UUID orderId);
+
     OrderResponse addOrderItem(UUID businessId, UUID orderId, AddOrderItemRequest request);
     OrderResponse updateOrderItem(UUID businessId, UUID orderId, UUID orderItemId, UpdateOrderItemRequest request);
     OrderResponse removeOrderItem(UUID businessId, UUID orderId, UUID orderItemId);

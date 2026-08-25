@@ -289,6 +289,8 @@ public class SecurityConfig {
                         .access(scoped(tenant, "order:pay"))
                         .requestMatchers(HttpMethod.PATCH, "/api/v1/businesses/{businessId}/orders/*/pay")
                         .access(scoped(tenant, "order:pay"))
+                        .requestMatchers(HttpMethod.PATCH, "/api/v1/businesses/{businessId}/orders/*/pay-later/approve")
+                        .access(scoped(tenant, "order:pay"))
                         .requestMatchers(HttpMethod.POST, "/api/v1/businesses/{businessId}/orders/*/cancel")
                         .access(scoped(tenant, "order:cancel"))
                         .requestMatchers(HttpMethod.PATCH, "/api/v1/businesses/{businessId}/orders/*/cancel")
