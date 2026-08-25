@@ -1,6 +1,7 @@
 package kh.edu.istad.ite.features.social.service;
 
 import kh.edu.istad.ite.shared.helper.BusinessHelper;
+import kh.edu.istad.ite.config.props.StorefrontProps;
 import kh.edu.istad.ite.config.props.TelegramProps;
 import kh.edu.istad.ite.config.security.CredentialCipher;
 import kh.edu.istad.ite.config.security.SecurityUtils;
@@ -31,6 +32,7 @@ public class BusinessTelegramBotServiceImpl implements BusinessTelegramBotServic
     private final CredentialCipher credentialCipher;
     private final TelegramBotClient telegramBotClient;
     private final TelegramProps telegramProps;
+    private final StorefrontProps storefrontProps;
 
     @Override
     @Transactional(readOnly = true)
@@ -104,7 +106,26 @@ public class BusinessTelegramBotServiceImpl implements BusinessTelegramBotServic
         String botToken = credentialCipher.decrypt(setting.getBotTokenEncrypted());
 
         telegramBotClient.deleteWebhook(botToken);
+        if (Boolean.TRUE.equals(setting.getIsMiniAppEnabled())) {
+            telegramBotClient.resetChatMenuButton(botToken);
+        }
         telegramBotRepository.delete(setting);
+    }
+
+    @Override
+    @Transactional
+    public TelegramBotSettingResponse setMiniAppEnabled(boolean enabled) {
+        BusinessTelegramBot setting = findMySetting();
+        String botToken = credentialCipher.decrypt(setting.getBotTokenEncrypted());
+
+        if (enabled) {
+            telegramBotClient.setChatMenuButton(botToken, buildMiniAppUrl(setting.getBusiness().getSlug()), "🛍 Open Shop");
+        } else {
+            telegramBotClient.resetChatMenuButton(botToken);
+        }
+        setting.setIsMiniAppEnabled(enabled);
+
+        return toResponse(telegramBotRepository.save(setting));
     }
 
     private BusinessTelegramBot findMySetting() {
@@ -128,7 +149,19 @@ public class BusinessTelegramBotServiceImpl implements BusinessTelegramBotServic
         return telegramProps.getWebhookBaseUrl() + "/api/v1/webhooks/telegram/" + webhookSecret;
     }
 
+    /**
+     * Always the path-based storefront route, regardless of whether
+     * subdomains are enabled — this is the actual Next.js route the Mini
+     * App pages live at ({@code /store/[slug]}), and building it explicitly
+     * avoids depending on whatever a subdomain might rewrite to internally.
+     */
+    private String buildMiniAppUrl(String slug) {
+        return storefrontProps.getProtocol() + "://" + storefrontProps.getBaseDomain()
+                + storefrontProps.getPathPrefix() + "/" + slug + "?tma=true";
+    }
+
     private TelegramBotSettingResponse toResponse(BusinessTelegramBot setting) {
+        boolean miniAppEnabled = Boolean.TRUE.equals(setting.getIsMiniAppEnabled());
         return new TelegramBotSettingResponse(
                 setting.getId(),
                 setting.getBusiness().getId(),
@@ -138,7 +171,9 @@ public class BusinessTelegramBotServiceImpl implements BusinessTelegramBotServic
                 StringUtils.hasText(setting.getBotTokenEncrypted()),
                 Boolean.TRUE.equals(setting.getIsActive()),
                 buildWebhookUrl(setting.getWebhookSecret()),
-                setting.getNotificationChatId()
+                setting.getNotificationChatId(),
+                miniAppEnabled,
+                miniAppEnabled ? buildMiniAppUrl(setting.getBusiness().getSlug()) : null
         );
     }
 

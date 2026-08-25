@@ -11,6 +11,9 @@ public record TelegramBotSettingResponse(
         boolean botTokenConfigured,
         boolean active,
         String webhookUrl,
-        String notificationChatId
+        String notificationChatId,
+        boolean miniAppEnabled,
+        /** Where the bot's menu button points when miniAppEnabled — null otherwise. */
+        String miniAppUrl
 ) {
 }
