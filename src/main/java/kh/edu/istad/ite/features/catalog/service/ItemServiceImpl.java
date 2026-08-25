@@ -24,6 +24,7 @@ import kh.edu.istad.ite.features.channel.repository.ItemChannelRepository;
 import kh.edu.istad.ite.features.channel.entity.ItemChannel;
 import org.springframework.web.multipart.MultipartFile;
 import kh.edu.istad.ite.shared.enums.ItemStatus;
+import kh.edu.istad.ite.shared.enums.ItemType;
 import kh.edu.istad.ite.shared.helper.BusinessHelper;
 import kh.edu.istad.ite.shared.helper.SlugHelper;
 import kh.edu.istad.ite.shared.helper.TextHelper;
@@ -111,6 +112,11 @@ public class ItemServiceImpl implements ItemService {
         item.setBarcode(TextHelper.trimToNull(request.barcode()));
         item.setPrice(normalizePrice(request.price()));
         item.setItemType(request.itemType());
+        if (request.trackInventory() != null) {
+            item.setTrackInventory(request.trackInventory());
+        } else {
+            item.setTrackInventory(request.itemType() == ItemType.PHYSICAL);
+        }
         if (files != null && !files.isEmpty()) {
             for (MultipartFile file : files) {
                 String imageKey = minioService.uploadAsset(file);
@@ -204,6 +210,9 @@ public class ItemServiceImpl implements ItemService {
         }
         if (request.itemType() != null) {
             item.setItemType(request.itemType());
+        }
+        if (request.trackInventory() != null) {
+            item.setTrackInventory(request.trackInventory());
         }
         if (files != null && !files.isEmpty()) {
             for (MultipartFile file : files) {
@@ -383,14 +392,14 @@ public class ItemServiceImpl implements ItemService {
         ItemGroup itemGroup = itemGroupRepository.findByIdAndBusinessId(itemGroupId, businessId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Item group has not been found"));
 
-        // An item is filed on a sub group, never on a top-level one. A parent
-        // is a heading: what it holds is the sum of its children, so an item
-        // sitting directly on it would be counted outside every child and
-        // again in the parent's own total.
-        if (itemGroup.getParent() == null) {
+        //An item may now be filed directly on a main (parent) item group or
+        // on one of its sub groups.Both are valid picks in the "Category"
+        // field on item creation/update.
+        if (itemGroup.getParent() == null
+                && itemGroupRepository.existsByBusinessIdAndParentId(businessId, itemGroup.getId())) {
             throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST,
-                    "Items must be filed under a sub group, not a main item group"
+                    "This category has sub-categories; choose one of its sub-categories instead"
             );
         }
 

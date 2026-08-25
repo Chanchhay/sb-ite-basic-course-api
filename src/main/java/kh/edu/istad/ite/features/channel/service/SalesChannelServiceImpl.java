@@ -1,5 +1,6 @@
 package kh.edu.istad.ite.features.channel.service;
 
+import kh.edu.istad.ite.shared.helper.BusinessHelper;
 import kh.edu.istad.ite.features.catalog.dto.ItemResponse;
 import kh.edu.istad.ite.features.channel.dto.CreateSalesChannelRequest;
 import kh.edu.istad.ite.features.channel.dto.UpdateSalesChannelRequest;
@@ -34,6 +35,7 @@ public class SalesChannelServiceImpl
         private final ItemChannelRepository itemChannelRepository;
         private final ItemMapper itemMapper;
         private final BusinessRepository businessRepository;
+        private final BusinessHelper businessHelper;
         private final ChannelPriceResolver channelPriceResolver;
 
         @Override
@@ -58,10 +60,7 @@ public class SalesChannelServiceImpl
 
         @Override
         public List<SalesChannelItemResponse> findItemsByChannel(String channelCode) {
-                UUID currentUserId = UUID.fromString(SecurityUtils.extractUserId());
-                UUID businessId = businessRepository.findByKeycloakUserId(currentUserId)
-                                .map(Business::getId)
-                                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Business not found"));
+                UUID businessId = businessHelper.currentBusiness().getId();
 
                 return itemChannelRepository.findBySalesChannelCodeAndBusinessIdAndIsEnabledTrue(channelCode, businessId)
                                 .stream()

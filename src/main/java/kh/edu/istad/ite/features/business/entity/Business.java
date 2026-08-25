@@ -9,6 +9,7 @@ import lombok.Setter;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -67,8 +68,33 @@ public class Business extends BasedAuditingEntity {
     @Column(nullable = false, length = 255)
     private String address;
 
+    /** @deprecated superseded by {@link #provinceName}; kept until every active business has one set. */
+    @Deprecated
     @Column(name = "city_or_province", length = 255)
     private String cityOrProvince;
+
+    /**
+     * Province/city, district/khan, commune/sangkat — read from a geocoder's
+     * address components when the owner drops the map pin, not typed by hand.
+     * Plain text rather than a foreign key into a hand-seeded division table:
+     * nobody here maintains Cambodia's ~1,600 communes, and a geocoder already
+     * normalizes spelling/casing far better than free entry ever did.
+     */
+    @Column(name = "province_name", length = 150)
+    private String provinceName;
+
+    @Column(name = "district_name", length = 150)
+    private String districtName;
+
+    @Column(name = "commune_name", length = 150)
+    private String communeName;
+
+    /** The shopfront's exact map pin, same source as the names above. */
+    @Column(precision = 9, scale = 6)
+    private BigDecimal latitude;
+
+    @Column(precision = 9, scale = 6)
+    private BigDecimal longitude;
 
     @Column(length = 255)
     private String website;

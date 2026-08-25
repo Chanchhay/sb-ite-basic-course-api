@@ -29,13 +29,12 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
-/**
- * Renders items (image, title, price, detail) for the Messenger bot,
- * mirroring what TelegramWebhookServiceImpl/TelegramUIHelper does for Telegram,
- * but using Messenger's Generic Template card instead of Markdown captions.
- */
+
+import org.springframework.transaction.annotation.Transactional;
+
 @Service
 @RequiredArgsConstructor
+@Transactional(readOnly = true)
 public class FacebookCatalogService {
 
     // Messenger Generic Template hard limits.
@@ -52,16 +51,16 @@ public class FacebookCatalogService {
 
     public void sendWelcomeMenu(BusinessFacebookPage page, String psid) {
         String storeName = page.getBusiness().getDisplayName();
-        String text = "👋 សូមស្វាគមន៍មកកាន់ " + storeName + "!\n\nសូមចុចប៊ូតុងខាងក្រោម ដើម្បីមើលផលិតផលរបស់យើង។";
+        String text = "👋 សូមស្វាគមន៍មកកាន់ " + storeName + "!\n\nសូមចុចប៊ូតុងខាងក្រោម ដើម្បីមើល ឬស្វែងរកផលិតផលរបស់យើង។";
 
         List<Map<String, Object>> buttons = List.of(
-                Map.of("type", "postback", "title", "🗂️ មើលផលិតផល", "payload", "CATALOG")
+                Map.of("type", "postback", "title", "🗂️ មើលផលិតផល", "payload", "CATALOG"),
+                Map.of("type", "postback", "title", "📂 ប្រភេទទំនិញ", "payload", "CATALOG_CATEGORIES")
         );
 
         graphClient.sendButtonTemplate(page.getPageId(), page.getPageAccessTokenEncrypted(), psid, text, buttons);
     }
 
-    /** Sends a carousel of items (image + title + price) the customer can tap to view detail. */
     public void showCatalog(BusinessFacebookPage page, String psid) {
         UUID businessId = page.getBusiness().getId();
         Specification<Item> spec = Specification.where(ItemSpecifications.hasBusinessId(businessId))
@@ -78,12 +77,11 @@ public class FacebookCatalogService {
 
         List<Map<String, Object>> elements = new ArrayList<>();
         for (Item item : itemsPage.getContent()) {
-            elements.add(buildElement(item, page.getBusiness(), true));
+            elements.add(buildElement(item, page.getBusiness()));
         }
         graphClient.sendGenericTemplate(page.getPageId(), page.getPageAccessTokenEncrypted(), psid, elements);
     }
 
-    /** Sends one item as a card (image + title + price), then a follow-up text with the full detail. */
     public void showItemDetail(BusinessFacebookPage page, String psid, UUID itemId) {
         Optional<Item> found = itemRepository.findByIdAndBusinessId(itemId, page.getBusiness().getId());
         if (found.isEmpty()) {
@@ -92,16 +90,18 @@ public class FacebookCatalogService {
             return;
         }
         Item item = found.get();
-
-        graphClient.sendGenericTemplate(page.getPageId(), page.getPageAccessTokenEncrypted(), psid,
-                List.of(buildElement(item, page.getBusiness(), false)));
-
+ //show item again with detail
         graphClient.sendTextMessage(page.getPageId(), page.getPageAccessTokenEncrypted(), psid,
                 buildDetailText(item, page.getBusiness()));
+        List<Map<String, Object>> buttons = List.of(
+                Map.of("type", "postback", "title", "🛒 ថែមចូលកន្ត្រក", "payload", "CART_ADD:" + item.getId()),
+                Map.of("type", "postback", "title", "🗂️ ត្រឡប់ទៅផលិតផល", "payload", "CATALOG")
+        );
+        graphClient.sendButtonTemplate(page.getPageId(), page.getPageAccessTokenEncrypted(), psid,
+                "ចង់ធ្វើអ្វីបន្ត?", buttons);
     }
 
-    /** image_url + title + subtitle(price · stock) + button, for a catalog card or a single-item card. */
-    private Map<String, Object> buildElement(Item item, Business business, boolean forCatalogList) {
+    private Map<String, Object> buildElement(Item item, Business business) {
         String subtitle = truncate(
                 formatPrice(effectivePrice(item, business), business) + " · " + stockLabel(item, business),
                 SUBTITLE_MAX);
@@ -109,17 +109,19 @@ public class FacebookCatalogService {
         Optional<String> imageUrl = item.getImages().stream()
                 .findFirst()
                 .map(image -> minioService.getPublicUrl(image.getImageKey()))
-                .or(() -> Optional.ofNullable(item.getImageUrl()));
+                .or(() -> Optional.ofNullable(item.getImageUrl()))
+                .filter(url -> url != null && url.startsWith("https://"));
 
-        Map<String, Object> button = forCatalogList
-                ? Map.of("type", "postback", "title", "🔍 មើលលម្អិត", "payload", "ITEM:" + item.getId())
-                : Map.of("type", "postback", "title", "🛒 ថែមចូលកន្ត្រក", "payload", "CART_ADD:" + item.getId());
+        List<Map<String, Object>> buttons = List.of(
+                Map.of("type", "postback", "title", "🔍 លម្អិត", "payload", "ITEM:" + item.getId()),
+                Map.of("type", "postback", "title", "🛒 ថែមចូលកន្ត្រក", "payload", "CART_ADD:" + item.getId())
+        );
 
         Map<String, Object> element = new LinkedHashMap<>();
         element.put("title", truncate(item.getName(), TITLE_MAX));
         element.put("subtitle", subtitle);
         imageUrl.ifPresent(url -> element.put("image_url", url));
-        element.put("buttons", List.of(button));
+        element.put("buttons", buttons);
         return element;
     }
 
@@ -195,15 +197,87 @@ public class FacebookCatalogService {
         return "🟢 មានទំនិញ";
     }
 
+    private final kh.edu.istad.ite.features.catalog.repository.ItemGroupRepository itemGroupRepository;
+
+    public void showCategories(BusinessFacebookPage page, String psid) {
+        UUID businessId = page.getBusiness().getId();
+        List<kh.edu.istad.ite.features.catalog.entity.ItemGroup> categories =
+                itemGroupRepository.findByBusinessIdAndParentIsNotNullOrderByNameAsc(businessId);
+
+        if (categories.isEmpty()) {
+            categories = itemGroupRepository.findByBusinessIdAndParentIsNullOrderByNameAsc(businessId);
+        }
+
+        if (categories.isEmpty()) {
+            graphClient.sendTextMessage(page.getPageId(), page.getPageAccessTokenEncrypted(), psid,
+                    "😔 មិនទាន់មានប្រភេទទំនិញនៅឡើយទេ។");
+            return;
+        }
+
+        List<Map<String, Object>> buttons = new ArrayList<>();
+        for (kh.edu.istad.ite.features.catalog.entity.ItemGroup cat : categories) {
+            if (buttons.size() >= 3) break; // Messenger button template max 3 buttons
+            buttons.add(Map.of("type", "postback", "title", "📂 " + truncate(cat.getName(), 18),
+                    "payload", "CATALOG_CAT:" + cat.getId()));
+        }
+
+        String text = "📂 សូមជ្រើសរើសប្រភេទទំនិញ ៖";
+        graphClient.sendButtonTemplate(page.getPageId(), page.getPageAccessTokenEncrypted(), psid, text, buttons);
+    }
+
+    public void showCatalogByCategory(BusinessFacebookPage page, String psid, UUID categoryId) {
+        UUID businessId = page.getBusiness().getId();
+        Specification<Item> spec = Specification.where(ItemSpecifications.hasBusinessId(businessId))
+                .and(ItemSpecifications.hasStatus(ItemStatus.ACTIVE))
+                .and(ItemSpecifications.hasItemGroupId(categoryId));
+
+        Page<Item> itemsPage = itemRepository.findAll(spec, PageRequest.of(0, CATALOG_PAGE_SIZE));
+
+        if (itemsPage.isEmpty()) {
+            graphClient.sendTextMessage(page.getPageId(), page.getPageAccessTokenEncrypted(), psid,
+                    "😔 មិនទាន់មានផលិតផលក្នុងប្រភេទទំនិញនេះនៅឡើយទេ។");
+            return;
+        }
+
+        List<Map<String, Object>> elements = new ArrayList<>();
+        for (Item item : itemsPage.getContent()) {
+            elements.add(buildElement(item, page.getBusiness()));
+        }
+        graphClient.sendGenericTemplate(page.getPageId(), page.getPageAccessTokenEncrypted(), psid, elements);
+    }
+
+    public void searchItems(BusinessFacebookPage page, String psid, String query) {
+        UUID businessId = page.getBusiness().getId();
+        Specification<Item> spec = Specification.where(ItemSpecifications.hasBusinessId(businessId))
+                .and(ItemSpecifications.hasStatus(ItemStatus.ACTIVE))
+                .and(ItemSpecifications.nameContainsIgnoreCase(query));
+
+        Page<Item> itemsPage = itemRepository.findAll(spec, PageRequest.of(0, CATALOG_PAGE_SIZE));
+
+        if (itemsPage.isEmpty()) {
+            graphClient.sendTextMessage(page.getPageId(), page.getPageAccessTokenEncrypted(), psid,
+                    "😔 មិនមានផលិតផលត្រូវនឹងពាក្យស្វែងរក \"" + query + "\" ឡើយ។");
+            return;
+        }
+
+        List<Map<String, Object>> elements = new ArrayList<>();
+        for (Item item : itemsPage.getContent()) {
+            elements.add(buildElement(item, page.getBusiness()));
+        }
+        graphClient.sendGenericTemplate(page.getPageId(), page.getPageAccessTokenEncrypted(), psid, elements);
+    }
+
     private String formatPrice(BigDecimal price, Business business) {
         if (price == null) {
             return "—";
         }
-        String currency = business.getDisplayCurrency() != null ? business.getDisplayCurrency() : business.getBaseCurrency();
-        String formattedNumber = price.setScale(2, RoundingMode.HALF_UP).toString();
-        return ("USD".equalsIgnoreCase(currency) || "$".equals(currency))
-                ? "$" + formattedNumber
-                : formattedNumber + " " + currency;
+        BigDecimal usdPrice = price.setScale(2, RoundingMode.HALF_UP);
+        BigDecimal khrPrice = price.multiply(BigDecimal.valueOf(4100)).setScale(0, RoundingMode.HALF_UP);
+
+        java.text.NumberFormat nf = java.text.NumberFormat.getInstance(java.util.Locale.US);
+        String formattedKhr = nf.format(khrPrice);
+
+        return "$" + usdPrice + " (" + formattedKhr + " ៛)";
     }
 
     private String truncate(String text, int max) {

@@ -9,6 +9,9 @@ import org.keycloak.admin.client.Keycloak;
 import org.keycloak.admin.client.resource.RoleResource;
 import org.keycloak.admin.client.resource.RolesResource;
 import org.keycloak.representations.idm.RoleRepresentation;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
@@ -133,18 +136,29 @@ public class KeycloakRoleAdapter {
 
     // --- Business Roles ---
 
-    public List<BusinessRoleResponse> getBusinessRoles(UUID businessId) {
+    public Page<BusinessRoleResponse> getBusinessRoles(UUID businessId, Pageable pageable) {
         String prefix = getPrefix(businessId);
         RolesResource rolesResource = keycloak.realm(props.getTargetRealm()).roles();
 
-        return rolesResource.list().stream()
-                .filter(r -> r.getName().startsWith(prefix))
-                .map(r -> {
-                    RoleResource roleResource = rolesResource.get(r.getName());
+        //Keycloak has no server-side paging for a giltered-by-prefix role
+        //list. so we fetch the (small. per-business) filtered set and slice
+        // it in memory to match the requested page.
+
+        List<BusinessRoleResponse> allRoles = rolesResource.list().stream()
+                .filter(r->r.getName().startsWith(prefix))
+                .map(r->{
+                    RoleResource roleResource= rolesResource.get(r.getName());
                     List<String> perms = internalGetRolePermissions(roleResource);
                     return roleMapper.toBusinessRoleResponse(r, perms);
                 })
                 .toList();
+        int start = (int) pageable.getOffset();
+        if (start >= allRoles.size()) {
+            return new PageImpl<>(List.of(), pageable, allRoles.size());
+        }
+        int end = Math.min(start + pageable.getPageSize(), allRoles.size());
+        return new PageImpl<>(allRoles.subList(start, end), pageable, allRoles.size());
+
     }
 
     public void createBusinessRole(UUID businessId, BusinessRoleRequest request) {

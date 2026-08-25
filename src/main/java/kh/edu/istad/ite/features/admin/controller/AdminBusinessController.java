@@ -1,6 +1,7 @@
 package kh.edu.istad.ite.features.admin.controller;
 
 import kh.edu.istad.ite.features.admin.dto.request.BusinessStatusActionRequest;
+import kh.edu.istad.ite.features.admin.dto.response.ProvinceBackfillResponse;
 import kh.edu.istad.ite.features.admin.service.AdminBusinessService;
 import kh.edu.istad.ite.features.business.dto.BusinessResponse;
 import kh.edu.istad.ite.shared.enums.BusinessOwnerStatus;
@@ -77,5 +78,11 @@ public class AdminBusinessController {
     @DeleteMapping("/{businessId}")
     public BusinessResponse delete(@PathVariable UUID businessId) {
         return adminBusinessService.delete(businessId);
+    }
+
+    /** One-time: matches every business's old free-text cityOrProvince against the fixed 25-province list. Re-runnable — already-matched businesses are skipped. */
+    @PostMapping("/backfill-provinces")
+    public ProvinceBackfillResponse backfillProvinces() {
+        return adminBusinessService.backfillProvinceNames();
     }
 }

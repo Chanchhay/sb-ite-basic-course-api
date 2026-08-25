@@ -5,6 +5,8 @@ import kh.edu.istad.ite.config.props.FacebookProps;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
+
+import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
@@ -12,7 +14,11 @@ import java.net.http.HttpClient;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
-import org.springframework.http.client.MultipartBodyBuilder;
+
+import org.springframework.core.io.ByteArrayResource;
+
+import org.springframework.util.LinkedMultiValueMap;
+import org.springframework.util.MultiValueMap;
 
 @Component
 @Slf4j
@@ -22,6 +28,7 @@ public class FacebookGraphClient {
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final String apiVersion;
 
+    @SuppressWarnings("removal")
     public FacebookGraphClient(FacebookProps props) {
         this.apiVersion = props.getApiVersion();
 
@@ -32,9 +39,18 @@ public class FacebookGraphClient {
                         .build());
         requestFactory.setReadTimeout(Duration.ofSeconds(10));
 
+        MappingJackson2HttpMessageConverter jacksonConverter = new MappingJackson2HttpMessageConverter();
+        jacksonConverter.setSupportedMediaTypes(List.of(
+                MediaType.APPLICATION_JSON,
+                MediaType.parseMediaType("text/javascript"),
+                MediaType.parseMediaType("text/javascript;charset=UTF-8"),
+                MediaType.parseMediaType("text/plain")
+        ));
+
         this.restClient = RestClient.builder()
                 .baseUrl(props.getGraphBaseUrl())
                 .requestFactory(requestFactory)
+                .messageConverters(converters -> converters.add(0, jacksonConverter))
                 .build();
     }
 
@@ -135,11 +151,17 @@ public class FacebookGraphClient {
 
     public void sendImage(String pageId, String pageAccessToken, String psid, byte[] imageBytes) {
         try {
-            MultipartBodyBuilder bodyBuilder = new MultipartBodyBuilder();
-            bodyBuilder.part("recipient", "{\"id\":\"" + psid + "\"}").contentType(MediaType.APPLICATION_JSON);
-            bodyBuilder.part("message", "{\"attachment\":{\"type\":\"image\", \"payload\":{\"is_reusable\":false}}}")
-                    .contentType(MediaType.APPLICATION_JSON);
-            bodyBuilder.part("filedata", imageBytes, MediaType.IMAGE_PNG).filename("khqr.png");
+            MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
+            body.add("recipient", "{\"id\":\"" + psid + "\"}");
+            body.add("message", "{\"attachment\":{\"type\":\"image\", \"payload\":{\"is_reusable\":false}}}");
+
+            ByteArrayResource contentsAsResource = new ByteArrayResource(imageBytes) {
+                @Override
+                public String getFilename() {
+                    return "khqr.png";
+                }
+            };
+            body.add("filedata", contentsAsResource);
 
             restClient.post()
                     .uri(uriBuilder -> uriBuilder
@@ -147,7 +169,7 @@ public class FacebookGraphClient {
                             .queryParam("access_token", pageAccessToken)
                             .build(apiVersion, pageId))
                     .contentType(MediaType.MULTIPART_FORM_DATA)
-                    .body(bodyBuilder.build())
+                    .body(body)
                     .retrieve()
                     .toBodilessEntity();
 
@@ -155,6 +177,36 @@ public class FacebookGraphClient {
         } catch (Exception e) {
             log.error("Failed to send Messenger image to PSID {}: {}", psid, e.getMessage());
             throw new RuntimeException("Failed to send image via Graph API", e);
+        }
+    }
+
+    public void sendPdfAttachment(String pageId, String pageAccessToken, String psid, byte[] pdfBytes, String filename) {
+        try {
+            MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
+            body.add("recipient", "{\"id\":\"" + psid + "\"}");
+            body.add("message", "{\"attachment\":{\"type\":\"file\", \"payload\":{\"is_reusable\":false}}}");
+
+            ByteArrayResource pdfResource = new ByteArrayResource(pdfBytes) {
+                @Override
+                public String getFilename() {
+                    return filename != null ? filename : "Invoice-Receipt.pdf";
+                }
+            };
+            body.add("filedata", pdfResource);
+
+            restClient.post()
+                    .uri(uriBuilder -> uriBuilder
+                            .path("/{apiVersion}/{pageId}/messages")
+                            .queryParam("access_token", pageAccessToken)
+                            .build(apiVersion, pageId))
+                    .contentType(MediaType.MULTIPART_FORM_DATA)
+                    .body(body)
+                    .retrieve()
+                    .toBodilessEntity();
+
+            log.info("Sent Messenger PDF receipt to PSID {}", psid);
+        } catch (Exception e) {
+            log.error("Failed to send Messenger PDF receipt to PSID {}: {}", psid, e.getMessage());
         }
     }
 
@@ -208,6 +260,28 @@ public class FacebookGraphClient {
         } catch (Exception e) {
             // Non-fatal: page is still registered/usable, it just won't show the menu button until this succeeds.
             log.error("Failed to configure Messenger profile: {}", e.getMessage());
+        }
+    }
+
+    public void whitelistDomain(String pageAccessToken, List<String> domains) {
+        try {
+            Map<String, Object> body = Map.of(
+                    "whitelisted_domains", domains
+            );
+
+            restClient.post()
+                    .uri(uriBuilder -> uriBuilder
+                            .path("/{apiVersion}/me/messenger_profile")
+                            .queryParam("access_token", pageAccessToken)
+                            .build(apiVersion))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(body)
+                    .retrieve()
+                    .toBodilessEntity();
+
+            log.info("Whitelisted domains for Messenger: {}", domains);
+        } catch (Exception e) {
+            log.error("Failed to whitelist domains for Messenger: {}", e.getMessage());
         }
     }
 

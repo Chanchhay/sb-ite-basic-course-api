@@ -17,6 +17,8 @@ import kh.edu.istad.ite.shared.helper.BusinessHelper;
 import kh.edu.istad.ite.shared.helper.TextHelper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -63,19 +65,16 @@ public class CustomerServiceImpl implements CustomerService {
         try {
             return customerMapper.toResponse(customerRepository.saveAndFlush(customer));
         } catch (DataIntegrityViolationException e) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "Customer already exists", e);
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "A customer with this phone number or email already exists.", e);
         }
     }
 
     @Override
     @Transactional(readOnly = true)
-    public List<CustomerResponse> findAllCustomers(UUID businessId) {
+    public Page<CustomerResponse> findAllCustomers(UUID businessId, Pageable pageable) {
         businessHelper.findOwnedBusiness(businessId);
-
-        return customerRepository.findAllByBusinessIdOrderByCreatedDateDesc(businessId)
-                .stream()
-                .map(customerMapper::toResponse)
-                .toList();
+        return customerRepository.findAllByBusinessId(businessId, pageable)
+                .map(customerMapper::toResponse);
     }
 
     @Override
@@ -123,7 +122,7 @@ public class CustomerServiceImpl implements CustomerService {
         try {
             return customerMapper.toResponse(customerRepository.saveAndFlush(customer));
         } catch (DataIntegrityViolationException e) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "Customer already exists", e);
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "A customer with this phone number or email already exists.", e);
         }
     }
 
@@ -254,7 +253,7 @@ public class CustomerServiceImpl implements CustomerService {
         customerRepository.findByBusiness_IdAndGlobalCustomer_Id(businessId, globalCustomer.getId())
                 .filter(existing -> !existing.getId().equals(currentCustomerId))
                 .ifPresent(existing -> {
-                    throw new ResponseStatusException(HttpStatus.CONFLICT, "Customer already exists for this business");
+                    throw new ResponseStatusException(HttpStatus.CONFLICT, "A customer with this phone number or email already exists.");
                 });
     }
 

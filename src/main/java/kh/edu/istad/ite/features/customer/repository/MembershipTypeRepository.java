@@ -1,6 +1,8 @@
 package kh.edu.istad.ite.features.customer.repository;
 
 import kh.edu.istad.ite.features.customer.entity.MembershipType;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.List;
@@ -12,6 +14,8 @@ public interface MembershipTypeRepository extends JpaRepository<MembershipType, 
     Optional<MembershipType> findByIdAndBusinessId(UUID id, UUID businessId);
 
     List<MembershipType> findAllByBusinessIdOrderByTypeNameAsc(UUID businessId);
+
+    Page<MembershipType> findAllByBusinessId(UUID businessId, Pageable pageable);
 
     boolean existsByBusinessIdAndTypeNameIgnoreCase(UUID businessId, String typeName);
     boolean existsByBusinessIdAndTypeNameIgnoreCaseAndIdNot(UUID businessId, String typeName, UUID id);

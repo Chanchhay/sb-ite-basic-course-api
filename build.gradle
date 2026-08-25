@@ -18,8 +18,21 @@ repositories {
     mavenCentral()
 }
 
+// The hand-written SQL in database/ ships inside the jar. The Docker image
+// holds the jar and nothing else, so scripts left in the repository would not
+// exist in the container to be run — which is why SchemaScriptRunner looks for
+// them on the classpath rather than on disk. They stay in database/ as the one
+// source of truth; this only copies them.
+processResources {
+    from('database') {
+        into 'db/migration'
+        include '*.sql'
+    }
+}
+
 dependencies {
     implementation 'io.minio:minio:9.0.3'
+    implementation 'org.springframework.boot:spring-boot-starter-actuator'
     implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
     implementation 'org.springframework.boot:spring-boot-starter-webmvc'
     implementation 'org.springframework.boot:spring-boot-starter-validation'

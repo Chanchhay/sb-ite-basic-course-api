@@ -16,6 +16,12 @@ public record PublicStoreDetailResponse(
         String phoneNumber,
         String address,
         String cityOrProvince,
+        String provinceName,
+        String districtName,
+        Double latitude,
+        Double longitude,
+        /** Straight-line distance from the shopper's position; null unless they shared it. */
+        Double distanceKm,
         String googleMap,
         String website,
         String storefrontUrl,

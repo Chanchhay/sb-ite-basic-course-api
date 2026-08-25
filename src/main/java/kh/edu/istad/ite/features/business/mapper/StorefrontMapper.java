@@ -56,6 +56,11 @@ public class StorefrontMapper {
         return minioService.getPublicUrl(key);
     }
 
+    /** provinceName once a business has been through the location rework, its old cityOrProvince text otherwise — same fallback the filter itself matches on. */
+    private String effectiveProvinceName(Business business) {
+        return business.getProvinceName() != null ? business.getProvinceName() : business.getCityOrProvince();
+    }
+
     public String resolveDiscountLabel(Business business) {
         if (business == null || business.getId() == null) {
             return null;
@@ -117,6 +122,11 @@ public class StorefrontMapper {
     }
 
     public PublicStoreResponse toPublicResponse(Business business) {
+        return toPublicResponse(business, null);
+    }
+
+    /** {@code distanceKm} is null unless the caller supplied their own position. */
+    public PublicStoreResponse toPublicResponse(Business business, Double distanceKm) {
         boolean isClosed = Boolean.TRUE.equals(business.getIsClosed());
         return new PublicStoreResponse(
                 business.getId(),
@@ -125,7 +135,12 @@ public class StorefrontMapper {
                 toPublicUrl(business.getLogo()),
                 toPublicUrl(business.getThumbnail()),
                 business.getAbout(),
+                business.getAddress(),
                 business.getCityOrProvince(),
+                effectiveProvinceName(business),
+                business.getLatitude() == null ? null : business.getLatitude().doubleValue(),
+                business.getLongitude() == null ? null : business.getLongitude().doubleValue(),
+                distanceKm,
                 buildStorefrontUrl(business.getSlug()),
                 businessMapper.toSubCategoryResponse(business.getBusinessCategory()),
                 isClosed,
@@ -137,6 +152,11 @@ public class StorefrontMapper {
     }
 
     public PublicStoreDetailResponse toPublicDetailResponse(Business business) {
+        return toPublicDetailResponse(business, null);
+    }
+
+    /** {@code distanceKm} is null unless the caller supplied their own position. */
+    public PublicStoreDetailResponse toPublicDetailResponse(Business business, Double distanceKm) {
         boolean isClosed = Boolean.TRUE.equals(business.getIsClosed());
         ChannelScheduleDto onlineHours = onlineHoursOf(business);
         boolean openNow = isTakingWebOrders(business);
@@ -150,6 +170,11 @@ public class StorefrontMapper {
                 business.getPhoneNumber(),
                 business.getAddress(),
                 business.getCityOrProvince(),
+                effectiveProvinceName(business),
+                business.getDistrictName(),
+                business.getLatitude() == null ? null : business.getLatitude().doubleValue(),
+                business.getLongitude() == null ? null : business.getLongitude().doubleValue(),
+                distanceKm,
                 business.getGoogleMap(),
                 business.getWebsite(),
                 buildStorefrontUrl(business.getSlug()),

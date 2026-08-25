@@ -26,6 +26,7 @@ import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Map;
 import java.util.UUID;
@@ -143,6 +144,23 @@ public class StockEntry extends BasedAuditingEntity {
             foreignKey = @ForeignKey(name = "fk_stock_entries_entered_unit")
     )
     private kh.edu.istad.ite.features.catalog.entity.Unit enteredUnit;
+
+    /**
+     * The lot and dates this movement was recorded against.
+     *
+     * The batch it opened carries the same three, and is what the queue is
+     * actually ordered by. They are kept here too so the ledger reads back as
+     * what was entered — a batch can be drawn down to nothing and stop being
+     * worth listing, while the movement that brought it in stays.
+     */
+    @Column(name = "lot_number", length = 80)
+    private String lotNumber;
+
+    @Column(name = "manufactured_at")
+    private LocalDate manufacturedAt;
+
+    @Column(name = "expires_at")
+    private LocalDate expiresAt;
 
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "batch_data", columnDefinition = "jsonb")

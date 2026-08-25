@@ -222,6 +222,7 @@ public class TelegramCustomerScreenService {
     private String statusLabel(OrderStatus status) {
         return switch (status) {
             case PENDING -> "🟡 `រង់ចាំការទូទាត់`";
+            case CONFIRMED -> "🟠 `បានបញ្ជាក់`";
             case PAID -> "🟢 `បានទូទាត់រួច`";
             case CANCELLED -> "⚪ `បានលុបចោល`";
             case FAILED -> "🔴 `បរាជ័យ`";
@@ -231,6 +232,7 @@ public class TelegramCustomerScreenService {
     private String statusIcon(OrderStatus status) {
         return switch (status) {
             case PENDING -> "🟡";
+            case CONFIRMED -> "🟠";
             case PAID -> "🟢";
             case CANCELLED -> "⚪";
             case FAILED -> "🔴";

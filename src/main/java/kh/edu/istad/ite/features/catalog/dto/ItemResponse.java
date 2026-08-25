@@ -28,6 +28,7 @@ public record ItemResponse(
         BigDecimal price,
         BigDecimal compareAtPrice,
         ItemType itemType,
+        Boolean trackInventory,
         List<ItemAttributeResponse> attributes,
         /** The colours this item comes in, declared once for every size. */
         List<ItemColorResponse> colors,

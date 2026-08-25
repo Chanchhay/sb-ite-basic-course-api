@@ -26,6 +26,8 @@ import org.keycloak.representations.idm.CredentialRepresentation;
 import org.keycloak.representations.idm.RoleRepresentation;
 import org.keycloak.representations.idm.UserRepresentation;
 import org.springframework.dao.DataAccessException;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -179,10 +181,9 @@ public class StaffManagementService {
         }
     }
 
-    public List<StaffResponse> getBusinessStaffList(UUID businessId) {
-        return userProfileRepository.findByBusinessIdOrderByJoinedAtDesc(businessId).stream()
-                .map(this::mapToStaffResponse)
-                .toList();
+    public Page<StaffResponse> getBusinessStaffList(UUID businessId, Pageable pageable) {
+        return userProfileRepository.findByBusinessId(businessId, pageable)
+                .map(this::mapToStaffResponse);
     }
 
     public List<StaffResponse> getPlatformStaffList() {

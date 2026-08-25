@@ -3,6 +3,8 @@ package kh.edu.istad.ite.features.customer.service;
 import kh.edu.istad.ite.features.customer.dto.CreateMembershipTypeRequest;
 import kh.edu.istad.ite.features.customer.dto.MembershipTypeResponse;
 import kh.edu.istad.ite.features.customer.dto.UpdateMembershipTypeRequest;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 
 import java.util.List;
 import java.util.UUID;
@@ -11,7 +13,7 @@ public interface MembershipTypeService {
 
     MembershipTypeResponse createMembershipType(UUID businessId, CreateMembershipTypeRequest request);
 
-    List<MembershipTypeResponse> findAllMembershipTypes(UUID businessId);
+    Page<MembershipTypeResponse> findAllMembershipTypes(UUID businessId , Pageable pageable);
 
     MembershipTypeResponse findMembershipTypeById(UUID businessId, UUID membershipTypeId);
 
