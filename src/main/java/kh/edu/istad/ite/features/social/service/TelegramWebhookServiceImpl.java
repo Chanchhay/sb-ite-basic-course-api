@@ -1,5 +1,6 @@
 package kh.edu.istad.ite.features.social.service;
 
+import kh.edu.istad.ite.config.props.StorefrontProps;
 import kh.edu.istad.ite.config.security.CredentialCipher;
 import kh.edu.istad.ite.features.auth.AuthService;
 import kh.edu.istad.ite.features.auth.dto.RegisterRequest;
@@ -110,6 +111,7 @@ public class TelegramWebhookServiceImpl implements TelegramWebhookService {
     private final TelegramCustomerScreenService screenService;
     private final MinioService minioService;
     private final kh.edu.istad.ite.features.discount.service.DiscountService discountService;
+    private final StorefrontProps storefrontProps;
 
     @Override
     @Transactional
@@ -134,8 +136,15 @@ public class TelegramWebhookServiceImpl implements TelegramWebhookService {
                 return;
             }
 
-            if (!Boolean.TRUE.equals(setting.getIsActive())) {
-                log.info("Ignoring Telegram update for a deactivated bot (business {})", setting.getBusiness().getId());
+            // These two dashboard toggles are independent — a business can
+            // run the old text/reply-keyboard flow only, Mini App only, or
+            // both at once (the button is offered *in addition to* the text
+            // flow rather than replacing it when both are on).
+            boolean textFlowEnabled = Boolean.TRUE.equals(setting.getIsActive());
+            boolean miniAppEnabled = Boolean.TRUE.equals(setting.getIsMiniAppEnabled());
+
+            if (!textFlowEnabled && !miniAppEnabled) {
+                log.info("Ignoring Telegram update: bot fully disabled for business {}", setting.getBusiness().getId());
                 return;
             }
 
@@ -147,6 +156,31 @@ public class TelegramWebhookServiceImpl implements TelegramWebhookService {
             }
 
             String botToken = credentialCipher.decrypt(setting.getBotTokenEncrypted());
+
+            if (isGroupChat(update)) {
+                // The persistent menu button (set via setChatMenuButton) is a
+                // private-chat-only affordance — it never appears in groups,
+                // and the text/reply-keyboard flow below was never designed
+                // for a shared chat either. A web_app inline button on a
+                // reply is the only way to offer "Open Shop" there, and it
+                // opens with the identity of whichever member taps it, same
+                // as private chat — no shared/group-wide session involved.
+                if (miniAppEnabled) {
+                    sendOpenShopPrompt(botToken, chatId, setting);
+                }
+                return;
+            }
+
+            if (miniAppEnabled) {
+                sendOpenShopPrompt(botToken, chatId, setting);
+            }
+
+            if (!textFlowEnabled) {
+                // Mini-App-only private chat: the button above (if any) is
+                // the whole interaction — nothing left to run.
+                return;
+            }
+
             BotSession session = findOrCreateSession(setting, String.valueOf(chatId));
             if (session.getContext() == null) {
                 session.setContext(new HashMap<>());
@@ -213,6 +247,34 @@ public class TelegramWebhookServiceImpl implements TelegramWebhookService {
             return update.message().chat().id();
         }
         return null;
+    }
+
+    private boolean isGroupChat(TelegramUpdate update) {
+        String chatType = null;
+        if (update.callbackQuery() != null && update.callbackQuery().message() != null
+                && update.callbackQuery().message().chat() != null) {
+            chatType = update.callbackQuery().message().chat().type();
+        } else if (update.message() != null && update.message().chat() != null) {
+            chatType = update.message().chat().type();
+        }
+        return "group".equals(chatType) || "supergroup".equals(chatType);
+    }
+
+    private void sendOpenShopPrompt(String botToken, Long chatId, BusinessTelegramBot setting) {
+        if (!Boolean.TRUE.equals(setting.getIsMiniAppEnabled())) {
+            // Mini App isn't turned on for this business — nothing to open.
+            // For a group this means staying quiet rather than pointing
+            // members at an unavailable feature; the private-chat call site
+            // never reaches here with it off (checked before calling).
+            return;
+        }
+
+        String miniAppUrl = storefrontProps.buildMiniAppUrl(setting.getBusiness().getSlug());
+        telegramBotClient.sendMessage(
+                botToken,
+                chatId,
+                "🛍 Tap below to open " + setting.getBusiness().getDisplayName() + "'s shop.",
+                List.of(List.of(InlineKeyboardButton.webApp("🛍 Open Shop", miniAppUrl))));
     }
 
     private BotSession findOrCreateSession(BusinessTelegramBot setting, String chatId) {

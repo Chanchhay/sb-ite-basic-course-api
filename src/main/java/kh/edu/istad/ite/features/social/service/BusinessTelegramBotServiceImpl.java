@@ -93,7 +93,13 @@ public class BusinessTelegramBotServiceImpl implements BusinessTelegramBotServic
         BusinessTelegramBot setting = findMySetting();
         String botToken = credentialCipher.decrypt(setting.getBotTokenEncrypted());
 
-        telegramBotClient.deleteWebhook(botToken);
+        // The webhook is what lets the bot reply with the "Open Shop"
+        // button in group chats at all (unlike the persistent menu button,
+        // which works in private chats without it). Turning off the old
+        // text flow shouldn't also break Mini App there if it's still on.
+        if (!Boolean.TRUE.equals(setting.getIsMiniAppEnabled())) {
+            telegramBotClient.deleteWebhook(botToken);
+        }
         setting.setIsActive(false);
 
         return toResponse(telegramBotRepository.save(setting));
@@ -119,9 +125,23 @@ public class BusinessTelegramBotServiceImpl implements BusinessTelegramBotServic
         String botToken = credentialCipher.decrypt(setting.getBotTokenEncrypted());
 
         if (enabled) {
-            telegramBotClient.setChatMenuButton(botToken, buildMiniAppUrl(setting.getBusiness().getSlug()), "🛍 Open Shop");
+            telegramBotClient.setChatMenuButton(botToken, storefrontProps.buildMiniAppUrl(setting.getBusiness().getSlug()), "🛍 Open Shop");
+            // Group chats need a live webhook to reply with the "Open
+            // Shop" inline button — make sure one exists even if the old
+            // text flow (isActive) was left off, since Mini App is
+            // independent of it.
+            if (!Boolean.TRUE.equals(setting.getIsActive())) {
+                requireWebhookBaseUrlConfigured();
+                telegramBotClient.setWebhook(botToken, buildWebhookUrl(setting.getWebhookSecret()), setting.getWebhookSecret());
+            }
         } else {
             telegramBotClient.resetChatMenuButton(botToken);
+            // Neither mode needs the webhook anymore — tear it down the
+            // same way deactivate() would, rather than leaving a stale
+            // subscription Telegram keeps calling for no reason.
+            if (!Boolean.TRUE.equals(setting.getIsActive())) {
+                telegramBotClient.deleteWebhook(botToken);
+            }
         }
         setting.setIsMiniAppEnabled(enabled);
 
@@ -149,17 +169,6 @@ public class BusinessTelegramBotServiceImpl implements BusinessTelegramBotServic
         return telegramProps.getWebhookBaseUrl() + "/api/v1/webhooks/telegram/" + webhookSecret;
     }
 
-    /**
-     * Always the path-based storefront route, regardless of whether
-     * subdomains are enabled — this is the actual Next.js route the Mini
-     * App pages live at ({@code /store/[slug]}), and building it explicitly
-     * avoids depending on whatever a subdomain might rewrite to internally.
-     */
-    private String buildMiniAppUrl(String slug) {
-        return storefrontProps.getProtocol() + "://" + storefrontProps.getBaseDomain()
-                + storefrontProps.getPathPrefix() + "/" + slug + "?tma=true";
-    }
-
     private TelegramBotSettingResponse toResponse(BusinessTelegramBot setting) {
         boolean miniAppEnabled = Boolean.TRUE.equals(setting.getIsMiniAppEnabled());
         return new TelegramBotSettingResponse(
@@ -173,7 +182,7 @@ public class BusinessTelegramBotServiceImpl implements BusinessTelegramBotServic
                 buildWebhookUrl(setting.getWebhookSecret()),
                 setting.getNotificationChatId(),
                 miniAppEnabled,
-                miniAppEnabled ? buildMiniAppUrl(setting.getBusiness().getSlug()) : null
+                miniAppEnabled ? storefrontProps.buildMiniAppUrl(setting.getBusiness().getSlug()) : null
         );
     }
 

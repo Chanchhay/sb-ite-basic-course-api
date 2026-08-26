@@ -370,12 +370,12 @@ public class TelegramBotClient {
             return null;
         }
 
-        List<List<Map<String, String>>> rows = keyboard.stream()
+        List<List<Map<String, Object>>> rows = keyboard.stream()
                 .filter(row -> row != null && !row.isEmpty())
                 .map(row -> row.stream()
                         .filter(button -> button != null
                                 && button.label() != null
-                                && (button.isLink() || button.callbackData() != null))
+                                && (button.isLink() || button.isWebApp() || button.callbackData() != null))
                         .map(this::toButtonMap)
                         .toList())
                 .filter(row -> !row.isEmpty())
@@ -388,7 +388,10 @@ public class TelegramBotClient {
         return Map.of("inline_keyboard", rows);
     }
 
-    private Map<String, String> toButtonMap(InlineKeyboardButton button) {
+    private Map<String, Object> toButtonMap(InlineKeyboardButton button) {
+        if (button.isWebApp()) {
+            return Map.of("text", button.label(), "web_app", Map.of("url", button.webAppUrl()));
+        }
         return button.isLink()
                 ? Map.of("text", button.label(), "url", button.url())
                 : Map.of("text", button.label(), "callback_data", truncateCallbackData(button.callbackData()));
