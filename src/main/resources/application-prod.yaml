@@ -55,7 +55,7 @@ spring:
     # PGHOST must be the private endpoint (`postgres.railway.internal`), not
     # the `*.proxy.rlwy.net` one: the proxy sends every query out to the public
     # internet and back for a database in the same project.
-    url: jdbc:postgresql://${PGHOST}:${PGPORT:5432}/${PGDATABASE}
+    url: jdbc:postgresql://${PGHOST}:${PGPORT:1681}/${PGDATABASE}
     username: ${DB_USER}
     password: ${DB_PASS}
     hikari:
