@@ -61,12 +61,12 @@ public class TelegramWebAppAuthServiceImpl implements TelegramWebAppAuthService 
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND, "This store has no Telegram bot connected"));
 
-        // isActive (the old text/reply-keyboard flow) and isMiniAppEnabled
-        // are independent switches — a business can run Mini App only,
-        // text only, or both. Requiring isActive here would 403 the Mini
-        // App itself whenever a business turns off just the text flow.
-        boolean botUsable = Boolean.TRUE.equals(bot.getIsActive()) || Boolean.TRUE.equals(bot.getIsMiniAppEnabled());
-        if (!botUsable || !businessHelper.isFeatureEnabled(businessId, BusinessFeature.TELEGRAM_BOT)) {
+        // This endpoint is exclusively the Mini App's own login — gate it
+        // on isMiniAppEnabled alone. isActive (the old text/reply-keyboard
+        // flow) is a separate switch and must never decide whether the
+        // Mini App itself is reachable, in either direction.
+        if (!Boolean.TRUE.equals(bot.getIsMiniAppEnabled())
+                || !businessHelper.isFeatureEnabled(businessId, BusinessFeature.TELEGRAM_BOT)) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Telegram ordering is not enabled for this store");
         }
 
