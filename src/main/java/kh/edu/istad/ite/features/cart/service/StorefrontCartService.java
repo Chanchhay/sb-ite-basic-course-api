@@ -80,6 +80,7 @@ public class StorefrontCartService {
     private final ChannelPriceResolver channelPriceResolver;
     private final ItemChannelStockService itemChannelStockService;
     private final StockEntryService stockEntryService;
+    private final kh.edu.istad.ite.features.discount.service.DiscountService discountService;
 
 
     @Transactional(readOnly = true)
@@ -568,7 +569,59 @@ public class StorefrontCartService {
                 // and that exception is stored with no unit at all.
                 unit == null || unit.getId().equals(baseUnitId) ? null : unit.getId());
 
-        return new PricedLine(unit, unitFactor, channelPrice);
+        BigDecimal finalPrice = channelPrice;
+        if (discountService != null) {
+            try {
+                UUID itemGroupId = item.getItemGroup() != null ? item.getItemGroup().getId() : null;
+                List<kh.edu.istad.ite.features.discount.dto.DiscountResponse> discounts = discountService.findApplicableDiscounts(
+                        business.getId(), OrderChannel.WEB, item.getId(), itemGroupId);
+
+                List<kh.edu.istad.ite.features.discount.dto.DiscountResponse> autoDiscounts = discounts.stream()
+                        .filter(d -> !Boolean.TRUE.equals(d.requiresCoupon()))
+                        .toList();
+
+                if (!autoDiscounts.isEmpty()) {
+                    kh.edu.istad.ite.features.discount.dto.DiscountResponse best = autoDiscounts.stream()
+                            .sorted((d1, d2) -> {
+                                int s1 = (d1.scope() == kh.edu.istad.ite.shared.enums.DiscountScope.SPECIFIC_ITEMS || d1.scope() == kh.edu.istad.ite.shared.enums.DiscountScope.ITEM) ? 2
+                                        : (d1.scope() == kh.edu.istad.ite.shared.enums.DiscountScope.SPECIFIC_CATEGORIES || d1.scope() == kh.edu.istad.ite.shared.enums.DiscountScope.CATEGORY) ? 1 : 0;
+                                int s2 = (d2.scope() == kh.edu.istad.ite.shared.enums.DiscountScope.SPECIFIC_ITEMS || d2.scope() == kh.edu.istad.ite.shared.enums.DiscountScope.ITEM) ? 2
+                                        : (d2.scope() == kh.edu.istad.ite.shared.enums.DiscountScope.SPECIFIC_CATEGORIES || d2.scope() == kh.edu.istad.ite.shared.enums.DiscountScope.CATEGORY) ? 1 : 0;
+                                if (s1 != s2) return Integer.compare(s2, s1);
+
+                                int r1 = d1.ruleType() == kh.edu.istad.ite.shared.enums.DiscountRuleType.BUY_X_GET_Y ? 2 : 0;
+                                int r2 = d2.ruleType() == kh.edu.istad.ite.shared.enums.DiscountRuleType.BUY_X_GET_Y ? 2 : 0;
+                                if (r1 != r2) return Integer.compare(r2, r1);
+
+                                BigDecimal v1 = d1.value() != null ? d1.value() : BigDecimal.ZERO;
+                                BigDecimal v2 = d2.value() != null ? d2.value() : BigDecimal.ZERO;
+                                return v2.compareTo(v1);
+                            })
+                            .findFirst()
+                            .orElse(autoDiscounts.get(0));
+
+                    BigDecimal discountAmount = BigDecimal.ZERO;
+                    if (best.type() == kh.edu.istad.ite.shared.enums.DiscountType.PERCENTAGE && best.value() != null) {
+                        discountAmount = channelPrice.multiply(best.value()).divide(new BigDecimal("100"), 2, java.math.RoundingMode.HALF_UP);
+                    } else if (best.type() == kh.edu.istad.ite.shared.enums.DiscountType.FIXED_AMOUNT && best.value() != null) {
+                        discountAmount = best.value();
+                    }
+
+                    if (best.maxDiscountAmount() != null && discountAmount.compareTo(best.maxDiscountAmount()) > 0) {
+                        discountAmount = best.maxDiscountAmount();
+                    }
+
+                    finalPrice = channelPrice.subtract(discountAmount);
+                    if (finalPrice.compareTo(BigDecimal.ZERO) < 0) {
+                        finalPrice = BigDecimal.ZERO;
+                    }
+                }
+            } catch (Exception e) {
+                log.warn("Could not apply discount to cart line: {}", e.getMessage());
+            }
+        }
+
+        return new PricedLine(unit, unitFactor, finalPrice);
     }
 
     /** How a line should be named when something goes wrong with it. */

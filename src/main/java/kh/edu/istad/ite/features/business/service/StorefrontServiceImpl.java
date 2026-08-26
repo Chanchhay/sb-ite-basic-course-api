@@ -43,6 +43,8 @@ import kh.edu.istad.ite.features.discount.service.DiscountService;
 import kh.edu.istad.ite.features.discount.dto.DiscountResponse;
 import kh.edu.istad.ite.shared.enums.OrderChannel;
 import kh.edu.istad.ite.shared.enums.DiscountType;
+import kh.edu.istad.ite.shared.enums.DiscountRuleType;
+import kh.edu.istad.ite.shared.enums.DiscountScope;
 import kh.edu.istad.ite.shared.enums.ItemType;
 import kh.edu.istad.ite.features.catalog.dto.ItemVariantResponse;
 import kh.edu.istad.ite.features.catalog.entity.ItemVariant;
@@ -51,6 +53,7 @@ import kh.edu.istad.ite.features.channel.service.ItemChannelStockService;
 import kh.edu.istad.ite.features.inventory.dto.StockSummaryResponse;
 import kh.edu.istad.ite.features.inventory.service.StockEntryService;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -271,8 +274,6 @@ public class StorefrontServiceImpl implements StorefrontService {
                             item,
                             business.getId());
 
-                    if (base.price() == null) return base;
-
                     try {
                         List<DiscountResponse> applicable = discountService.findApplicableDiscounts(
                                 business.getId(),
@@ -282,33 +283,76 @@ public class StorefrontServiceImpl implements StorefrontService {
                         );
                         
                         if (!applicable.isEmpty()) {
-                            // Apply the first/best discount for display
-                            DiscountResponse best = applicable.get(0);
-                            BigDecimal originalPrice = base.price();
-                            BigDecimal discountAmount = BigDecimal.ZERO;
-                            
-                            if (best.type() == DiscountType.PERCENTAGE && best.value() != null) {
-                                discountAmount = originalPrice.multiply(best.value()).divide(new BigDecimal("100"));
-                            } else if (best.type() == DiscountType.FIXED_AMOUNT && best.value() != null) {
-                                discountAmount = best.value();
-                            }
-                            
-                            BigDecimal newPrice = originalPrice.subtract(discountAmount);
-                            if (newPrice.compareTo(BigDecimal.ZERO) < 0) {
-                                newPrice = BigDecimal.ZERO;
-                            }
-                            
-                            // Prevent overwriting if already discounted or if new price is not actually cheaper
-                            if (newPrice.compareTo(originalPrice) < 0) {
-                                String computedBadge = best.type() == DiscountType.PERCENTAGE ? 
-                                    best.value().stripTrailingZeros().toPlainString() + "% OFF" : 
-                                    best.name();
+                            List<DiscountResponse> autoDiscounts = applicable.stream()
+                                    .filter(d -> !Boolean.TRUE.equals(d.requiresCoupon()))
+                                    .toList();
+
+                            if (!autoDiscounts.isEmpty()) {
+                                DiscountResponse best = autoDiscounts.stream()
+                                        .sorted((d1, d2) -> {
+                                            int s1 = (d1.scope() == DiscountScope.SPECIFIC_ITEMS || d1.scope() == DiscountScope.ITEM) ? 2
+                                                    : (d1.scope() == DiscountScope.SPECIFIC_CATEGORIES || d1.scope() == DiscountScope.CATEGORY) ? 1 : 0;
+                                            int s2 = (d2.scope() == DiscountScope.SPECIFIC_ITEMS || d2.scope() == DiscountScope.ITEM) ? 2
+                                                    : (d2.scope() == DiscountScope.SPECIFIC_CATEGORIES || d2.scope() == DiscountScope.CATEGORY) ? 1 : 0;
+                                            if (s1 != s2) return Integer.compare(s2, s1);
+
+                                            int r1 = d1.ruleType() == DiscountRuleType.BUY_X_GET_Y ? 2 : 0;
+                                            int r2 = d2.ruleType() == DiscountRuleType.BUY_X_GET_Y ? 2 : 0;
+                                            if (r1 != r2) return Integer.compare(r2, r1);
+
+                                            BigDecimal v1 = d1.value() != null ? d1.value() : BigDecimal.ZERO;
+                                            BigDecimal v2 = d2.value() != null ? d2.value() : BigDecimal.ZERO;
+                                            return v2.compareTo(v1);
+                                        })
+                                        .findFirst()
+                                        .orElse(autoDiscounts.get(0));
+
+                                String computedBadge = null;
+                                if (best.ruleType() == DiscountRuleType.BUY_X_GET_Y) {
+                                    int buy = best.buyQuantity() != null ? best.buyQuantity() : 1;
+                                    int get = best.getQuantity() != null ? best.getQuantity() : 1;
+                                    computedBadge = "Buy " + buy + " Get " + get;
+                                } else if (best.type() == DiscountType.PERCENTAGE && best.value() != null) {
+                                    computedBadge = best.value().stripTrailingZeros().toPlainString() + "% OFF";
+                                } else if (best.type() == DiscountType.FIXED_AMOUNT && best.value() != null) {
+                                    computedBadge = "$" + best.value().stripTrailingZeros().toPlainString() + " OFF";
+                                } else {
+                                    computedBadge = best.name();
+                                }
+
+                                String effectiveBadge = computedBadge != null ? computedBadge : base.badge();
+
+                                if (base.price() != null) {
+                                    BigDecimal originalPrice = base.price();
+                                    BigDecimal discountAmount = BigDecimal.ZERO;
                                     
-                                return base.toBuilder()
-                                    .price(newPrice)
-                                    .compareAtPrice(originalPrice)
-                                    .badge(base.badge() != null && !base.badge().isBlank() ? base.badge() : computedBadge)
-                                    .build();
+                                    if (best.type() == DiscountType.PERCENTAGE && best.value() != null) {
+                                        discountAmount = originalPrice.multiply(best.value()).divide(new BigDecimal("100"), 2, RoundingMode.HALF_UP);
+                                    } else if (best.type() == DiscountType.FIXED_AMOUNT && best.value() != null) {
+                                        discountAmount = best.value();
+                                    }
+                                    
+                                    BigDecimal newPrice = originalPrice.subtract(discountAmount);
+                                    if (newPrice.compareTo(BigDecimal.ZERO) < 0) {
+                                        newPrice = BigDecimal.ZERO;
+                                    }
+                                    
+                                    if (newPrice.compareTo(originalPrice) < 0) {
+                                        return base.toBuilder()
+                                            .price(newPrice)
+                                            .compareAtPrice(originalPrice)
+                                            .badge(effectiveBadge)
+                                            .build();
+                                    } else {
+                                        return base.toBuilder()
+                                            .badge(effectiveBadge)
+                                            .build();
+                                    }
+                                } else {
+                                    return base.toBuilder()
+                                        .badge(effectiveBadge)
+                                        .build();
+                                }
                             }
                         }
                     } catch (Exception e) {

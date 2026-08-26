@@ -12,11 +12,13 @@ import kh.edu.istad.ite.features.minio.MinioService;
 import kh.edu.istad.ite.shared.enums.DiscountRuleType;
 import kh.edu.istad.ite.shared.enums.DiscountScope;
 import kh.edu.istad.ite.shared.enums.DiscountType;
+import kh.edu.istad.ite.shared.enums.OrderChannel;
 import kh.edu.istad.ite.shared.enums.RecordStatus;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
+import java.time.DayOfWeek;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -65,34 +67,53 @@ public class StorefrontMapper {
         if (business == null || business.getId() == null) {
             return null;
         }
+        LocalDateTime now = LocalDateTime.now();
+        DayOfWeek today = now.getDayOfWeek();
+
         List<Discount> activeDiscounts = discountRepository.findActiveDiscountsByBusinessId(
                 business.getId(),
                 RecordStatus.ACTIVE,
-                LocalDateTime.now()
+                now
         ).stream()
-         .filter(d -> d.getScope() == DiscountScope.ORDER || d.getScope() == DiscountScope.ALL_ITEMS)
+         .filter(d -> !Boolean.TRUE.equals(d.getRequiresCoupon()))
+         .filter(d -> d.getApplicableChannels() == null
+                 || d.getApplicableChannels().isEmpty()
+                 || d.getApplicableChannels().contains(OrderChannel.WEB))
+         .filter(d -> d.getSelectedDays() == null
+                 || d.getSelectedDays().isEmpty()
+                 || d.getSelectedDays().contains(today))
          .toList();
+
         if (activeDiscounts == null || activeDiscounts.isEmpty()) {
             return null;
         }
 
-        Discount primary = activeDiscounts.stream()
+        List<Discount> generalDiscounts = activeDiscounts.stream()
+                .filter(d -> d.getScope() == DiscountScope.ORDER || d.getScope() == DiscountScope.ALL_ITEMS)
+                .toList();
+
+        List<Discount> candidates = generalDiscounts.isEmpty() ? activeDiscounts : generalDiscounts;
+
+        Discount primary = candidates.stream()
                 .filter(d -> d.getType() == DiscountType.PERCENTAGE)
-                .max((d1, d2) -> d1.getValue().compareTo(d2.getValue()))
-                .orElse(activeDiscounts.get(0));
+                .max((d1, d2) -> (d1.getValue() != null ? d1.getValue() : BigDecimal.ZERO)
+                        .compareTo(d2.getValue() != null ? d2.getValue() : BigDecimal.ZERO))
+                .orElse(candidates.get(0));
+
+        if (primary.getName() != null && !primary.getName().isBlank()) {
+            return primary.getName();
+        }
 
         if (primary.getRuleType() == DiscountRuleType.BUY_X_GET_Y) {
             int buy = primary.getBuyQuantity() != null ? primary.getBuyQuantity() : 1;
             int get = primary.getGetQuantity() != null ? primary.getGetQuantity() : 1;
             return "Buy " + buy + " Get " + get;
-        }
-        if (primary.getType() == DiscountType.PERCENTAGE && primary.getValue() != null) {
+        } else if (primary.getType() == DiscountType.PERCENTAGE && primary.getValue() != null) {
             String pct = primary.getValue().stripTrailingZeros().toPlainString();
-            return pct + "% OFF";
-        }
-        if (primary.getType() == DiscountType.FIXED_AMOUNT && primary.getValue() != null) {
+            return (generalDiscounts.isEmpty() ? "Up to " : "") + pct + "% OFF";
+        } else if (primary.getType() == DiscountType.FIXED_AMOUNT && primary.getValue() != null) {
             String amt = primary.getValue().stripTrailingZeros().toPlainString();
-            return "$" + amt + " OFF";
+            return (generalDiscounts.isEmpty() ? "Up to $" : "$") + amt + " OFF";
         }
         return primary.getName();
     }
