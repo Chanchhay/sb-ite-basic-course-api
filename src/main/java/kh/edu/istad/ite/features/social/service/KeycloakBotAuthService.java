@@ -181,6 +181,18 @@ public class KeycloakBotAuthService {
                     u.singleAttribute("telegramUsername", username);
                     updated = true;
                 }
+                // Self-heal accounts created before required actions were
+                // cleared at creation time — otherwise they're permanently
+                // stuck failing password-grant with "Account is not fully
+                // set up" on every login attempt.
+                if (u.getRequiredActions() != null && !u.getRequiredActions().isEmpty()) {
+                    u.setRequiredActions(Collections.emptyList());
+                    updated = true;
+                }
+                if (!Boolean.TRUE.equals(u.isEmailVerified())) {
+                    u.setEmailVerified(true);
+                    updated = true;
+                }
                 if (updated) {
                     try {
                         usersResource.get(u.getId()).update(u);
@@ -212,6 +224,14 @@ public class KeycloakBotAuthService {
             user.setUsername(primaryUsername);
             user.setFirstName(firstName != null ? firstName : "Telegram");
             user.setLastName(lastName != null ? lastName : "User");
+            user.setEmailVerified(true);
+            // The realm's default required actions (verify email, update
+            // password, etc.) get attached to every new user unless cleared
+            // explicitly — left in place, they block password-grant login
+            // with "Account is not fully set up" even though this account
+            // was never meant to need any of them (there's no email to
+            // verify and the password is a once-off, backend-generated one).
+            user.setRequiredActions(Collections.emptyList());
             user.singleAttribute("telegramId", String.valueOf(telegramId));
             if (username != null && !username.isBlank()) {
                 user.singleAttribute("telegramUsername", username);
