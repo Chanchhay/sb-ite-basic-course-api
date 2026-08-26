@@ -39,6 +39,7 @@ import kh.edu.istad.ite.features.payment.repository.PaymentQrCodeRepository;
 import kh.edu.istad.ite.features.payment.service.ReceiptService;
 import kh.edu.istad.ite.shared.enums.BusinessFeature;
 import kh.edu.istad.ite.shared.enums.CartStatus;
+import kh.edu.istad.ite.shared.enums.ChannelType;
 import kh.edu.istad.ite.shared.enums.ItemType;
 import kh.edu.istad.ite.shared.enums.OrderChannel;
 import kh.edu.istad.ite.shared.enums.OrderStatus;
@@ -107,6 +108,7 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
     private final kh.edu.istad.ite.features.channel.service.ChannelPriceResolver channelPriceResolver;
     private final ReceiptService receiptService;
     private final TelegramAlertService telegramAlertService;
+    private final kh.edu.istad.ite.features.customer.repository.CustomerChannelIdentityRepository customerChannelIdentityRepository;
 
 
     @Override
@@ -182,7 +184,7 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
         Order order = new Order();
         order.setBusiness(business);
         order.setCustomer(customer);
-        order.setChannel(OrderChannel.WEB);
+        order.setChannel(resolveOrderChannel(business.getId(), customer.getId()));
         order.setStatus(OrderStatus.PENDING);
         order.setCurrency(resolveCurrency(business));
         currencyDisplayHelper.snapshot(business, order.getCurrency()).ifPresent(snapshot -> {
@@ -812,6 +814,20 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
 
     private int scaleFor(String currency) {
         return CURRENCY_KHR.equalsIgnoreCase(currency) ? 0 : 2;
+    }
+
+    /**
+     * The storefront checkout is shared by the regular website and the
+     * Telegram Mini App (same endpoint, same auth mechanism) — the only
+     * way to tell them apart afterward is whether this customer has a
+     * linked Telegram identity for this business, which the Mini App auth
+     * flow creates on first sign-in and a plain web visitor never has.
+     */
+    private OrderChannel resolveOrderChannel(UUID businessId, UUID customerId) {
+        boolean isTelegramCustomer = customerChannelIdentityRepository
+                .findByBusiness_IdAndChannelAndCustomer_Id(businessId, ChannelType.TELEGRAM, customerId)
+                .isPresent();
+        return isTelegramCustomer ? OrderChannel.TELEGRAM : OrderChannel.WEB;
     }
 
     private String nextInvoiceNumber(UUID businessId) {
