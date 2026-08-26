@@ -147,6 +147,8 @@ public class TelegramWebAppAuthServiceImpl implements TelegramWebAppAuthService 
 
     private void linkChannelIdentity(Business business, Customer customer, TelegramUser telegramUser) {
         String externalId = String.valueOf(telegramUser.id());
+        log.info("linkChannelIdentity: business={} customer={} telegramUserId={}",
+                business.getId(), customer.getId(), externalId);
         customerChannelIdentityRepository
                 .findByBusiness_IdAndChannelAndExternalId(
                         business.getId(), kh.edu.istad.ite.shared.enums.ChannelType.TELEGRAM, externalId)
@@ -157,6 +159,7 @@ public class TelegramWebAppAuthServiceImpl implements TelegramWebAppAuthService 
                     identity.setChannel(kh.edu.istad.ite.shared.enums.ChannelType.TELEGRAM);
                     identity.setExternalId(externalId);
                     identity.setChannelUsername(telegramUser.username());
+                    log.info("linkChannelIdentity: creating new link for customer={}", customer.getId());
                     return customerChannelIdentityRepository.save(identity);
                 });
     }
