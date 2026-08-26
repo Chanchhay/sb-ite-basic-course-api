@@ -17,8 +17,9 @@ public record TelegramWebAppAuthResponse(
         String photoUrl,
         String phoneNumber,
         String email,
+        String gender,
         String address,
-        /** False until both phoneNumber and address are set — gates the Mini App's "complete your profile" screen. */
+        /** False until email, gender, phoneNumber and address are all set — gates the Mini App's "complete your profile" screen. */
         boolean profileComplete
 ) {
 }

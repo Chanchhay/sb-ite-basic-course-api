@@ -101,14 +101,16 @@ public class TelegramWebAppAuthServiceImpl implements TelegramWebAppAuthService 
 
         GlobalCustomer globalCustomer = customerIdentityService.resolve(
                 CustomerIdentityService.parseKeycloakId(userInfo.id()),
-                userInfo.email(),
+                realEmailOnly(userInfo.email()),
                 userInfo.phoneNumber(),
                 userInfo.getFullName());
 
         Customer customer = customerIdentityService.customerFor(business, globalCustomer);
         linkChannelIdentity(business, customer, telegramUser);
 
-        boolean profileComplete = StringUtils.hasText(globalCustomer.getPhoneNumber())
+        boolean profileComplete = StringUtils.hasText(globalCustomer.getEmail())
+                && StringUtils.hasText(globalCustomer.getGender())
+                && StringUtils.hasText(globalCustomer.getPhoneNumber())
                 && StringUtils.hasText(customer.getAddress());
 
         return new TelegramWebAppAuthResponse(
@@ -126,9 +128,17 @@ public class TelegramWebAppAuthServiceImpl implements TelegramWebAppAuthService 
                 telegramUser.photoUrl(),
                 globalCustomer.getPhoneNumber(),
                 globalCustomer.getEmail(),
+                globalCustomer.getGender(),
                 customer.getAddress(),
                 profileComplete
         );
+    }
+
+    private String realEmailOnly(String email) {
+        if (email != null && email.endsWith("@telegram.fluxibiz")) {
+            return null;
+        }
+        return email;
     }
 
     private void linkChannelIdentity(Business business, Customer customer, TelegramUser telegramUser) {
