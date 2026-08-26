@@ -32,6 +32,12 @@ processResources {
 
 dependencies {
     implementation 'io.minio:minio:9.0.3'
+
+    // Reading the CSV and XLSX files a shop migrates in from its old system.
+    // Neither format is something to parse by hand: a quoted comma or a date
+    // cell that is really a number would each quietly corrupt a catalogue.
+    implementation 'org.apache.commons:commons-csv:1.14.1'
+    implementation 'org.apache.poi:poi-ooxml:5.4.1'
     implementation 'org.springframework.boot:spring-boot-starter-actuator'
     implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
     implementation 'org.springframework.boot:spring-boot-starter-webmvc'

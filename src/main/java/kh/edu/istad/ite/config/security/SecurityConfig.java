@@ -279,6 +279,34 @@ public class SecurityConfig {
                                 "/api/v1/businesses/{businessId}/items/*/stock-entries/*")
                         .access(scoped(tenant, "stock:write"))
 
+                        // Data migration
+                        //
+                        // Reading an import is reading the catalogue it describes, and
+                        // running one is creating catalogue entries — so both reuse the
+                        // item permissions rather than introducing codes that would have
+                        // to be provisioned as Keycloak roles before anyone could import
+                        // anything.
+                        //
+                        // Note that committing an item import may also post opening
+                        // balances, which `stock:write` would otherwise govern. Requiring
+                        // both here would block a perfectly ordinary items-only import by
+                        // someone who may create items but not adjust stock, so the
+                        // opening balance travels with the item it belongs to.
+                        .requestMatchers(HttpMethod.GET, "/api/v1/businesses/{businessId}/imports",
+                                "/api/v1/businesses/{businessId}/imports/*",
+                                "/api/v1/businesses/{businessId}/imports/*/columns",
+                                "/api/v1/businesses/{businessId}/imports/*/preview",
+                                "/api/v1/businesses/{businessId}/imports/*/rows",
+                                "/api/v1/businesses/{businessId}/imports/*/errors",
+                                "/api/v1/businesses/{businessId}/imports/*/report")
+                        .access(scoped(tenant, "item:read"))
+                        .requestMatchers(HttpMethod.POST, "/api/v1/businesses/{businessId}/imports",
+                                "/api/v1/businesses/{businessId}/imports/*/validate",
+                                "/api/v1/businesses/{businessId}/imports/*/commit")
+                        .access(scoped(tenant, "item:create"))
+                        .requestMatchers(HttpMethod.PUT, "/api/v1/businesses/{businessId}/imports/*/mapping")
+                        .access(scoped(tenant, "item:create"))
+
                         // Orders
                         .requestMatchers(HttpMethod.GET, "/api/v1/businesses/{businessId}/orders",
                                 "/api/v1/businesses/{businessId}/orders/*")
