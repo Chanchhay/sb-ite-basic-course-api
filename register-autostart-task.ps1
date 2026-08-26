@@ -1,12 +1,3 @@
-<#
-Registers a Windows Task Scheduler task that runs `docker compose up -d`
-in this folder whenever you log in, so the api/db containers come back up
-automatically after a reboot (on top of compose's own `restart:
-unless-stopped`, which only takes effect once Docker Desktop itself is
-already running).
-
-Run this ONCE, as your normal user, from an elevated PowerShell prompt.
-#>
 
 $ErrorActionPreference = "Stop"
 $projectDir = $PSScriptRoot

@@ -246,6 +246,23 @@ public class KeycloakBotAuthService {
                 List<UserRepresentation> createdList = usersResource.search(primaryUsername, true);
                 if (!createdList.isEmpty()) {
                     UserRepresentation created = createdList.get(0);
+                    // Some Keycloak versions re-attach the realm's default
+                    // required actions server-side right after creation,
+                    // ignoring what was sent in the create payload above —
+                    // so this is not redundant with setRequiredActions(...)
+                    // on `user`. Confirmed by re-reading the user back and
+                    // explicitly clearing it again post-creation.
+                    if ((created.getRequiredActions() != null && !created.getRequiredActions().isEmpty())
+                            || !Boolean.TRUE.equals(created.isEmailVerified())) {
+                        created.setRequiredActions(Collections.emptyList());
+                        created.setEmailVerified(true);
+                        try {
+                            usersResource.get(created.getId()).update(created);
+                        } catch (Exception ex) {
+                            log.warn("Could not clear required actions on newly created Telegram user {}: {}",
+                                    primaryUsername, ex.getMessage());
+                        }
+                    }
                     return new KeycloakUserInfo(
                             created.getId(),
                             created.getUsername(),
