@@ -6,6 +6,7 @@ import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
+import kh.edu.istad.ite.shared.enums.TaxInclusionType;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -71,6 +72,17 @@ public record UpdateBusinessRequest(
         String openTime,
 
         @Size(max = 30, message = "closeTime must be at most 30 characters")
-        String closeTime
+        String closeTime,
+
+        Boolean taxEnabled,
+
+        @DecimalMin(value = "0.0", message = "taxRate must not be negative")
+        @DecimalMax(value = "100.0", message = "taxRate must be at most 100")
+        BigDecimal taxRate,
+
+        TaxInclusionType taxInclusionType,
+
+        @Size(max = 30, message = "taxLabel must be at most 30 characters")
+        String taxLabel
 ) {
 }

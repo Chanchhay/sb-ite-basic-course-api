@@ -52,7 +52,11 @@ public class BusinessMapper {
                 business.getDisplayCurrency(),
                 business.getSocialLinks(),
                 business.getOpenTime(),
-                business.getCloseTime()
+                business.getCloseTime(),
+                business.getTaxEnabled(),
+                business.getTaxRate(),
+                business.getTaxInclusionType(),
+                business.getTaxLabel()
         );
     }
 

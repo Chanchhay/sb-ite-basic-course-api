@@ -3,6 +3,7 @@ package kh.edu.istad.ite.features.business.entity;
 import jakarta.persistence.*;
 import kh.edu.istad.ite.config.audit.BasedAuditingEntity;
 import kh.edu.istad.ite.shared.enums.BusinessOwnerStatus;
+import kh.edu.istad.ite.shared.enums.TaxInclusionType;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -149,4 +150,30 @@ public class Business extends BasedAuditingEntity {
             columnDefinition = "varchar(10) default 'USD'"
     )
     private String displayCurrency = "USD";
+
+    /**
+     * The one tax rate this business charges, applied the same way on every
+     * channel — POS, web storefront, Telegram, Messenger — rather than each
+     * one carrying its own copy.
+     */
+    // Not NOT NULL: ddl-auto: update cannot add a NOT NULL column to a table
+    // that already has rows (see SchemaScriptRunner's note on orders.tax_amount).
+    // Every read already treats null the same as false.
+    @Column(name = "tax_enabled")
+    private Boolean taxEnabled = false;
+
+    @Column(name = "tax_rate", precision = 5, scale = 2)
+    private BigDecimal taxRate = BigDecimal.ZERO;
+
+    @Enumerated(EnumType.STRING)
+    @Column(
+            name = "tax_inclusion_type",
+            length = 20,
+            columnDefinition = "varchar(20) default 'EXCLUSIVE'"
+    )
+    private TaxInclusionType taxInclusionType = TaxInclusionType.EXCLUSIVE;
+
+    /** What to call it on a receipt — "VAT", "GST", "Sales Tax". */
+    @Column(name = "tax_label", length = 30)
+    private String taxLabel;
 }

@@ -87,6 +87,7 @@ public class FacebookCheckoutService {
     private final ApplicationEventPublisher eventPublisher;
     private final FacebookGraphClient graphClient;
     private final StorefrontProps storefrontProps;
+    private final kh.edu.istad.ite.features.business.service.TaxCalculator taxCalculator;
 
     public record CheckoutDraft(
             java.util.UUID orderId,
@@ -166,7 +167,13 @@ public class FacebookCheckoutService {
         order.setChannel(OrderChannel.MESSENGER);
         order.setSubtotal(subtotal.setScale(scale, RoundingMode.HALF_UP));
         order.setDiscountAmount(BigDecimal.ZERO.setScale(scale, RoundingMode.HALF_UP));
-        order.setTotal(order.getSubtotal().subtract(order.getDiscountAmount()));
+        BigDecimal netAmount = order.getSubtotal().subtract(order.getDiscountAmount());
+        kh.edu.istad.ite.features.business.service.TaxCalculator.Result taxResult =
+                taxCalculator.apply(business, netAmount, scale);
+        order.setTaxInclusionType(taxResult.inclusionType());
+        order.setTaxRate(taxResult.taxRate());
+        order.setTaxAmount(taxResult.taxAmount());
+        order.setTotal(taxResult.total());
         order.setStatus(OrderStatus.PENDING);
         
         List<OrderItem> orderItems = cart.getItems().stream()
@@ -434,6 +441,9 @@ public class FacebookCheckoutService {
         sale.setChannel(order.getChannel());
         sale.setSubtotal(order.getSubtotal());
         sale.setDiscountAmount(order.getDiscountAmount());
+        sale.setTaxRate(order.getTaxRate());
+        sale.setTaxAmount(order.getTaxAmount());
+        sale.setTaxInclusionType(order.getTaxInclusionType());
         sale.setTotalAmount(order.getTotal());
         sale.setPaidAmount(order.getTotal());
         sale.setChangeAmount(BigDecimal.ZERO.setScale(scale, RoundingMode.HALF_UP));
@@ -484,6 +494,11 @@ public class FacebookCheckoutService {
         sb.append("សរុបរង៖ ").append(order.getSubtotal()).append(" ").append(order.getCurrency()).append("\n");
         if (order.getDiscountAmount() != null && order.getDiscountAmount().signum() > 0) {
             sb.append("បញ្ចុះតម្លៃ៖ ").append(order.getDiscountAmount()).append(" ").append(order.getCurrency()).append("\n");
+        }
+        if (order.getTaxAmount() != null && order.getTaxAmount().signum() > 0) {
+            String taxLabel = business.getTaxLabel() != null && !business.getTaxLabel().isBlank()
+                    ? business.getTaxLabel() : "ពន្ធ (Tax)";
+            sb.append(taxLabel).append("៖ ").append(order.getTaxAmount()).append(" ").append(order.getCurrency()).append("\n");
         }
         sb.append("សរុបប្រាក់ត្រូវបង់៖ ").append(order.getTotal()).append(" ").append(order.getCurrency()).append("\n");
         sb.append("----------------------------\n");

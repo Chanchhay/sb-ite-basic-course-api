@@ -107,6 +107,7 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
     private final kh.edu.istad.ite.features.channel.service.ChannelPriceResolver channelPriceResolver;
     private final ReceiptService receiptService;
     private final TelegramAlertService telegramAlertService;
+    private final kh.edu.istad.ite.features.business.service.TaxCalculator taxCalculator;
 
 
     @Override
@@ -331,11 +332,16 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
         if (appliedDiscountId != null) {
             order.setDiscountId(appliedDiscountId);
         }
-        BigDecimal finalTotal = rawSubtotal.subtract(totalDiscount);
-        if (finalTotal.compareTo(BigDecimal.ZERO) < 0) {
-            finalTotal = BigDecimal.ZERO;
+        BigDecimal netAmount = rawSubtotal.subtract(totalDiscount);
+        if (netAmount.compareTo(BigDecimal.ZERO) < 0) {
+            netAmount = BigDecimal.ZERO;
         }
-        order.setTotal(finalTotal.setScale(scale, RoundingMode.HALF_UP));
+        kh.edu.istad.ite.features.business.service.TaxCalculator.Result taxResult =
+                taxCalculator.apply(business, netAmount, scale);
+        order.setTaxInclusionType(taxResult.inclusionType());
+        order.setTaxRate(taxResult.taxRate());
+        order.setTaxAmount(taxResult.taxAmount());
+        order.setTotal(taxResult.total());
 
         if (order.getTotal().compareTo(BigDecimal.ZERO) <= 0) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Order total must be greater than zero");
@@ -675,6 +681,9 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
         sale.setChannel(order.getChannel());
         sale.setSubtotal(order.getSubtotal());
         sale.setDiscountAmount(order.getDiscountAmount());
+        sale.setTaxRate(order.getTaxRate());
+        sale.setTaxAmount(order.getTaxAmount());
+        sale.setTaxInclusionType(order.getTaxInclusionType());
         sale.setTotalAmount(order.getTotal());
         sale.setPaidAmount(paidAmount.setScale(scale, RoundingMode.HALF_UP));
         sale.setChangeAmount(BigDecimal.ZERO.setScale(scale, RoundingMode.HALF_UP));
@@ -797,9 +806,11 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
         Item item = cartItem.getItem();
         ItemVariant variant = cartItem.getVariant();
 
-        BigDecimal unitPrice = cartItem.getPriceSnapshot() != null
-                ? cartItem.getPriceSnapshot()
-                : (variant != null && variant.getPrice() != null ? variant.getPrice() : item.getPrice());
+        BigDecimal unitPrice = cartItem.getBasePrice() != null
+                ? cartItem.getBasePrice()
+                : cartItem.getPriceSnapshot() != null
+                        ? cartItem.getPriceSnapshot()
+                        : (variant != null && variant.getPrice() != null ? variant.getPrice() : item.getPrice());
 
         if (unitPrice == null) {
             throw new ResponseStatusException(
@@ -824,9 +835,7 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
         orderItem.setUnitCost(BigDecimal.ZERO);
         orderItem.setDiscountAmount(BigDecimal.ZERO);
 
-        // The extras were agreed and priced when they were ticked, so the
-        // order takes its own copy of each — the basket is emptied once this
-        // settles, and a receipt has to keep saying what was in the cup.
+
         if (cartItem.getAddOns() != null) {
             cartItem.getAddOns().forEach(chosen -> {
                 OrderItemAddOn addOn = new OrderItemAddOn();
@@ -1026,6 +1035,9 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
                 order.getSubtotal() != null ? order.getSubtotal() : BigDecimal.ZERO,
                 order.getDiscountAmount() != null ? order.getDiscountAmount() : BigDecimal.ZERO,
                 discountLabel,
+                order.getTaxRate() != null ? order.getTaxRate() : BigDecimal.ZERO,
+                order.getTaxAmount() != null ? order.getTaxAmount() : BigDecimal.ZERO,
+                b.getTaxLabel(),
                 order.getTotal() != null ? order.getTotal() : BigDecimal.ZERO,
                 order.getCurrency() != null ? order.getCurrency() : "USD",
                 order.getDisplayCurrency(),

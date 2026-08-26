@@ -179,6 +179,7 @@ public class StorefrontCartService {
                     .unitFactor(priced.unitFactor())
                     .quantity(request.quantity())
                     .priceSnapshot(priced.unitPrice())
+                    .basePrice(priced.channelPrice())
                     .build();
 
             selections.forEach(line::addSelection);
@@ -187,6 +188,7 @@ public class StorefrontCartService {
         } else {
             line.setQuantity(line.getQuantity() + request.quantity());
             line.setPriceSnapshot(priced.unitPrice());
+            line.setBasePrice(priced.channelPrice());
         }
 
         cartRepository.save(cart);
@@ -499,7 +501,7 @@ public class StorefrontCartService {
      * What this line is: the unit it is sold in, what one of them holds, and
      * what the web charges for it.
      */
-    private record PricedLine(Unit unit, BigDecimal unitFactor, BigDecimal unitPrice) {
+    private record PricedLine(Unit unit, BigDecimal unitFactor, BigDecimal unitPrice, BigDecimal channelPrice) {
     }
 
     /**
@@ -621,7 +623,7 @@ public class StorefrontCartService {
             }
         }
 
-        return new PricedLine(unit, unitFactor, finalPrice);
+        return new PricedLine(unit, unitFactor, finalPrice, channelPrice);
     }
 
     /** How a line should be named when something goes wrong with it. */
