@@ -61,18 +61,40 @@ public class CustomerSelfServiceController {
                         throw new ResponseStatusException(HttpStatus.CONFLICT, "That phone number is already in use");
                     });
             globalCustomer.setPhoneNumber(normalizedPhone);
-            globalCustomerRepository.save(globalCustomer);
         }
+
+        String normalizedEmail = TextHelper.trimToNull(request.email());
+        if (normalizedEmail != null && !normalizedEmail.equalsIgnoreCase(globalCustomer.getEmail())) {
+            globalCustomerRepository.findByEmailIgnoreCase(normalizedEmail)
+                    .filter(existing -> !existing.getId().equals(globalCustomer.getId()))
+                    .ifPresent(existing -> {
+                        throw new ResponseStatusException(HttpStatus.CONFLICT, "That email is already in use");
+                    });
+            globalCustomer.setEmail(normalizedEmail);
+        }
+
+        String firstName = TextHelper.trimToNull(request.firstName());
+        String lastName = TextHelper.trimToNull(request.lastName());
+        String fullName = (firstName != null || lastName != null)
+                ? String.join(" ", firstName != null ? firstName : "", lastName != null ? lastName : "").trim()
+                : globalCustomer.getFullName();
+        globalCustomer.setFullName(fullName);
+        globalCustomer.setGender(TextHelper.trimToNull(request.gender()));
+        globalCustomerRepository.save(globalCustomer);
 
         Customer customer = customerIdentityService.customerFor(business, globalCustomer);
         customer.setAddress(TextHelper.trimToNull(request.address()));
         customerRepository.save(customer);
 
-        boolean profileComplete = StringUtils.hasText(globalCustomer.getPhoneNumber())
+        boolean profileComplete = StringUtils.hasText(globalCustomer.getEmail())
+                && StringUtils.hasText(globalCustomer.getGender())
+                && StringUtils.hasText(globalCustomer.getPhoneNumber())
                 && StringUtils.hasText(customer.getAddress());
 
         return new CustomerSelfProfileResponse(
                 globalCustomer.getFullName(),
+                globalCustomer.getEmail(),
+                globalCustomer.getGender(),
                 globalCustomer.getPhoneNumber(),
                 customer.getAddress(),
                 profileComplete

@@ -193,6 +193,23 @@ public class KeycloakBotAuthService {
                     u.setEmailVerified(true);
                     updated = true;
                 }
+                // A realm with declarative User Profile can mark email as a
+                // required attribute — a null one there (Telegram never
+                // gives us one) can itself present as "Account is not fully
+                // set up" on password-grant, same as leftover required
+                // actions. A synthetic address satisfies that validation
+                // without claiming to be a real, reachable inbox.
+                if (u.getEmail() == null || u.getEmail().isBlank()) {
+                    u.setEmail("telegram_" + telegramId + "@telegram.fluxibiz");
+                    updated = true;
+                }
+                // Same story for last name — Telegram users very often have
+                // none, and a realm requiring it as a profile attribute
+                // blocks login on that alone, same as the missing email.
+                if (u.getLastName() == null || u.getLastName().isBlank()) {
+                    u.setLastName(lastName != null && !lastName.isBlank() ? lastName : "User");
+                    updated = true;
+                }
                 if (updated) {
                     try {
                         usersResource.get(u.getId()).update(u);
@@ -224,6 +241,12 @@ public class KeycloakBotAuthService {
             user.setUsername(primaryUsername);
             user.setFirstName(firstName != null ? firstName : "Telegram");
             user.setLastName(lastName != null ? lastName : "User");
+            // Telegram never gives us a real email — a realm with
+            // declarative User Profile can mark email as required, and a
+            // missing one can itself present as "Account is not fully set
+            // up" on password-grant. A synthetic address satisfies that
+            // validation without claiming to be a real, reachable inbox.
+            user.setEmail("telegram_" + telegramId + "@telegram.fluxibiz");
             user.setEmailVerified(true);
             // The realm's default required actions (verify email, update
             // password, etc.) get attached to every new user unless cleared
