@@ -23,6 +23,7 @@
       <env name="TELEGRAM_WEBHOOK_BASE_URL" value="https://oxford-jailbreak-entrust.ngrok-free.dev " />
     </envs>
     <module name="co.istad.ite-sb-api.main" />
+    <option name="SHORTEN_COMMAND_LINE" value="ARGS_FILE" />
     <option name="SPRING_BOOT_MAIN_CLASS" value="kh.edu.istad.ite.IteSbApiApplication" />
     <option name="WORKING_DIRECTORY" value="file://$PROJECT_DIR$" />
     <method v="2">
