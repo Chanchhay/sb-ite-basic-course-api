@@ -144,6 +144,8 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
         }
 
         Customer customer = customerIdentityService.customerFor(business, shopper);
+        log.info("createCheckout: business={} shopper(globalCustomer)={} customer={}",
+                business.getId(), shopper.getId(), customer.getId());
 
         Cart cart = cartRepository
                 .findActiveCartWithItems(customer.getId(), business.getId(), CartStatus.ACTIVE)
@@ -610,9 +612,16 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
                 });
     }
 
+    // Both channels the storefront checkout itself can produce (see
+    // resolveOrderChannel) — a pending Telegram order must block a second
+    // checkout the same way a pending web one always did. Hardcoding WEB
+    // alone here meant a Telegram customer's pending order was invisible
+    // to this check once orders started actually being tagged TELEGRAM.
+    private static final List<OrderChannel> STOREFRONT_CHANNELS = List.of(OrderChannel.WEB, OrderChannel.TELEGRAM);
+
     private Optional<Order> findOpenOrder(GlobalCustomer shopper) {
         return orderRepository
-                .findOpenOrdersForShopper(customerIdsOf(shopper), OrderChannel.WEB, OrderStatus.PENDING)
+                .findOpenOrdersForShopper(customerIdsOf(shopper), STOREFRONT_CHANNELS, OrderStatus.PENDING)
                 .stream()
                 .findFirst();
     }
@@ -827,6 +836,8 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
         boolean isTelegramCustomer = customerChannelIdentityRepository
                 .findByBusiness_IdAndChannelAndCustomer_Id(businessId, ChannelType.TELEGRAM, customerId)
                 .isPresent();
+        log.info("resolveOrderChannel: business={} customer={} telegramLinkFound={}",
+                businessId, customerId, isTelegramCustomer);
         return isTelegramCustomer ? OrderChannel.TELEGRAM : OrderChannel.WEB;
     }
 

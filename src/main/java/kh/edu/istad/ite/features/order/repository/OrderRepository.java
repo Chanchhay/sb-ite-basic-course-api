@@ -64,13 +64,13 @@ public interface OrderRepository extends JpaRepository<Order, UUID>, JpaSpecific
             SELECT DISTINCT o FROM Order o
             JOIN FETCH o.business
             WHERE o.customer.id IN :customerIds
-              AND o.channel = :channel
+              AND o.channel IN :channels
               AND o.status = :status
             ORDER BY o.createdDate DESC
             """)
     List<Order> findOpenOrdersForShopper(
             @Param("customerIds") Collection<UUID> customerIds,
-            @Param("channel") OrderChannel channel,
+            @Param("channels") Collection<OrderChannel> channels,
             @Param("status") OrderStatus status);
 
     @Query("""
