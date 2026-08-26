@@ -19,6 +19,8 @@ import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 public interface OrderRepository extends JpaRepository<Order, UUID>, JpaSpecificationExecutor<Order> {
 
     Optional<Order> findByIdAndBusinessId(UUID id, UUID businessId);
+    Optional<Order> findByBusinessIdAndInvoiceNumber(UUID businessId, String invoiceNumber);
+    boolean existsByInvoiceNumber(String invoiceNumber);
     long countByBusinessId(UUID businessId);
 
     long countByCashierIdAndCreatedDateBetween(UUID cashierId, java.time.LocalDateTime start, java.time.LocalDateTime end);

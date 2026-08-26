@@ -1,0 +1,33 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="IteSbApiApplication" type="SpringBootApplicationConfigurationType" factoryName="Spring Boot" nameIsGenerated="true">
+    <envs>
+      <env name="BASE_STOREFRONT_DOMAIN" value="fluxibiz.store" />
+      <env name="CREDENTIAL_ENCRYPTION_KEY" value="kZuIIMZgJQsMLmaZ7Gas7fi11xdy7s7cMqh2gBQIPeM=" />
+      <env name="DB_PASS" value="123456" />
+      <env name="DB_URL" value="jdbc:postgresql://localhost:5432/fluxibix" />
+      <env name="DB_USER" value="postgres" />
+      <env name="FACEBOOK_APP_ID" value="2602599616853160" />
+      <env name="FACEBOOK_APP_SECRET" value="8addd7ecf7e8aa9df74c07c18c5c8b0c" />
+      <env name="FACEBOOK_FRONTEND_RESULT_URL" value="https://business.fluxibiz.store/settings/messenger" />
+      <env name="FACEBOOK_OAUTH_REDIRECT_URI" value="http://localhost:8080/api/v1/social/facebook/oauth/callback" />
+      <env name="FACEBOOK_WEBHOOK_VERIFY_TOKEN" value="fluxibiz_verify_token" />
+      <env name="ISSUER_URI" value="https://auth.chanchhay.site/realms/istad-fluxipos-auth" />
+      <env name="KEYCLOAK_CLIENT_ID" value="fluxipos-backend" />
+      <env name="KEYCLOAK_CLIENT_SECRET" value="Tt5LQvGpofAMNYdBWUIRC2uUVrfJVf7n" />
+      <env name="KEYCLOAK_URL" value="https://auth.chanchhay.site" />
+      <env name="MINIO_ACCESS_KEY" value="47R7S872BXGU5W0MECFN" />
+      <env name="MINIO_ENDPOINT" value="https://s3.careerpatch.site" />
+      <env name="MINIO_SECRET_KEY" value="vvJMJMh6FEQEdHnVlWe0OFO+H+E1n1H0ijHZ83gC" />
+      <env name="SERVER_URL" value="http://localhost:8080" />
+      <env name="TARGET_REALM" value="istad-fluxipos-auth" />
+      <env name="TELEGRAM_WEBHOOK_BASE_URL" value="https://oxford-jailbreak-entrust.ngrok-free.dev " />
+    </envs>
+    <module name="co.istad.ite-sb-api.main" />
+    <option name="SHORTEN_COMMAND_LINE" value="ARGS_FILE" />
+    <option name="SPRING_BOOT_MAIN_CLASS" value="kh.edu.istad.ite.IteSbApiApplication" />
+    <option name="WORKING_DIRECTORY" value="file://$PROJECT_DIR$" />
+    <method v="2">
+      <option name="Make" enabled="true" />
+    </method>
+  </configuration>
+</component>

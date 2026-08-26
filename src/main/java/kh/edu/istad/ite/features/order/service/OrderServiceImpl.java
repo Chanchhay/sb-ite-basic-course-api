@@ -47,6 +47,10 @@ import kh.edu.istad.ite.features.discount.repository.DiscountRepository;
 import kh.edu.istad.ite.features.discount.repository.DiscountTargetRepository;
 import kh.edu.istad.ite.features.channel.service.ItemChannelStockService;
 import kh.edu.istad.ite.features.inventory.service.StockEntryService;
+import kh.edu.istad.ite.features.order.dto.OfflineOrderDto;
+import kh.edu.istad.ite.features.order.dto.OfflineOrderItemDto;
+import kh.edu.istad.ite.features.order.dto.SyncOfflineOrdersRequest;
+import kh.edu.istad.ite.features.order.dto.SyncOfflineOrdersResponse;
 import kh.edu.istad.ite.features.order.dto.AddOrderItemRequest;
 import kh.edu.istad.ite.features.order.dto.CreateOrderItemRequest;
 import kh.edu.istad.ite.features.order.dto.CreateOrderRequest;
@@ -1425,5 +1429,102 @@ public class OrderServiceImpl implements OrderService {
             total = BigDecimal.ZERO;
         }
         order.setTotal(total.setScale(scale, RoundingMode.HALF_UP));
+    }
+
+    @Override
+    @Transactional
+    public SyncOfflineOrdersResponse syncOfflineOrders(UUID businessId, SyncOfflineOrdersRequest request) {
+        Business business = businessHelper.findAccessibleBusiness(businessId);
+        List<String> syncedUuids = new ArrayList<>();
+
+        if (request == null || request.orders() == null || request.orders().isEmpty()) {
+            return new SyncOfflineOrdersResponse(true, syncedUuids);
+        }
+
+        for (OfflineOrderDto dto : request.orders()) {
+            if (dto.uuid() == null || dto.uuid().isBlank()) {
+                continue;
+            }
+
+            Optional<Order> existingOpt = orderRepository.findByBusinessIdAndInvoiceNumber(business.getId(), dto.uuid());
+
+            Order order;
+            boolean isNewOrder = false;
+
+            if (existingOpt.isPresent()) {
+                order = existingOpt.get();
+                // If it is already paid and has a sale, skip duplicate
+                if (OrderStatus.PAID.equals(order.getStatus()) && saleRepository.findByOrderId(order.getId()).isPresent()) {
+                    syncedUuids.add(dto.uuid());
+                    continue;
+                }
+                // Update existing order status to PAID
+                order.setStatus(dto.status() != null ? dto.status() : OrderStatus.PAID);
+                if (dto.subtotal() != null && dto.subtotal().compareTo(BigDecimal.ZERO) > 0) {
+                    order.setSubtotal(dto.subtotal());
+                }
+                if (dto.discountAmount() != null) {
+                    order.setDiscountAmount(dto.discountAmount());
+                }
+                if (dto.total() != null && dto.total().compareTo(BigDecimal.ZERO) > 0) {
+                    order.setTotal(dto.total());
+                }
+            } else {
+                isNewOrder = true;
+                order = new Order();
+                order.setBusiness(business);
+                order.setInvoiceNumber(dto.uuid());
+                order.setChannel(dto.channel() != null ? dto.channel() : OrderChannel.POS);
+                order.setStatus(dto.status() != null ? dto.status() : OrderStatus.PAID);
+                order.setSubtotal(dto.subtotal() != null ? dto.subtotal() : BigDecimal.ZERO);
+                order.setDiscountAmount(dto.discountAmount() != null ? dto.discountAmount() : BigDecimal.ZERO);
+                order.setTotal(dto.total() != null ? dto.total() : BigDecimal.ZERO);
+
+                if (dto.items() != null) {
+                    for (OfflineOrderItemDto itemDto : dto.items()) {
+                        if (itemDto.productId() == null) continue;
+
+                        Item item = itemRepository.findById(itemDto.productId()).orElse(null);
+                        if (item == null) continue;
+
+                        OrderItem orderItem = new OrderItem();
+                        orderItem.setItem(item);
+                        orderItem.setItemName(item.getName() != null ? item.getName() : "Item");
+                        orderItem.setQuantity(itemDto.quantity() != null ? itemDto.quantity() : 1);
+                        orderItem.setUnitPrice(itemDto.unitPrice() != null ? itemDto.unitPrice() : BigDecimal.ZERO);
+                        orderItem.setLineTotal(itemDto.subtotal() != null ? itemDto.subtotal() : BigDecimal.ZERO);
+
+                        order.addItem(orderItem);
+                    }
+                }
+            }
+
+            Order savedOrder = orderRepository.save(order);
+
+            // Create Sale entity if not already present
+            if (saleRepository.findByOrderId(savedOrder.getId()).isEmpty()) {
+                Sale sale = new Sale();
+                sale.setBusiness(business);
+                sale.setOrder(savedOrder);
+                sale.setInvoiceNumber(savedOrder.getInvoiceNumber());
+                sale.setChannel(savedOrder.getChannel());
+                sale.setSubtotal(savedOrder.getSubtotal());
+                sale.setDiscountAmount(savedOrder.getDiscountAmount());
+                sale.setTotalAmount(savedOrder.getTotal());
+                sale.setPaidAmount(savedOrder.getTotal());
+                sale.setChangeAmount(BigDecimal.ZERO);
+                sale.setPaymentMethod(dto.paymentMethod() != null ? dto.paymentMethod() : PaymentMethodType.CASH);
+                sale.setItemCount(savedOrder.getItems() != null ? savedOrder.getItems().size() : 0);
+                sale.setSoldAt(dto.createdAt() != null ? LocalDateTime.ofInstant(dto.createdAt(), ZoneId.systemDefault()) : LocalDateTime.now());
+                saleRepository.save(sale);
+
+                // Deduct Inventory Stock for Tracked Items
+                consumeStockForOrder(business, savedOrder);
+            }
+
+            syncedUuids.add(dto.uuid());
+        }
+
+        return new SyncOfflineOrdersResponse(true, syncedUuids);
     }
 }
