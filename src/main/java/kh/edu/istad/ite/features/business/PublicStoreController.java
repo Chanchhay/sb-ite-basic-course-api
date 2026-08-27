@@ -3,6 +3,7 @@ package kh.edu.istad.ite.features.business;
 import kh.edu.istad.ite.features.business.dto.PublicStoreDetailResponse;
 import kh.edu.istad.ite.features.business.dto.PublicStoreResponse;
 import kh.edu.istad.ite.features.business.service.StorefrontService;
+import kh.edu.istad.ite.features.catalog.dto.ItemGroupResponse;
 import kh.edu.istad.ite.features.catalog.dto.ItemResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -32,7 +33,6 @@ public class PublicStoreController {
             @RequestParam(required = false) String district,
             @RequestParam(required = false) String cityOrProvince,
             @RequestParam(required = false) String keyword,
-            /** Shopper's own position — when present, results sort nearest-first. */
             @RequestParam(required = false) Double lat,
             @RequestParam(required = false) Double lng,
             @PageableDefault(size = 12, sort = "displayName", direction = Sort.Direction.ASC) Pageable pageable
@@ -58,6 +58,11 @@ public class PublicStoreController {
     @GetMapping("/{slug}/items")
     public List<ItemResponse> getStoreItems(@PathVariable String slug) {
         return storefrontService.getPublicStoreItems(slug);
+    }
+
+    @GetMapping("/{slug}/item-groups")
+    public List<ItemGroupResponse> getStoreItemGroups(@PathVariable String slug) {
+        return storefrontService.getPublicStoreItemGroups(slug);
     }
 
     @GetMapping("/recommended")

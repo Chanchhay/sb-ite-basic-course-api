@@ -494,6 +494,23 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
             return;
         }
 
+        // A retried request (network hiccup, a second tab, a double-tapped
+        // Approve button) can read the order as still PENDING before an
+        // earlier, already-committed call finishes — the PENDING check
+        // above alone doesn't close that window. Without this, the second
+        // caller falls through to insert a second Sale for the same order
+        // and dies on `uk_sales_order`, which the generic constraint
+        // handler then reports as a customer phone/email clash — a
+        // confusing message for something that was never about a customer
+        // at all. Finding an existing Sale first turns that crash into a
+        // no-op: the order was already settled, so there's nothing left
+        // for this call to do.
+        if (saleRepository.findByOrderId(order.getId()).isPresent()) {
+            log.info("Order {} ({}) already has a sale — treating this settle() call as already done",
+                    order.getId(), order.getInvoiceNumber());
+            return;
+        }
+
         BigDecimal totalCost = BigDecimal.ZERO;
         int itemCount = 0;
 
