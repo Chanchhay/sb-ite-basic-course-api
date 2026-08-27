@@ -147,12 +147,10 @@ public class ItemServiceImpl implements ItemService {
 
     @Override
     @Transactional(readOnly = true)
-    public List<ItemResponse> findAllItems(UUID businessId) {
+    public Page<ItemResponse> findAllItems(UUID businessId, Pageable pageable) {
         businessHelper.findOwnedBusiness(businessId);
-        return itemRepository.findAllByBusinessIdOrderByNameAsc(businessId)
-                .stream()
-                .map(itemMapper::toResponse)
-                .toList();
+        return itemRepository.findAllByBusinessId(businessId, pageable)
+                .map(itemMapper::toResponse);
     }
 
     @Override
