@@ -148,6 +148,7 @@ public class OrderController {
     public OrderResponse updateOrderNote(
             @PathVariable UUID businessId,
             @PathVariable UUID orderId,
+
             @Valid @RequestBody UpdateOrderNoteRequest request
     ) {
         return orderService.updateOrderNote(businessId, orderId, request);
