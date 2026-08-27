@@ -1,6 +1,7 @@
 package kh.edu.istad.ite.features.order;
 
 import jakarta.validation.Valid;
+import kh.edu.istad.ite.features.cart.service.StorefrontCheckoutService;
 import kh.edu.istad.ite.features.order.dto.*;
 import kh.edu.istad.ite.features.order.service.OrderService;
 import kh.edu.istad.ite.features.payment.dto.KhqrResponse;
@@ -20,6 +21,7 @@ public class OrderController {
 
     private final OrderService orderService;
     private final ReceiptService receiptService;
+    private final StorefrontCheckoutService storefrontCheckoutService;
 
     @ResponseStatus(HttpStatus.CREATED)
     @PostMapping
@@ -88,6 +90,23 @@ public class OrderController {
         return orderService.cancelOrder(businessId, orderId);
     }
 
+    @PatchMapping("/{orderId}/confirm")
+    public OrderResponse confirmOrder(
+            @PathVariable UUID businessId,
+            @PathVariable UUID orderId
+    ) {
+        return orderService.confirmOrder(businessId, orderId);
+    }
+
+    /** Business-owner action: approves a storefront Pay Later order, taking its stock off the shelf. */
+    @PatchMapping("/{orderId}/pay-later/approve")
+    public OrderResponse approvePayLaterOrder(
+            @PathVariable UUID businessId,
+            @PathVariable UUID orderId
+    ) {
+        return storefrontCheckoutService.approvePayLaterOrder(businessId, orderId);
+    }
+
     @PostMapping("/filter")
     public kh.edu.istad.ite.shared.dto.PageResponse<OrderResponse> filterOrders(
             @PathVariable UUID businessId,
@@ -141,5 +160,13 @@ public class OrderController {
             @Valid @RequestBody UpdateOrderDiscountRequest request
     ) {
         return orderService.updateOrderDiscount(businessId, orderId, request);
+    }
+
+    @PostMapping("/sync")
+    public SyncOfflineOrdersResponse syncOfflineOrders(
+            @PathVariable UUID businessId,
+            @Valid @RequestBody SyncOfflineOrdersRequest request
+    ) {
+        return orderService.syncOfflineOrders(businessId, request);
     }
 }

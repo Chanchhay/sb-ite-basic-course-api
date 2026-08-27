@@ -34,9 +34,11 @@ import java.util.Locale;
 import java.util.UUID;
 import java.util.regex.Pattern;
 
+import kh.edu.istad.ite.features.catalog.dto.ItemGroupResponse;
 import kh.edu.istad.ite.features.catalog.dto.ItemResponse;
 import kh.edu.istad.ite.features.catalog.entity.Item;
 import kh.edu.istad.ite.features.catalog.mapper.ItemMapper;
+import kh.edu.istad.ite.features.catalog.service.ItemGroupService;
 import kh.edu.istad.ite.shared.enums.ItemStatus;
 
 import kh.edu.istad.ite.features.discount.service.DiscountService;
@@ -77,6 +79,7 @@ public class StorefrontServiceImpl implements StorefrontService {
     private final ChannelPriceResolver channelPriceResolver;
     private final ItemChannelStockService itemChannelStockService;
     private final StockEntryService stockEntryService;
+    private final ItemGroupService itemGroupService;
 
     @Override
     @Transactional(readOnly = true)
@@ -234,22 +237,7 @@ public class StorefrontServiceImpl implements StorefrontService {
     @Override
     @Transactional(readOnly = true)
     public List<ItemResponse> getPublicStoreItems(String slugOrId) {
-        String normalized = normalizeSlug(slugOrId);
-
-        org.springframework.data.jpa.domain.Specification<Business> spec = PublicStoreSpecifications.publiclyVisible()
-                .and((root, query, cb) -> {
-                    try {
-                        UUID uuid = UUID.fromString(slugOrId);
-                        return cb.or(
-                                cb.equal(root.get("slug"), normalized),
-                                cb.equal(root.get("id"), uuid));
-                    } catch (IllegalArgumentException e) {
-                        return cb.equal(root.get("slug"), normalized);
-                    }
-                });
-
-        Business business = businessRepository.findOne(spec)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Store has not been found"));
+        Business business = resolvePublicBusiness(slugOrId);
 
         org.springframework.data.jpa.domain.Specification<Item> specItems = org.springframework.data.jpa.domain.Specification
                 .where(kh.edu.istad.ite.features.catalog.specification.ItemSpecifications.hasBusinessId(business.getId()))
@@ -308,7 +296,9 @@ public class StorefrontServiceImpl implements StorefrontService {
                                         .orElse(autoDiscounts.get(0));
 
                                 String computedBadge = null;
-                                if (best.ruleType() == DiscountRuleType.BUY_X_GET_Y) {
+                                if (best.name() != null && !best.name().isBlank()) {
+                                    computedBadge = best.name();
+                                } else if (best.ruleType() == DiscountRuleType.BUY_X_GET_Y) {
                                     int buy = best.buyQuantity() != null ? best.buyQuantity() : 1;
                                     int get = best.getQuantity() != null ? best.getQuantity() : 1;
                                     computedBadge = "Buy " + buy + " Get " + get;
@@ -316,8 +306,6 @@ public class StorefrontServiceImpl implements StorefrontService {
                                     computedBadge = best.value().stripTrailingZeros().toPlainString() + "% OFF";
                                 } else if (best.type() == DiscountType.FIXED_AMOUNT && best.value() != null) {
                                     computedBadge = "$" + best.value().stripTrailingZeros().toPlainString() + " OFF";
-                                } else {
-                                    computedBadge = best.name();
                                 }
 
                                 String effectiveBadge = computedBadge != null ? computedBadge : base.badge();
@@ -361,6 +349,33 @@ public class StorefrontServiceImpl implements StorefrontService {
                     return base;
                 })
                 .toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<ItemGroupResponse> getPublicStoreItemGroups(String slugOrId) {
+        Business business = resolvePublicBusiness(slugOrId);
+        return itemGroupService.findAllItemGroupsPublic(business.getId());
+    }
+
+    /** Resolves a publicly-visible business by slug (or id, for callers that already have it) — 404 otherwise. Shared by every public-menu lookup. */
+    private Business resolvePublicBusiness(String slugOrId) {
+        String normalized = normalizeSlug(slugOrId);
+
+        org.springframework.data.jpa.domain.Specification<Business> spec = PublicStoreSpecifications.publiclyVisible()
+                .and((root, query, cb) -> {
+                    try {
+                        UUID uuid = UUID.fromString(slugOrId);
+                        return cb.or(
+                                cb.equal(root.get("slug"), normalized),
+                                cb.equal(root.get("id"), uuid));
+                    } catch (IllegalArgumentException e) {
+                        return cb.equal(root.get("slug"), normalized);
+                    }
+                });
+
+        return businessRepository.findOne(spec)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Store has not been found"));
     }
 
     @Override

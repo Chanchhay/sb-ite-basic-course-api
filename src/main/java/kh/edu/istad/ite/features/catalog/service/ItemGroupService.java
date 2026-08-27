@@ -16,6 +16,9 @@ public interface ItemGroupService {
 
     Page<ItemGroupResponse> findAllItemGroups(UUID businessId, Pageable pageable);
 
+    /** Same tree shape as {@link #findAllItemGroups}, but for the public storefront — no ownership check, no paging. */
+    List<ItemGroupResponse> findAllItemGroupsPublic(UUID businessId);
+
     ItemSubGroupResponse updateItemGroup(UUID businessId, UUID itemGroupId, UpdateItemGroupRequest request);
 
     void deleteItemGroup(UUID businessId, UUID itemGroupId);

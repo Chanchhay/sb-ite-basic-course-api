@@ -1,6 +1,7 @@
 package kh.edu.istad.ite.features.social.service;
 
 import kh.edu.istad.ite.shared.helper.BusinessHelper;
+import kh.edu.istad.ite.config.props.StorefrontProps;
 import kh.edu.istad.ite.config.props.TelegramProps;
 import kh.edu.istad.ite.config.security.CredentialCipher;
 import kh.edu.istad.ite.config.security.SecurityUtils;
@@ -31,6 +32,7 @@ public class BusinessTelegramBotServiceImpl implements BusinessTelegramBotServic
     private final CredentialCipher credentialCipher;
     private final TelegramBotClient telegramBotClient;
     private final TelegramProps telegramProps;
+    private final StorefrontProps storefrontProps;
 
     @Override
     @Transactional(readOnly = true)
@@ -91,7 +93,13 @@ public class BusinessTelegramBotServiceImpl implements BusinessTelegramBotServic
         BusinessTelegramBot setting = findMySetting();
         String botToken = credentialCipher.decrypt(setting.getBotTokenEncrypted());
 
-        telegramBotClient.deleteWebhook(botToken);
+        // The webhook is what lets the bot reply with the "Open Shop"
+        // button in group chats at all (unlike the persistent menu button,
+        // which works in private chats without it). Turning off the old
+        // text flow shouldn't also break Mini App there if it's still on.
+        if (!Boolean.TRUE.equals(setting.getIsMiniAppEnabled())) {
+            telegramBotClient.deleteWebhook(botToken);
+        }
         setting.setIsActive(false);
 
         return toResponse(telegramBotRepository.save(setting));
@@ -104,7 +112,40 @@ public class BusinessTelegramBotServiceImpl implements BusinessTelegramBotServic
         String botToken = credentialCipher.decrypt(setting.getBotTokenEncrypted());
 
         telegramBotClient.deleteWebhook(botToken);
+        if (Boolean.TRUE.equals(setting.getIsMiniAppEnabled())) {
+            telegramBotClient.resetChatMenuButton(botToken);
+        }
         telegramBotRepository.delete(setting);
+    }
+
+    @Override
+    @Transactional
+    public TelegramBotSettingResponse setMiniAppEnabled(boolean enabled) {
+        BusinessTelegramBot setting = findMySetting();
+        String botToken = credentialCipher.decrypt(setting.getBotTokenEncrypted());
+
+        if (enabled) {
+            telegramBotClient.setChatMenuButton(botToken, storefrontProps.buildMiniAppUrl(setting.getBusiness().getSlug()), "🛍 Open Shop");
+            // Group chats need a live webhook to reply with the "Open
+            // Shop" inline button — make sure one exists even if the old
+            // text flow (isActive) was left off, since Mini App is
+            // independent of it.
+            if (!Boolean.TRUE.equals(setting.getIsActive())) {
+                requireWebhookBaseUrlConfigured();
+                telegramBotClient.setWebhook(botToken, buildWebhookUrl(setting.getWebhookSecret()), setting.getWebhookSecret());
+            }
+        } else {
+            telegramBotClient.resetChatMenuButton(botToken);
+            // Neither mode needs the webhook anymore — tear it down the
+            // same way deactivate() would, rather than leaving a stale
+            // subscription Telegram keeps calling for no reason.
+            if (!Boolean.TRUE.equals(setting.getIsActive())) {
+                telegramBotClient.deleteWebhook(botToken);
+            }
+        }
+        setting.setIsMiniAppEnabled(enabled);
+
+        return toResponse(telegramBotRepository.save(setting));
     }
 
     private BusinessTelegramBot findMySetting() {
@@ -129,6 +170,7 @@ public class BusinessTelegramBotServiceImpl implements BusinessTelegramBotServic
     }
 
     private TelegramBotSettingResponse toResponse(BusinessTelegramBot setting) {
+        boolean miniAppEnabled = Boolean.TRUE.equals(setting.getIsMiniAppEnabled());
         return new TelegramBotSettingResponse(
                 setting.getId(),
                 setting.getBusiness().getId(),
@@ -138,7 +180,9 @@ public class BusinessTelegramBotServiceImpl implements BusinessTelegramBotServic
                 StringUtils.hasText(setting.getBotTokenEncrypted()),
                 Boolean.TRUE.equals(setting.getIsActive()),
                 buildWebhookUrl(setting.getWebhookSecret()),
-                setting.getNotificationChatId()
+                setting.getNotificationChatId(),
+                miniAppEnabled,
+                miniAppEnabled ? storefrontProps.buildMiniAppUrl(setting.getBusiness().getSlug()) : null
         );
     }
 

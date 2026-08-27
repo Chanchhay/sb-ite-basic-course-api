@@ -37,4 +37,7 @@ public class GlobalCustomer extends BasedAuditingEntity {
 
     @Column(name = "phone_number", unique = true, length = 30)
     private String phoneNumber;
+
+    @Column(name = "gender", length = 20)
+    private String gender;
 }

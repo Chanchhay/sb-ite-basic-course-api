@@ -55,7 +55,7 @@ spring:
     # PGHOST must be the private endpoint (`postgres.railway.internal`), not
     # the `*.proxy.rlwy.net` one: the proxy sends every query out to the public
     # internet and back for a database in the same project.
-    url: jdbc:postgresql://${PGHOST}:${PGPORT:5432}/${PGDATABASE}
+    url: jdbc:postgresql://${PGHOST}:${PGPORT:1681}/${PGDATABASE}
     username: ${DB_USER}
     password: ${DB_PASS}
     hikari:
@@ -132,6 +132,10 @@ minio:
   secret-key: ${MINIO_SECRET_KEY}
   bucket:
     assets: fluxibix
+    # Migration uploads are a shop's whole price list. They are read back only
+    # by the import that owns them, never linked to, so they are kept out of
+    # the asset bucket whose objects are served straight to browsers.
+    imports: fluxibiz-imports
 
 logging:
   level:

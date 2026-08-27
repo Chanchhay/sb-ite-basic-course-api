@@ -27,6 +27,7 @@ public record StorefrontOrderResponse(
         String discountLabel,
         BigDecimal taxRate,
         BigDecimal taxAmount,
+        String taxInclusionType,
         String taxLabel,
         BigDecimal total,
         String currency,

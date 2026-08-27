@@ -93,6 +93,27 @@ public class ItemGroupServiceImpl implements ItemGroupService {
                 ));
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public List<ItemGroupResponse> findAllItemGroupsPublic(UUID businessId) {
+        // No businessHelper.findOwnedBusiness() here — the caller (public
+        // storefront/menu) is never the business owner, just a shopper
+        // browsing categories, so there is no "owned by the current user"
+        // check to make.
+        Map<UUID, List<ItemGroup>> subGroupsByParentId =
+                itemGroupRepository.findByBusinessIdAndParentIsNotNullOrderByNameAsc(businessId)
+                        .stream()
+                        .collect(Collectors.groupingBy(itemGroup -> itemGroup.getParent().getId()));
+
+        return itemGroupRepository.findByBusinessIdAndParentIsNullOrderByNameAsc(businessId)
+                .stream()
+                .map(itemGroup -> itemGroupMapper.toItemGroupTreeResponse(
+                        itemGroup,
+                        subGroupsByParentId.getOrDefault(itemGroup.getId(), List.of())
+                ))
+                .toList();
+    }
+
 
     @Override
     @Transactional

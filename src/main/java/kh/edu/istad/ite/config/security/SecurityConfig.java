@@ -45,6 +45,7 @@ public class SecurityConfig {
                         // Public endpoints
                         // The container's HEALTHCHECK probes this unauthenticated;
                         // only /health is exposed, so nothing else is reachable.
+                        .requestMatchers("/api/v1/telegram/webhook/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/actuator/health", "/actuator/health/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/storefronts/*").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/storefronts/*/items").permitAll()
@@ -56,6 +57,8 @@ public class SecurityConfig {
                         .requestMatchers("/scalar/**").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/v1/auth/register", "/api/v1/auth/register/**").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/v1/webhooks/telegram/**").permitAll()
+                        // Verified by initData's own HMAC signature, not a bearer token — that's what this endpoint exists to issue.
+                        .requestMatchers(HttpMethod.POST, "/api/v1/telegram-webapp/auth").permitAll()
                         .requestMatchers("/api/v1/social/facebook/webhook", "/api/v1/social/facebook/webhook/**", "/api/webhook", "/api/webhook/**", "/api/v1/social/facebook/webhook/setup").permitAll()                        .requestMatchers(HttpMethod.GET, "/api/v1/social/facebook/oauth/callback").permitAll()
                         .requestMatchers(
                                 "/ws/customer-display",
@@ -277,6 +280,34 @@ public class SecurityConfig {
                                 "/api/v1/businesses/{businessId}/items/*/stock-entries/*")
                         .access(scoped(tenant, "stock:write"))
 
+                        // Data migration
+                        //
+                        // Reading an import is reading the catalogue it describes, and
+                        // running one is creating catalogue entries — so both reuse the
+                        // item permissions rather than introducing codes that would have
+                        // to be provisioned as Keycloak roles before anyone could import
+                        // anything.
+                        //
+                        // Note that committing an item import may also post opening
+                        // balances, which `stock:write` would otherwise govern. Requiring
+                        // both here would block a perfectly ordinary items-only import by
+                        // someone who may create items but not adjust stock, so the
+                        // opening balance travels with the item it belongs to.
+                        .requestMatchers(HttpMethod.GET, "/api/v1/businesses/{businessId}/imports",
+                                "/api/v1/businesses/{businessId}/imports/*",
+                                "/api/v1/businesses/{businessId}/imports/*/columns",
+                                "/api/v1/businesses/{businessId}/imports/*/preview",
+                                "/api/v1/businesses/{businessId}/imports/*/rows",
+                                "/api/v1/businesses/{businessId}/imports/*/errors",
+                                "/api/v1/businesses/{businessId}/imports/*/report")
+                        .access(scoped(tenant, "item:read"))
+                        .requestMatchers(HttpMethod.POST, "/api/v1/businesses/{businessId}/imports",
+                                "/api/v1/businesses/{businessId}/imports/*/validate",
+                                "/api/v1/businesses/{businessId}/imports/*/commit")
+                        .access(scoped(tenant, "item:create"))
+                        .requestMatchers(HttpMethod.PUT, "/api/v1/businesses/{businessId}/imports/*/mapping")
+                        .access(scoped(tenant, "item:create"))
+
                         // Orders
                         .requestMatchers(HttpMethod.GET, "/api/v1/businesses/{businessId}/orders",
                                 "/api/v1/businesses/{businessId}/orders/*")
@@ -288,6 +319,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/v1/businesses/{businessId}/orders/*/pay")
                         .access(scoped(tenant, "order:pay"))
                         .requestMatchers(HttpMethod.PATCH, "/api/v1/businesses/{businessId}/orders/*/pay")
+                        .access(scoped(tenant, "order:pay"))
+                        .requestMatchers(HttpMethod.PATCH, "/api/v1/businesses/{businessId}/orders/*/pay-later/approve")
                         .access(scoped(tenant, "order:pay"))
                         .requestMatchers(HttpMethod.POST, "/api/v1/businesses/{businessId}/orders/*/cancel")
                         .access(scoped(tenant, "order:cancel"))

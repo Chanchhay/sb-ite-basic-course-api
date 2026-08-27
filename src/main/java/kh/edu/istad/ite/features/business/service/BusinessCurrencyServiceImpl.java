@@ -423,7 +423,6 @@ public class BusinessCurrencyServiceImpl implements BusinessCurrencyService {
         List<Item> items = itemRepository.findAllByBusinessIdOrderByNameAsc(businessId);
         for (Item item : items) {
             item.setPrice(restate(item.getPrice(), factor, decimalPlaces));
-            item.setCompareAtPrice(restate(item.getCompareAtPrice(), factor, decimalPlaces));
         }
         itemRepository.saveAll(items);
 

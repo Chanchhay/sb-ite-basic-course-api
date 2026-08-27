@@ -21,6 +21,12 @@ public class StorefrontProps {
     private String pathPrefix = "/store";
 
     private boolean subdomainEnabled = false;
+
+    /** The Telegram Mini App entry point for one business's own storefront. */
+    public String buildMiniAppUrl(String slug) {
+        return protocol + "://" + baseDomain + pathPrefix + "/" + slug + "?tma=true";
+    }
+
     private Set<String> reservedSlugs = new LinkedHashSet<>(Set.of(
             "www", "api", "admin", "auth", "app", "mail", "smtp", "ftp",
             "static", "cdn", "assets", "img", "images", "media",

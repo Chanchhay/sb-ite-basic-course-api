@@ -19,6 +19,8 @@ public interface OrderService {
 
     OrderResponse cancelOrder(UUID businessId, UUID orderId);
 
+    OrderResponse confirmOrder(UUID businessId, UUID orderId);
+
     OrderResponse addOrderItem(UUID businessId, UUID orderId, AddOrderItemRequest request);
     OrderResponse updateOrderItem(UUID businessId, UUID orderId, UUID orderItemId, UpdateOrderItemRequest request);
     OrderResponse removeOrderItem(UUID businessId, UUID orderId, UUID orderItemId);
@@ -27,4 +29,6 @@ public interface OrderService {
     OrderResponse updateOrderDiscount(UUID businessId, UUID orderId, UpdateOrderDiscountRequest request);
     
     kh.edu.istad.ite.shared.dto.PageResponse<OrderResponse> filterOrders(UUID businessId, kh.edu.istad.ite.config.filter.RequestDto requestDto, org.springframework.data.domain.Pageable pageable);
+
+    SyncOfflineOrdersResponse syncOfflineOrders(UUID businessId, SyncOfflineOrdersRequest request);
 }

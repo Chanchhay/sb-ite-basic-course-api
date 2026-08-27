@@ -47,6 +47,10 @@ import kh.edu.istad.ite.features.discount.repository.DiscountRepository;
 import kh.edu.istad.ite.features.discount.repository.DiscountTargetRepository;
 import kh.edu.istad.ite.features.channel.service.ItemChannelStockService;
 import kh.edu.istad.ite.features.inventory.service.StockEntryService;
+import kh.edu.istad.ite.features.order.dto.OfflineOrderDto;
+import kh.edu.istad.ite.features.order.dto.OfflineOrderItemDto;
+import kh.edu.istad.ite.features.order.dto.SyncOfflineOrdersRequest;
+import kh.edu.istad.ite.features.order.dto.SyncOfflineOrdersResponse;
 import kh.edu.istad.ite.features.order.dto.AddOrderItemRequest;
 import kh.edu.istad.ite.features.order.dto.CreateOrderItemRequest;
 import kh.edu.istad.ite.features.order.dto.CreateOrderRequest;
@@ -306,7 +310,7 @@ public class OrderServiceImpl implements OrderService {
         Business business = businessHelper.findAccessibleBusiness(businessId);
         Order order = findOrder(businessId, orderId);
 
-        requirePending(order);
+        requireSettleable(order);
 
         if (OrderChannel.POS.equals(order.getChannel())) {
             boolean hasOpenSession = false;
@@ -412,100 +416,32 @@ public class OrderServiceImpl implements OrderService {
             BigDecimal received,
             String note
     ) {
-        requirePending(order);
+        requireSettleable(order);
 
-        // Nothing has been written yet, so a line that would sell past this
-        // channel's share stops the whole sale here rather than halfway
-        // through the ledger. Items whose stock is shared are untouched by it.
-        for (OrderItem line : order.getItems()) {
-            if (line.getItem() != null && line.getItem().isStockTracked()) {
-                itemChannelStockService.requireAllocation(
-                        line.getItem(),
-                        line.getVariant(),
-                        order.getChannel(),
-                        line.baseQuantity());
-            }
+        // A confirmed order already took its stock off the shelf — pricing
+        // it a second time here would empty it twice for one sale. Only a
+        // still-pending order needs the shelf touched now.
+        if (OrderStatus.PENDING.equals(order.getStatus())) {
+            consumeStockForOrder(business, order);
         }
 
         int scale = scaleFor(order);
         BigDecimal total = order.getTotal();
 
+        // Whichever call took the stock — this one, or confirm() earlier —
+        // left its cost on the line and its add-ons, so the total is just a
+        // sum of what is already there.
         BigDecimal totalCost = BigDecimal.ZERO;
         int itemCount = 0;
 
         for (OrderItem line : order.getItems()) {
-            boolean isTracked = line.getItem() != null && line.getItem().isStockTracked();
-            BigDecimal unitCost = BigDecimal.ZERO;
-
-            if (isTracked) {
-                // The sale consumes stock batches oldest first, so its own entry
-                // already carries what those units cost. Asking the item again
-                // afterwards would price the sale at whatever is left on the shelf.
-                var saleEntry = stockEntryService.recordSale(
-                        business,
-                        line.getItem(),
-                        line.getVariant(),
-                        // A case of twenty-four takes twenty-four off the shelf;
-                        // the ledger still reads back as the one case that sold.
-                        line.baseQuantity(),
-                        BigDecimal.valueOf(line.getQuantity()),
-                        line.getUnit(),
-                        order.getId(),
-                        order.getInvoiceNumber()
-                );
-
-                if (saleEntry != null && saleEntry.getUnitCost() != null) {
-                    unitCost = saleEntry.getUnitCost();
-                }
-
-                // The sale uses up the channel's share of the shelf as well as the
-                // shelf itself. Does nothing for an item whose stock is shared,
-                // which is most of them.
-                itemChannelStockService.consume(
-                        line.getItem(),
-                        line.getVariant(),
-                        order.getChannel(),
-                        line.baseQuantity());
-            }
-
-            line.setUnitCost(unitCost.setScale(2, RoundingMode.HALF_UP));
-
-            // The extras go out with it: a tub of pearls empties whether it
-            // was scooped into one drink or ten.
-            for (OrderItemAddOn chosen : line.getAddOns()) {
-                if (chosen.getAddOn() == null) {
-                    continue;
-                }
-
-                // What the extra actually cost, from the batches it emptied.
-                // Kept on the line as well as added to the sale, so the item
-                // report and the statement stay the same number: the line's
-                // price already includes this add-on, so its cost belongs
-                // beside it.
-                BigDecimal addOnCost = stockEntryService.recordAddOnSale(
-                        business,
-                        chosen.getAddOn(),
-                        chosen.getUsePerOrder()
-                                .multiply(BigDecimal.valueOf(line.getQuantity())),
-                        order.getId(),
-                        order.getInvoiceNumber()
-                ).getCostOfGoods();
-
-                if (addOnCost == null) {
-                    addOnCost = BigDecimal.ZERO;
-                }
-
-                chosen.setCost(addOnCost.setScale(2, RoundingMode.HALF_UP));
-                totalCost = totalCost.add(addOnCost);
-            }
-
-            // Times the base quantity, not the quantity rung up. `unitCost`
-            // is what one *base* unit cost — it came back from the movement
-            // that took `baseQuantity()` off the shelf — so a case of
-            // twenty-four costed at the price of one unit understated this
-            // sale by a factor of twenty-four, and flattered the margin by the
-            // same.
+            BigDecimal unitCost = line.getUnitCost() == null ? BigDecimal.ZERO : line.getUnitCost();
             totalCost = totalCost.add(unitCost.multiply(line.baseQuantity()));
+
+            for (OrderItemAddOn chosen : line.getAddOns()) {
+                totalCost = totalCost.add(chosen.getCost() == null ? BigDecimal.ZERO : chosen.getCost());
+            }
+
             itemCount += line.getQuantity();
         }
 
@@ -591,12 +527,119 @@ public class OrderServiceImpl implements OrderService {
                 });
     }
 
-    private void requirePending(Order order) {
+    private void requireSettleable(Order order) {
+        if (!OrderStatus.PENDING.equals(order.getStatus()) && !OrderStatus.CONFIRMED.equals(order.getStatus())) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "Only a pending or confirmed order can be paid, current status is " + order.getStatus());
+        }
+    }
+
+    /**
+     * Takes every stock-tracked line off the shelf, batch by batch, and
+     * prices the line and its add-ons at what those batches actually cost.
+     *
+     * Called exactly once per order — from {@link #confirmOrder} if the
+     * order is confirmed before it is paid, otherwise from {@link #settle}
+     * at payment time. Never both: a line's cost is persisted the moment it
+     * is priced, and {@code settle} skips this entirely for an order that
+     * arrives already {@link OrderStatus#CONFIRMED}.
+     */
+    private void consumeStockForOrder(Business business, Order order) {
+        // Nothing has been written yet, so a line that would sell past this
+        // channel's share stops the whole sale here rather than halfway
+        // through the ledger. Items whose stock is shared are untouched by it.
+        for (OrderItem line : order.getItems()) {
+            if (line.getItem() != null && line.getItem().isStockTracked()) {
+                itemChannelStockService.requireAllocation(
+                        line.getItem(),
+                        line.getVariant(),
+                        order.getChannel(),
+                        line.baseQuantity());
+            }
+        }
+
+        for (OrderItem line : order.getItems()) {
+            boolean isTracked = line.getItem() != null && line.getItem().isStockTracked();
+            BigDecimal unitCost = BigDecimal.ZERO;
+
+            if (isTracked) {
+                // The sale consumes stock batches oldest first, so its own entry
+                // already carries what those units cost. Asking the item again
+                // afterwards would price the sale at whatever is left on the shelf.
+                var saleEntry = stockEntryService.recordSale(
+                        business,
+                        line.getItem(),
+                        line.getVariant(),
+                        // A case of twenty-four takes twenty-four off the shelf;
+                        // the ledger still reads back as the one case that sold.
+                        line.baseQuantity(),
+                        BigDecimal.valueOf(line.getQuantity()),
+                        line.getUnit(),
+                        order.getId(),
+                        order.getInvoiceNumber()
+                );
+
+                if (saleEntry != null && saleEntry.getUnitCost() != null) {
+                    unitCost = saleEntry.getUnitCost();
+                }
+
+                // The sale uses up the channel's share of the shelf as well as the
+                // shelf itself. Does nothing for an item whose stock is shared,
+                // which is most of them.
+                itemChannelStockService.consume(
+                        line.getItem(),
+                        line.getVariant(),
+                        order.getChannel(),
+                        line.baseQuantity());
+            }
+
+            line.setUnitCost(unitCost.setScale(2, RoundingMode.HALF_UP));
+
+            // The extras go out with it: a tub of pearls empties whether it
+            // was scooped into one drink or ten.
+            for (OrderItemAddOn chosen : line.getAddOns()) {
+                if (chosen.getAddOn() == null) {
+                    continue;
+                }
+
+                // What the extra actually cost, from the batches it emptied.
+                // Kept on the line so a later total (settle, run separately)
+                // can add it up without touching the shelf again.
+                BigDecimal addOnCost = stockEntryService.recordAddOnSale(
+                        business,
+                        chosen.getAddOn(),
+                        chosen.getUsePerOrder()
+                                .multiply(BigDecimal.valueOf(line.getQuantity())),
+                        order.getId(),
+                        order.getInvoiceNumber()
+                ).getCostOfGoods();
+
+                if (addOnCost == null) {
+                    addOnCost = BigDecimal.ZERO;
+                }
+
+                chosen.setCost(addOnCost.setScale(2, RoundingMode.HALF_UP));
+            }
+        }
+    }
+
+    @Override
+    @Transactional
+    public OrderResponse confirmOrder(UUID businessId, UUID orderId) {
+        Business business = businessHelper.findAccessibleBusiness(businessId);
+        Order order = findOrder(businessId, orderId);
+
         if (!OrderStatus.PENDING.equals(order.getStatus())) {
             throw new ResponseStatusException(
                     HttpStatus.CONFLICT,
-                    "Only a pending order can be paid, current status is " + order.getStatus());
+                    "Only a pending order can be confirmed, current status is " + order.getStatus());
         }
+
+        consumeStockForOrder(business, order);
+
+        order.setStatus(OrderStatus.CONFIRMED);
+        return orderMapper.toResponse(orderRepository.save(order));
     }
 
     private int scaleFor(Order order) {
@@ -613,8 +656,12 @@ public class OrderServiceImpl implements OrderService {
         businessHelper.findAccessibleBusiness(businessId);
         Order order = findOrder(businessId, orderId);
 
-        if (OrderStatus.PAID.equals(order.getStatus())) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "A paid order cannot be cancelled");
+        if (OrderStatus.PAID.equals(order.getStatus()) || OrderStatus.CONFIRMED.equals(order.getStatus())) {
+            // Stock already left the shelf for both — there is no reversal
+            // path here, so cancelling would silently lose it.
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "A " + order.getStatus().name().toLowerCase() + " order cannot be cancelled");
         }
 
         order.setStatus(OrderStatus.CANCELLED);
@@ -1295,8 +1342,15 @@ public class OrderServiceImpl implements OrderService {
 
     private Order validateOrderModification(UUID businessId, UUID orderId) {
         Order order = findOrder(businessId, orderId);
-        if (OrderStatus.PAID.equals(order.getStatus()) || OrderStatus.CANCELLED.equals(order.getStatus())) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "Cannot modify an order that is already paid or cancelled");
+        if (OrderStatus.PAID.equals(order.getStatus())
+                || OrderStatus.CANCELLED.equals(order.getStatus())
+                || OrderStatus.CONFIRMED.equals(order.getStatus())) {
+            // Confirmed already took its stock off the shelf at whatever the
+            // line said then — changing the line after that would desync
+            // the two.
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "Cannot modify an order that is confirmed, paid or cancelled");
         }
         return order;
     }
@@ -1350,5 +1404,102 @@ public class OrderServiceImpl implements OrderService {
         order.setTaxRate(taxResult.taxRate());
         order.setTaxAmount(taxResult.taxAmount());
         order.setTotal(taxResult.total());
+    }
+
+    @Override
+    @Transactional
+    public SyncOfflineOrdersResponse syncOfflineOrders(UUID businessId, SyncOfflineOrdersRequest request) {
+        Business business = businessHelper.findAccessibleBusiness(businessId);
+        List<String> syncedUuids = new ArrayList<>();
+
+        if (request == null || request.orders() == null || request.orders().isEmpty()) {
+            return new SyncOfflineOrdersResponse(true, syncedUuids);
+        }
+
+        for (OfflineOrderDto dto : request.orders()) {
+            if (dto.uuid() == null || dto.uuid().isBlank()) {
+                continue;
+            }
+
+            Optional<Order> existingOpt = orderRepository.findByBusinessIdAndInvoiceNumber(business.getId(), dto.uuid());
+
+            Order order;
+            boolean isNewOrder = false;
+
+            if (existingOpt.isPresent()) {
+                order = existingOpt.get();
+                // If it is already paid and has a sale, skip duplicate
+                if (OrderStatus.PAID.equals(order.getStatus()) && saleRepository.findByOrderId(order.getId()).isPresent()) {
+                    syncedUuids.add(dto.uuid());
+                    continue;
+                }
+                // Update existing order status to PAID
+                order.setStatus(dto.status() != null ? dto.status() : OrderStatus.PAID);
+                if (dto.subtotal() != null && dto.subtotal().compareTo(BigDecimal.ZERO) > 0) {
+                    order.setSubtotal(dto.subtotal());
+                }
+                if (dto.discountAmount() != null) {
+                    order.setDiscountAmount(dto.discountAmount());
+                }
+                if (dto.total() != null && dto.total().compareTo(BigDecimal.ZERO) > 0) {
+                    order.setTotal(dto.total());
+                }
+            } else {
+                isNewOrder = true;
+                order = new Order();
+                order.setBusiness(business);
+                order.setInvoiceNumber(dto.uuid());
+                order.setChannel(dto.channel() != null ? dto.channel() : OrderChannel.POS);
+                order.setStatus(dto.status() != null ? dto.status() : OrderStatus.PAID);
+                order.setSubtotal(dto.subtotal() != null ? dto.subtotal() : BigDecimal.ZERO);
+                order.setDiscountAmount(dto.discountAmount() != null ? dto.discountAmount() : BigDecimal.ZERO);
+                order.setTotal(dto.total() != null ? dto.total() : BigDecimal.ZERO);
+
+                if (dto.items() != null) {
+                    for (OfflineOrderItemDto itemDto : dto.items()) {
+                        if (itemDto.productId() == null) continue;
+
+                        Item item = itemRepository.findById(itemDto.productId()).orElse(null);
+                        if (item == null) continue;
+
+                        OrderItem orderItem = new OrderItem();
+                        orderItem.setItem(item);
+                        orderItem.setItemName(item.getName() != null ? item.getName() : "Item");
+                        orderItem.setQuantity(itemDto.quantity() != null ? itemDto.quantity() : 1);
+                        orderItem.setUnitPrice(itemDto.unitPrice() != null ? itemDto.unitPrice() : BigDecimal.ZERO);
+                        orderItem.setLineTotal(itemDto.subtotal() != null ? itemDto.subtotal() : BigDecimal.ZERO);
+
+                        order.addItem(orderItem);
+                    }
+                }
+            }
+
+            Order savedOrder = orderRepository.save(order);
+
+            // Create Sale entity if not already present
+            if (saleRepository.findByOrderId(savedOrder.getId()).isEmpty()) {
+                Sale sale = new Sale();
+                sale.setBusiness(business);
+                sale.setOrder(savedOrder);
+                sale.setInvoiceNumber(savedOrder.getInvoiceNumber());
+                sale.setChannel(savedOrder.getChannel());
+                sale.setSubtotal(savedOrder.getSubtotal());
+                sale.setDiscountAmount(savedOrder.getDiscountAmount());
+                sale.setTotalAmount(savedOrder.getTotal());
+                sale.setPaidAmount(savedOrder.getTotal());
+                sale.setChangeAmount(BigDecimal.ZERO);
+                sale.setPaymentMethod(dto.paymentMethod() != null ? dto.paymentMethod() : PaymentMethodType.CASH);
+                sale.setItemCount(savedOrder.getItems() != null ? savedOrder.getItems().size() : 0);
+                sale.setSoldAt(dto.createdAt() != null ? LocalDateTime.ofInstant(dto.createdAt(), ZoneId.systemDefault()) : LocalDateTime.now());
+                saleRepository.save(sale);
+
+                // Deduct Inventory Stock for Tracked Items
+                consumeStockForOrder(business, savedOrder);
+            }
+
+            syncedUuids.add(dto.uuid());
+        }
+
+        return new SyncOfflineOrdersResponse(true, syncedUuids);
     }
 }
