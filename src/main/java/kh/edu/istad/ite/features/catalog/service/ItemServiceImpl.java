@@ -235,10 +235,23 @@ public class ItemServiceImpl implements ItemService {
         }
         if (request.attributes() != null) {
             item.setAttributes(mapAttributes(request.attributes()));
+        }
+        /*
+         * Colours used to be applied inside the attributes check, so a save
+         * that changed the colours without also sending attributes was
+         * silently ignored. The item form always sends both and never noticed;
+         * anything that does not — a data migration, for one — had its colours
+         * dropped on the floor.
+         */
+        if (request.colors() != null) {
             item.setColors(mapColors(request.colors()));
         }
         if (request.variants() != null) {
             replaceVariants(item, item.getBusiness(), request.variants());
+        }
+        // Either half of the pair changing can leave an option naming a colour
+        // the item no longer comes in.
+        if (request.colors() != null || request.variants() != null) {
             requireDeclaredColors(item);
         }
         if (request.addOnIds() != null) {

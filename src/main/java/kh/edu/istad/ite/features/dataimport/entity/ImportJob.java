@@ -183,6 +183,17 @@ public class ImportJob extends BasedAuditingEntity {
     @Column(name = "opening_stock_rows")
     private Integer openingStockRows = 0;
 
+    /**
+     * How many things this file would actually bring into being.
+     *
+     * Not the same as the number of valid rows once a file lists one row per
+     * option: five rows describing one shirt in five sizes create one item, and
+     * a preview promising five would be a lie the shop only discovers
+     * afterwards.
+     */
+    @Column(name = "entities_to_create")
+    private Integer entitiesToCreate = 0;
+
     /** Item groups conjured from a category column that named ones we lacked. */
     @Column(name = "created_item_groups")
     private Integer createdItemGroups = 0;

@@ -48,6 +48,25 @@ public class OpeningStockPoster {
             UUID importJobId,
             String reference
     ) {
+        return post(businessId, itemId, null, quantity, unitCost, importJobId, reference);
+    }
+
+    /**
+     * @param variantId which option the quantity is for, on an item sold in
+     *                  options. Stock on such an item belongs to one of them —
+     *                  Large is out in Navy while Large in Red is stacked up —
+     *                  and a balance held against the item as a whole is one no
+     *                  option can be sold from.
+     */
+    public UUID post(
+            UUID businessId,
+            UUID itemId,
+            UUID variantId,
+            BigDecimal quantity,
+            BigDecimal unitCost,
+            UUID importJobId,
+            String reference
+    ) {
         if (quantity == null || quantity.compareTo(BigDecimal.ZERO) <= 0) {
             return null;
         }
@@ -55,7 +74,7 @@ public class OpeningStockPoster {
         CreateStockEntryRequest request = new CreateStockEntryRequest(
                 itemId,
                 null,
-                null,
+                variantId,
                 StockEntryType.OPENING_STOCK.name(),
                 quantity,
                 unitCost == null ? BigDecimal.ZERO : unitCost,

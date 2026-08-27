@@ -2,6 +2,9 @@ package kh.edu.istad.ite.features.dataimport.commit;
 
 import kh.edu.istad.ite.features.catalog.dto.CreateItemGroupRequest;
 import kh.edu.istad.ite.features.catalog.dto.CreateItemRequest;
+import kh.edu.istad.ite.features.catalog.dto.ItemColorRequest;
+import kh.edu.istad.ite.features.catalog.dto.ItemVariantRequest;
+import kh.edu.istad.ite.features.catalog.dto.ItemVariantResponse;
 import kh.edu.istad.ite.features.catalog.dto.ItemResponse;
 import kh.edu.istad.ite.features.catalog.dto.UpdateItemRequest;
 import kh.edu.istad.ite.features.catalog.entity.ItemGroup;
@@ -16,10 +19,16 @@ import kh.edu.istad.ite.features.dataimport.canonical.MappingPlan;
 import kh.edu.istad.ite.features.dataimport.entity.ImportJob;
 import kh.edu.istad.ite.features.inventory.repository.StockEntryRepository;
 import kh.edu.istad.ite.shared.enums.ImportDuplicateStrategy;
+import kh.edu.istad.ite.shared.enums.ImportRowStatus;
 import kh.edu.istad.ite.shared.enums.ImportTargetType;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.UUID;
 
 @Component
@@ -247,7 +256,287 @@ public class ItemImportCommitter implements ImportCommitter {
                 .orElse(null);
     }
 
+    /** Whether this option has a stock history already, and so an opening balance. */
+    private boolean alreadyCounted(UUID businessId, UUID itemId, UUID variantId) {
+        return stockEntryRepository
+                .findFirstByBusiness_IdAndItem_IdAndVariant_IdOrderByCreatedDateDescIdDesc(
+                        businessId, itemId, variantId)
+                .isPresent();
+    }
+
     /** A category id, and whether this import is what brought it into being. */
     private record ResolvedGroup(UUID id, boolean created) {
+    }
+
+    // --- items sold in options ---------------------------------------------------
+
+    /**
+     * Creates one item from the several rows that describe its options.
+     *
+     * It has to be one call. The catalogue takes an item's options as a set and
+     * replaces them wholesale, so adding them a row at a time would leave each
+     * row wiping out the one before it. That is why the rows are gathered before
+     * anything is written rather than committed as they come.
+     *
+     * The identifiers move down a level: on a variant export the SKU and
+     * barcode columns describe the option, not the product, so they are given
+     * to the option and the item takes the group key as its own code.
+     *
+     * @param records the group's rows in file order; the first carries the item
+     */
+    public GroupCommitOutcome commitOptionGroup(
+            ImportJob job,
+            List<OptionRow> rows,
+            UUID matchedEntityId,
+            MappingPlan plan
+    ) {
+        List<ItemImportRecord> records = rows.stream().map(OptionRow::record).toList();
+        ItemImportRecord head = records.getFirst();
+        UUID businessId = job.getBusiness().getId();
+
+        if (matchedEntityId != null && plan.duplicateStrategy() != ImportDuplicateStrategy.UPDATE_EXISTING) {
+            return GroupCommitOutcome.of(ImportRowStatus.SKIPPED, matchedEntityId, false, Map.of());
+        }
+
+        UUID unitId = resolveUnitId(businessId, head, plan);
+
+        if (unitId == null) {
+            return GroupCommitOutcome.failed(
+                    head.unitName() == null
+                            ? "No unit was chosen for this import."
+                            : "\"" + head.unitName() + "\" is no longer one of your units."
+            );
+        }
+
+        ResolvedGroup group = resolveItemGroup(businessId, head);
+
+        boolean asColours = sellsByColour(records);
+        List<ItemColorRequest> colours = asColours ? coloursOf(records) : List.of();
+        List<ItemVariantRequest> options = optionsOf(records, asColours);
+
+        CreateItemRequest request = new CreateItemRequest(
+                group.id(),
+                unitId,
+                head.name(),
+                head.groupKey(),
+                null,
+                head.description(),
+                head.imageUrl(),
+                null,
+                head.badge(),
+                null,
+                head.price(),
+                head.compareAtPrice(),
+                head.itemType(),
+                head.trackInventory(),
+                null,
+                colours,
+                null,
+                options,
+                null,
+                null,
+                head.lowStockLevel(),
+                head.status()
+        );
+
+        ItemResponse item = matchedEntityId == null
+                ? itemService.createItem(businessId, request, null)
+                : replaceOptions(businessId, matchedEntityId, head, unitId, group, colours, options);
+
+        Map<Integer, UUID> stock = postOptionStock(businessId, item, rows, job);
+
+        return GroupCommitOutcome.of(
+                matchedEntityId == null ? ImportRowStatus.CREATED : ImportRowStatus.UPDATED,
+                item.id(),
+                group.created(),
+                stock
+        );
+    }
+
+    /**
+     * Rewrites an existing item's options from the file.
+     *
+     * Wholesale, because that is the only way the catalogue offers — and it is
+     * what the shop asked for by choosing to update. The preview says so before
+     * they get here.
+     */
+    private ItemResponse replaceOptions(
+            UUID businessId,
+            UUID itemId,
+            ItemImportRecord head,
+            UUID unitId,
+            ResolvedGroup group,
+            List<ItemColorRequest> colours,
+            List<ItemVariantRequest> options
+    ) {
+        return itemService.updateItem(
+                businessId,
+                itemId,
+                new UpdateItemRequest(
+                        group.id(),
+                        unitId,
+                        head.name(),
+                        head.groupKey(),
+                        null,
+                        head.description(),
+                        head.imageUrl(),
+                        null,
+                        head.badge(),
+                        null,
+                        head.price(),
+                        head.compareAtPrice(),
+                        head.itemType(),
+                        head.trackInventory(),
+                        null,
+                        colours,
+                        null,
+                        options,
+                        null,
+                        null,
+                        head.lowStockLevel(),
+                        head.status()
+                ),
+                null
+        );
+    }
+
+    /**
+     * Whether this item is worth offering by colour at all.
+     *
+     * Two things have to hold. The colour must be an axis of its own — a watch
+     * sold only in Rose Gold is not "sold by colour", it has one option that
+     * happens to be a colour, and offering a swatch beside an identical option
+     * name tells the shopper nothing. And every colour must be one we can
+     * actually paint: a grey circle labelled "Rose Gold" is a broken promise,
+     * and worse than no circle at all.
+     *
+     * Failing either, the colour becomes part of the option's name — "Small /
+     * Navy" — which is honest, readable, and still counted separately.
+     */
+    private boolean sellsByColour(List<ItemImportRecord> records) {
+        return records.stream().allMatch(record ->
+                record.options().hasDistinctColourAxis()
+                        && ColourNames.hexFor(record.options().colourValue()).isPresent());
+    }
+
+    /**
+     * The colours this item comes in, declared once from the rows that name them.
+     *
+     * The catalogue refuses an option naming a colour the item does not
+     * declare, so the declaration is assembled here rather than left to chance.
+     * Each colour borrows the picture of the first option wearing it, which is
+     * what a variant export's image column is usually showing anyway.
+     */
+    private List<ItemColorRequest> coloursOf(List<ItemImportRecord> records) {
+        Map<String, ItemColorRequest> byValue = new LinkedHashMap<>();
+
+        for (ItemImportRecord record : records) {
+            String colour = record.options().colourValue();
+
+            if (colour == null) {
+                continue;
+            }
+
+            byValue.putIfAbsent(
+                    colour.toLowerCase(Locale.ROOT),
+                    new ItemColorRequest(
+                            colour,
+                            ColourNames.hexFor(colour).orElse(null),
+                            record.imageUrl()));
+        }
+
+        return List.copyOf(byValue.values());
+    }
+
+    /**
+     * @param asColours whether the colour is being offered as its own axis. When
+     *                  it is not, it stays part of the option's name and the
+     *                  option carries no colour — so nothing renders a swatch
+     *                  for it.
+     */
+    private List<ItemVariantRequest> optionsOf(List<ItemImportRecord> records, boolean asColours) {
+        List<ItemVariantRequest> options = new ArrayList<>();
+
+        for (ItemImportRecord record : records) {
+            String label = record.options().label();
+
+            options.add(new ItemVariantRequest(
+                    label,
+                    record.sku(),
+                    record.barcode(),
+                    record.imageUrl(),
+                    asColours ? record.options().optionName() : label,
+                    asColours ? record.options().colourValue() : null,
+                    record.price(),
+                    Boolean.TRUE
+            ));
+        }
+
+        return options;
+    }
+
+    /**
+     * Posts each option's starting quantity against that option.
+     *
+     * The options come back from the catalogue with the ids they were given, so
+     * each row's quantity is matched to its own shelf by the option's name —
+     * the one thing the file and the saved item are certain to agree on.
+     *
+     * An option that already holds stock is left alone. An opening balance is
+     * the first entry in a shelf's history and there can only be one, so a
+     * shop re-importing its range to refresh prices must not have the same
+     * quantities added on top of what it has been selling from all week. The
+     * ledger refuses it anyway; catching it here keeps the item a clean update
+     * rather than a failure.
+     */
+    private Map<Integer, UUID> postOptionStock(
+            UUID businessId,
+            ItemResponse item,
+            List<OptionRow> rows,
+            ImportJob job
+    ) {
+        if (!Boolean.TRUE.equals(item.trackInventory()) || item.variants() == null) {
+            return Map.of();
+        }
+
+        Map<String, UUID> optionIds = new LinkedHashMap<>();
+
+        for (ItemVariantResponse variant : item.variants()) {
+            if (variant.name() != null) {
+                optionIds.putIfAbsent(variant.name().toLowerCase(Locale.ROOT), variant.id());
+            }
+        }
+
+        Map<Integer, UUID> posted = new LinkedHashMap<>();
+
+        for (OptionRow row : rows) {
+            ItemImportRecord record = row.record();
+
+            if (!record.hasOpeningStock()) {
+                continue;
+            }
+
+            UUID variantId = optionIds.get(record.options().label().toLowerCase(Locale.ROOT));
+
+            if (variantId == null || alreadyCounted(businessId, item.id(), variantId)) {
+                continue;
+            }
+
+            UUID entryId = openingStockPoster.post(
+                    businessId,
+                    item.id(),
+                    variantId,
+                    record.openingStock(),
+                    record.costPrice(),
+                    job.getId(),
+                    job.getSourceFileName()
+            );
+
+            if (entryId != null) {
+                posted.put(row.rowNumber(), entryId);
+            }
+        }
+
+        return posted;
     }
 }

@@ -1,113 +1,107 @@
 package kh.edu.istad.ite.features.dataimport.service;
 
-import kh.edu.istad.ite.features.dataimport.canonical.CanonicalRecordMapper;
 import kh.edu.istad.ite.features.dataimport.canonical.MappingPlan;
-import kh.edu.istad.ite.features.dataimport.commit.CommitOutcome;
-import kh.edu.istad.ite.features.dataimport.commit.ImportCommitterRegistry;
+import kh.edu.istad.ite.features.dataimport.commit.GroupCommitOutcome;
 import kh.edu.istad.ite.features.dataimport.entity.ImportJob;
 import kh.edu.istad.ite.features.dataimport.entity.ImportRow;
-import kh.edu.istad.ite.features.dataimport.parser.SourceRow;
-import kh.edu.istad.ite.features.dataimport.repository.ImportRowRepository;
-import kh.edu.istad.ite.features.dataimport.validation.RowIssue;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Propagation;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
 /**
- * Writes one row, in a transaction of its own.
+ * Commits one item, however many rows describe it.
  *
- * A transaction per row rather than one around the whole import, and that is a
+ * One item rather than one row, because a file may take several rows to
+ * describe one thing: a shirt in five sizes is five rows and one item, and the
+ * catalogue takes an item's options as a set it replaces wholesale — so adding
+ * them a row at a time would leave each row erasing the one before it. A file
+ * of plain items is simply the case where every group is one row long.
+ *
+ * Nothing here is transactional, deliberately. The write has a transaction of
+ * its own and is allowed to fail; recording that it failed gets another. Doing
+ * both in one is what turns a single refused item into a whole import reported
+ * as unreadable — the catalogue marks the shared transaction rollback-only, and
+ * the note explaining the refusal is rolled back along with the refusal.
+ *
+ * A transaction per item rather than one around the whole import is a
  * deliberate trade. Ten thousand rows in one transaction means a single
  * unforeseen refusal on row nine thousand throws away everything that worked,
- * and holds locks across the catalogue for as long as it takes — during
- * trading hours, on a shop that is still selling.
- *
- * What is given up is all-or-nothing. What replaces it is a report that says
- * exactly which rows went in and which did not, and rows that are safe to run
- * again: a committed row is marked as committed and skipped on a second pass,
- * so a resumed import adds nothing twice.
- *
- * Rows are refused before they get here, so a failure at this point means
- * something changed since the file was checked — an item deleted, a unit
- * withdrawn — which is exactly the case worth reporting rather than hiding.
+ * and holds locks across the catalogue for as long as it takes — during trading
+ * hours, on a shop that is still selling. What is given up is all-or-nothing;
+ * what replaces it is a report saying exactly what went in, and rows that are
+ * safe to run again.
  */
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class ImportRowCommitService {
 
-    private final CanonicalRecordMapper recordMapper;
-    private final ImportCommitterRegistry committerRegistry;
-    private final ImportRowRepository importRowRepository;
+    private final ImportGroupWriter groupWriter;
 
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public CommitOutcome commitRow(ImportJob job, ImportRow row, MappingPlan plan) {
-        if (row.isCommitted()) {
-            // Already in. A resumed commit passes over it rather than through it.
-            return new CommitOutcome(row.getStatus(), row.getCommittedEntityId(), null, false, null);
+    /**
+     * @param rows one item's rows, in file order
+     */
+    public GroupCommitOutcome commitGroup(ImportJob job, List<ImportRow> rows, MappingPlan plan) {
+        ImportRow head = rows.getFirst();
+
+        if (rows.stream().allMatch(ImportRow::isCommitted)) {
+            // Already in. A resumed commit passes over them rather than through.
+            return GroupCommitOutcome.of(head.getStatus(), head.getCommittedEntityId(), false, Map.of());
         }
 
-        CommitOutcome outcome = runCommitter(job, row, plan);
+        GroupCommitOutcome outcome = attempt(job, rows, plan);
 
-        row.setStatus(outcome.status());
-        row.setCommittedEntityId(outcome.entityId());
-        row.setCommittedStockEntryId(outcome.stockEntryId());
-
-        if (outcome.failureMessage() != null) {
-            row.setIssues(withFailure(row, outcome.failureMessage()));
+        try {
+            groupWriter.record(rows.stream().map(ImportRow::getId).toList(), outcome);
+        } catch (RuntimeException e) {
+            // The item may well have gone in; only the note about it failed.
+            log.error("Import {} could not record the outcome of the group at row {}",
+                    job.getId(), head.getRowNumber(), e);
         }
-
-        importRowRepository.save(row);
 
         return outcome;
     }
 
-    private CommitOutcome runCommitter(ImportJob job, ImportRow row, MappingPlan plan) {
+    private GroupCommitOutcome attempt(ImportJob job, List<ImportRow> rows, MappingPlan plan) {
         try {
-            SourceRow sourceRow = new SourceRow(row.getRowNumber(), row.getRawData());
-            var mapped = recordMapper.map(sourceRow, plan);
-
-            if (mapped.record() == null) {
-                return CommitOutcome.failed("This row could not be read.");
-            }
-
-            return committerRegistry
-                    .forTarget(job.getTargetType())
-                    .commit(job, mapped.record(), row.getCommittedEntityId(), plan);
+            return groupWriter.write(job, rows, plan);
         } catch (ResponseStatusException e) {
             /*
              * The catalogue or the ledger refused it. Their wording is written
              * for a shopkeeper already, so it is passed straight through.
              */
-            return CommitOutcome.failed(e.getReason() == null ? "This row was refused." : e.getReason());
+            return GroupCommitOutcome.failed(
+                    e.getReason() == null ? "This row was refused." : e.getReason());
         } catch (RuntimeException e) {
-            log.warn("Import {} row {} failed", job.getId(), row.getRowNumber(), e);
-            return CommitOutcome.failed("Something went wrong importing this row.");
+            log.error("Import {} could not commit the group at row {}",
+                    job.getId(), rows.getFirst().getRowNumber(), e);
+
+            return GroupCommitOutcome.failed(readable(e));
         }
     }
 
     /**
-     * Keeps the warnings checking raised and adds why the write failed.
+     * Something the shop can act on.
      *
-     * Keyed by code so a retried row does not collect the same complaint
-     * twice over.
+     * A refusal that reached us wrapped — the catalogue throwing inside a
+     * transaction Spring then rolls back — still has its own wording somewhere
+     * in the chain, and that is far more use than the wrapper's.
      */
-    private List<RowIssue> withFailure(ImportRow row, String message) {
-        Map<String, RowIssue> issues = new LinkedHashMap<>();
+    private String readable(RuntimeException e) {
+        for (Throwable cause = e; cause != null; cause = cause.getCause()) {
+            if (cause instanceof ResponseStatusException refused && refused.getReason() != null) {
+                return refused.getReason();
+            }
 
-        if (row.getIssues() != null) {
-            row.getIssues().forEach(issue -> issues.put(issue.code(), issue));
+            if (cause.getCause() == cause) {
+                break;
+            }
         }
 
-        issues.put("IMPORT_FAILED", RowIssue.error(null, "IMPORT_FAILED", message));
-
-        return List.copyOf(issues.values());
+        return "This row could not be imported.";
     }
 }

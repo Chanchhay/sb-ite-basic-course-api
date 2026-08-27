@@ -386,7 +386,14 @@ public class ImportJobServiceImpl implements ImportJobService {
                 orZero(job.getValidRows()),
                 duplicates,
                 orZero(job.getInvalidRows()),
-                orZero(job.getValidRows()),
+                /*
+                 * What will be made, not how many rows go into making it: a
+                 * file listing one row per option takes five rows to describe
+                 * one shirt, and promising five items would be a lie the shop
+                 * only discovers afterwards. Equal to the valid row count on an
+                 * ordinary file, where a row is an item.
+                 */
+                willCreate(job),
                 updating ? duplicates : 0,
                 updating ? 0 : duplicates,
                 orZero(job.getInvalidRows()),
@@ -394,6 +401,18 @@ public class ImportJobServiceImpl implements ImportJobService {
                 orZero(job.getOpeningStockRows()),
                 mapper.isCommittable(job)
         );
+    }
+
+    /**
+     * How many things the import would create.
+     *
+     * Falls back to the valid row count for jobs checked before the count of
+     * items was recorded, which is the same number on any file without options.
+     */
+    private int willCreate(ImportJob job) {
+        int entities = orZero(job.getEntitiesToCreate());
+
+        return entities > 0 ? entities : orZero(job.getValidRows());
     }
 
     /**

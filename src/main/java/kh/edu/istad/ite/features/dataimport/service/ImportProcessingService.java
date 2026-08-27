@@ -1,7 +1,7 @@
 package kh.edu.istad.ite.features.dataimport.service;
 
 import kh.edu.istad.ite.features.dataimport.canonical.MappingPlan;
-import kh.edu.istad.ite.features.dataimport.commit.CommitOutcome;
+import kh.edu.istad.ite.features.dataimport.commit.GroupCommitOutcome;
 import kh.edu.istad.ite.features.dataimport.entity.ImportJob;
 import kh.edu.istad.ite.features.dataimport.entity.ImportRow;
 import kh.edu.istad.ite.features.dataimport.repository.ImportJobRepository;
@@ -12,7 +12,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -114,8 +117,8 @@ public class ImportProcessingService {
                     List.of(ImportRowStatus.VALID, ImportRowStatus.DUPLICATE)
             );
 
-            for (ImportRow row : rows) {
-                tally(totals, rowCommitService.commitRow(job, row, plan));
+            for (List<ImportRow> group : groupByItem(rows)) {
+                tally(totals, rowCommitService.commitGroup(job, group, plan));
             }
 
             jobStateService.finishCommit(jobId, totals, null);
@@ -125,7 +128,35 @@ public class ImportProcessingService {
         }
     }
 
-    private void tally(ImportTotals totals, CommitOutcome outcome) {
+    /**
+     * The rows gathered into the items they describe, in file order.
+     *
+     * A file listing one row per option takes several rows to describe one
+     * item, and the catalogue will only accept those options together. Rows
+     * with no group of their own stand alone, which is every row of an ordinary
+     * item file.
+     */
+    private List<List<ImportRow>> groupByItem(List<ImportRow> rows) {
+        Map<String, List<ImportRow>> groups = new LinkedHashMap<>();
+
+        for (ImportRow row : rows) {
+            String key = row.getGroupKey() == null
+                    ? "row:" + row.getId()
+                    : "group:" + row.getGroupKey();
+
+            groups.computeIfAbsent(key, ignored -> new ArrayList<>()).add(row);
+        }
+
+        return List.copyOf(groups.values());
+    }
+
+    /**
+     * Counts what was made, not how many rows went into making it.
+     *
+     * Five rows describing one shirt created one item, and a shop told it
+     * created five would go looking for four that do not exist.
+     */
+    private void tally(ImportTotals totals, GroupCommitOutcome outcome) {
         switch (outcome.status()) {
             case CREATED -> totals.created++;
             case UPDATED -> totals.updated++;
@@ -136,9 +167,8 @@ public class ImportProcessingService {
         if (outcome.itemGroupCreated()) {
             totals.itemGroups++;
         }
-        if (outcome.stockEntryId() != null) {
-            totals.stockEntries++;
-        }
+
+        totals.stockEntries += outcome.stockEntryByRow().size();
     }
 
     /**

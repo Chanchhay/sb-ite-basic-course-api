@@ -85,7 +85,15 @@ public class CanonicalRecordMapper {
                 reader.flag(ImportField.TRACK_INVENTORY),
                 reader.integer(ImportField.LOW_STOCK_LEVEL),
                 status == null ? ItemStatus.ACTIVE : status,
-                openingStock
+                openingStock,
+                reader.text(ImportField.OPTION_GROUP_KEY, 200),
+                RowOptions.of(
+                        reader.text(ImportField.OPTION_1_NAME),
+                        reader.text(ImportField.OPTION_1_VALUE, 150),
+                        reader.text(ImportField.OPTION_2_NAME),
+                        reader.text(ImportField.OPTION_2_VALUE, 150)
+                ),
+                reader.text(ImportField.IMAGE_URL, 500)
         );
     }
 

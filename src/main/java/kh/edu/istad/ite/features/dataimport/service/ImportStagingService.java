@@ -86,7 +86,10 @@ public class ImportStagingService {
         MappingPlan plan = MappingPlan.from(attached);
         ValidationContext context = loadContext(attached.getBusiness().getId());
 
-        return stageAndJudge(attached, plan, context, maxRows);
+        ImportTotals totals = stageAndJudge(attached, plan, context, maxRows);
+        totals.entities = context.distinctGroups();
+
+        return totals;
     }
 
     private ImportTotals stageAndJudge(
@@ -172,6 +175,10 @@ public class ImportStagingService {
         row.setStatus(verdict.status());
         row.setIssues(issues);
         row.setCommittedEntityId(verdict.matchedEntityId());
+
+        if (record instanceof ItemImportRecord item && item.hasOptions()) {
+            row.setGroupKey(item.groupingKey());
+        }
 
         switch (verdict.status()) {
             case VALID -> {

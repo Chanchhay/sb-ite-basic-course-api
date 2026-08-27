@@ -8,6 +8,7 @@ public final class ImportTotals {
     int invalid;
     int duplicate;
     int openingStock;
+    int entities;
     int created;
     int updated;
     int skipped;
@@ -33,6 +34,14 @@ public final class ImportTotals {
 
     public int openingStock() {
         return openingStock;
+    }
+
+    /**
+     * How many things would be created, counting a group of option rows as the
+     * one item they describe.
+     */
+    public int entities() {
+        return entities;
     }
 
     public int created() {

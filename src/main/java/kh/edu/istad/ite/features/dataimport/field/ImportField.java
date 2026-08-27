@@ -149,6 +149,64 @@ public enum ImportField {
                     "balance", "quantityonhand", "currentstock")
     ),
 
+    /**
+     * What ties several rows together into one item sold in options.
+     *
+     * A variant export lists one row per option — Small/Black, Small/White,
+     * Medium/Black — and repeats the item's own details on every one. This is
+     * the column that says which of them belong to the same item. Shops call
+     * it a style code, a parent SKU, a handle; whatever it is called, it is
+     * the same value on every row of the group.
+     */
+    OPTION_GROUP_KEY(
+            "Groups By",
+            "Ties option rows together. Rows sharing this value become one item sold in options.",
+            ImportFieldType.TEXT,
+            Map.of(ImportTargetType.ITEM, OPTIONAL),
+            List.of("itemgroupid", "parentsku", "parentid", "parentcode", "styleid", "stylecode",
+                    "handle", "groupid", "productid", "parent", "variantgroup", "modelcode")
+    ),
+
+    OPTION_1_NAME(
+            "Option 1 Name",
+            "What the first option is — Size, for instance. The same on every row of an item.",
+            ImportFieldType.TEXT,
+            Map.of(ImportTargetType.ITEM, OPTIONAL),
+            List.of("option1name", "optionname1", "attribute1name", "variant1name", "option1")
+    ),
+
+    OPTION_1_VALUE(
+            "Option 1 Value",
+            "This row's first option — Small.",
+            ImportFieldType.TEXT,
+            Map.of(ImportTargetType.ITEM, OPTIONAL),
+            List.of("option1value", "optionvalue1", "attribute1value", "variant1value", "size")
+    ),
+
+    OPTION_2_NAME(
+            "Option 2 Name",
+            "What the second option is — Color, for instance.",
+            ImportFieldType.TEXT,
+            Map.of(ImportTargetType.ITEM, OPTIONAL),
+            List.of("option2name", "optionname2", "attribute2name", "variant2name", "option2")
+    ),
+
+    OPTION_2_VALUE(
+            "Option 2 Value",
+            "This row's second option — Black.",
+            ImportFieldType.TEXT,
+            Map.of(ImportTargetType.ITEM, OPTIONAL),
+            List.of("option2value", "optionvalue2", "attribute2value", "variant2value", "color", "colour")
+    ),
+
+    IMAGE_URL(
+            "Image URL",
+            "A picture of this item, or of this option. Linked to, not copied.",
+            ImportFieldType.TEXT,
+            Map.of(ImportTargetType.ITEM, OPTIONAL),
+            List.of("imageurl", "image", "picture", "photo", "imagelink", "thumbnail")
+    ),
+
     DESCRIPTION(
             "Description",
             "A longer description of the item.",
@@ -294,6 +352,20 @@ public enum ImportField {
      * flattening is reused for reading values that name a fixed choice — so
      * "In Stock", "in-stock" and "INSTOCK" are one answer wherever they turn up.
      */
+    /**
+     * Whether an option axis is a colour, judged by what the file calls it.
+     *
+     * FluxiBiz sells an option as a size and a colour together, and only a
+     * colour gets a swatch on the storefront. A file whose second option is
+     * Material or Flavour is not wrong — it simply has no colour — so the name
+     * of the axis decides, rather than its position.
+     */
+    public static boolean isColourAxis(String axisName) {
+        String normalized = normalize(axisName);
+
+        return normalized.equals("color") || normalized.equals("colour");
+    }
+
     public static String normalize(String heading) {
         if (heading == null) {
             return "";

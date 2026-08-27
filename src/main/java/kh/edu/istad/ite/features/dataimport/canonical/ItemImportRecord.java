@@ -37,7 +37,18 @@ public record ItemImportRecord(
         Boolean trackInventory,
         Integer lowStockLevel,
         ItemStatus status,
-        BigDecimal openingStock
+        BigDecimal openingStock,
+
+        /**
+         * What ties this row to its siblings, when the file lists one row per
+         * option. Null on a file of plain items.
+         */
+        String groupKey,
+
+        /** The option this row describes, or {@link RowOptions#NONE}. */
+        RowOptions options,
+
+        String imageUrl
 ) implements ImportRecord {
 
     @Override
@@ -58,6 +69,17 @@ public record ItemImportRecord(
         values.put("lowStockLevel", lowStockLevel);
         values.put("status", status == null ? null : status.name());
         values.put("openingStock", openingStock);
+
+        if (options != null && options.isPresent()) {
+            values.put("option", options.label());
+        }
+        if (groupKey != null) {
+            values.put("groupKey", groupKey);
+        }
+        if (imageUrl != null) {
+            values.put("imageUrl", imageUrl);
+        }
+
         return values;
     }
 
@@ -73,5 +95,26 @@ public record ItemImportRecord(
     /** Whether this row also carries a starting quantity to post. */
     public boolean hasOpeningStock() {
         return openingStock != null;
+    }
+
+    /** Whether this row is one option of an item rather than a whole item. */
+    public boolean hasOptions() {
+        return options != null && options.isPresent();
+    }
+
+    /**
+     * What this row's item is identified by while the file is being read.
+     *
+     * The group column when the file has one, and the item's name when it does
+     * not — because a variant export that omits a parent code still repeats the
+     * item's name on every one of its rows, and that is enough to tell which
+     * rows belong together.
+     */
+    public String groupingKey() {
+        if (groupKey != null && !groupKey.isBlank()) {
+            return groupKey.trim().toLowerCase();
+        }
+
+        return name == null ? null : name.trim().toLowerCase();
     }
 }

@@ -47,6 +47,12 @@ public class ItemImportValidator implements ImportRowValidator {
             return RowVerdict.invalid(issues);
         }
 
+        if (item.hasOptions()) {
+            return judgeOptionRow(item, rowNumber, context, plan, issues);
+        }
+
+        context.openGroup(item.groupingKey(), rowNumber);
+
         RowVerdict duplicate = findDuplicate(item, rowNumber, context, plan, issues);
         if (duplicate != null) {
             return duplicate;
@@ -55,6 +61,109 @@ public class ItemImportValidator implements ImportRowValidator {
         claim(item, rowNumber, context);
 
         return RowVerdict.valid(issues);
+    }
+
+    /**
+     * One option of an item sold in options.
+     *
+     * The item itself is judged once, on the row that opens the group; every
+     * later row of that group describes a shelf rather than a product, so what
+     * has to be unique about it is its option and its own SKU — not the item
+     * name, which the file repeats on purpose.
+     */
+    private RowVerdict judgeOptionRow(
+            ItemImportRecord item,
+            int rowNumber,
+            ValidationContext context,
+            MappingPlan plan,
+            List<RowIssue> issues
+    ) {
+        String group = item.groupingKey();
+        boolean opensGroup = context.openGroup(group, rowNumber);
+
+        Integer optionTakenBy = context.claimOption(group, item.options().label(), rowNumber);
+
+        if (optionTakenBy != null) {
+            issues.add(RowIssue.warning(
+                    ImportField.OPTION_1_VALUE.name(),
+                    "DUPLICATE_OPTION_IN_FILE",
+                    "Row " + optionTakenBy + " already lists \"" + item.options().label()
+                            + "\" for this item."
+            ));
+            return RowVerdict.duplicate(issues, null);
+        }
+
+        // The option's own SKU and barcode still have to be unique everywhere.
+        RowVerdict clash = findIdentifierClash(item, context, issues);
+        if (clash != null) {
+            return clash;
+        }
+
+        context.claimSku(item.sku(), rowNumber);
+        context.claimBarcode(item.barcode(), rowNumber);
+
+        if (opensGroup) {
+            ExistingItem existing = context.findItemByName(item.name());
+
+            if (existing != null) {
+                String action = plan.duplicateStrategy() == ImportDuplicateStrategy.UPDATE_EXISTING
+                        ? "Its options will be replaced by the ones in this file."
+                        : "It will be skipped.";
+
+                issues.add(RowIssue.warning(
+                        ImportField.NAME.name(),
+                        "ALREADY_EXISTS",
+                        "You already have \"" + existing.name() + "\". " + action
+                ));
+
+                context.claimName(item.name(), rowNumber);
+                context.planItem(item.sku(), item.barcode(), item.name());
+
+                return RowVerdict.duplicate(issues, existing.id());
+            }
+
+            context.claimName(item.name(), rowNumber);
+        }
+
+        context.planItem(item.sku(), item.barcode(), item.name());
+
+        return RowVerdict.valid(issues);
+    }
+
+    /**
+     * Whether this option's own SKU or barcode is already spoken for, either by
+     * an earlier row or by something the shop already sells.
+     */
+    private RowVerdict findIdentifierClash(
+            ItemImportRecord item,
+            ValidationContext context,
+            List<RowIssue> issues
+    ) {
+        Integer bySku = context.rowThatTookSku(item.sku());
+        if (bySku != null) {
+            return duplicateInFile(ImportField.SKU, "SKU", bySku, issues);
+        }
+
+        Integer byBarcode = context.rowThatTookBarcode(item.barcode());
+        if (byBarcode != null) {
+            return duplicateInFile(ImportField.BARCODE, "barcode", byBarcode, issues);
+        }
+
+        ExistingItem existing = context.findItemBySku(item.sku());
+        if (existing == null) {
+            existing = context.findItemByBarcode(item.barcode());
+        }
+
+        if (existing != null) {
+            issues.add(RowIssue.warning(
+                    ImportField.SKU.name(),
+                    "ALREADY_EXISTS",
+                    "\"" + existing.name() + "\" already uses this code."
+            ));
+            return RowVerdict.duplicate(issues, existing.id());
+        }
+
+        return null;
     }
 
     private void requireName(ItemImportRecord item, List<RowIssue> issues) {
@@ -79,6 +188,16 @@ public class ItemImportValidator implements ImportRowValidator {
                     ImportField.ITEM_GROUP.name(),
                     "MISSING_ITEM_GROUP",
                     "An item needs a category."
+            ));
+            return;
+        }
+
+        if (context.hasSubGroups(item.itemGroupName())) {
+            issues.add(RowIssue.error(
+                    ImportField.ITEM_GROUP.name(),
+                    "CATEGORY_HAS_SUBCATEGORIES",
+                    "\"" + item.itemGroupName() + "\" has sub-categories, so items cannot be filed"
+                            + " directly under it. Use one of its sub-categories instead."
             ));
             return;
         }

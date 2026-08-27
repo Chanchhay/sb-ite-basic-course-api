@@ -109,6 +109,17 @@ public class ImportRow {
     @Column(name = "external_id", length = 200)
     private String externalId;
 
+    /**
+     * What ties this row to the others describing the same item.
+     *
+     * Set only when a file lists one row per option. The commit gathers rows by
+     * this and creates one item carrying all of them, because the catalogue
+     * takes an item's options as a set — they cannot be added one row at a
+     * time. Null on a file of plain items, where a row is an item on its own.
+     */
+    @Column(name = "group_key", length = 200)
+    private String groupKey;
+
     /** What this row became once committed. Null until then. */
     @Column(name = "committed_entity_id")
     private UUID committedEntityId;

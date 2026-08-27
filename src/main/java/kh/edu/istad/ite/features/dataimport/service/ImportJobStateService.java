@@ -61,6 +61,7 @@ public class ImportJobStateService {
         job.setInvalidRows(0);
         job.setDuplicateRows(0);
         job.setOpeningStockRows(0);
+        job.setEntitiesToCreate(0);
         job.setCreatedRows(0);
         job.setUpdatedRows(0);
         job.setSkippedRows(0);
@@ -80,6 +81,7 @@ public class ImportJobStateService {
         job.setInvalidRows(totals.invalid());
         job.setDuplicateRows(totals.duplicate());
         job.setOpeningStockRows(totals.openingStock());
+        job.setEntitiesToCreate(totals.entities());
         job.setValidationCompletedAt(LocalDateTime.now());
         job.setStatus(ImportStatus.READY);
 

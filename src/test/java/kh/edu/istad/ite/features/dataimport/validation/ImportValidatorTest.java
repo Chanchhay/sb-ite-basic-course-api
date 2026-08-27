@@ -18,6 +18,7 @@ import kh.edu.istad.ite.features.dataimport.canonical.ItemGroupImportRecord;
 import kh.edu.istad.ite.features.dataimport.canonical.ItemImportRecord;
 import kh.edu.istad.ite.features.dataimport.canonical.MappingPlan;
 import kh.edu.istad.ite.features.dataimport.canonical.OpeningStockImportRecord;
+import kh.edu.istad.ite.features.dataimport.canonical.RowOptions;
 import kh.edu.istad.ite.features.dataimport.field.ImportField;
 import kh.edu.istad.ite.shared.enums.ImportDuplicateStrategy;
 import kh.edu.istad.ite.shared.enums.ImportRowStatus;
@@ -89,7 +90,7 @@ class ImportValidatorTest {
         return new ItemImportRecord(
                 name, sku, null, "Drinks", null, ItemType.PHYSICAL,
                 BigDecimal.ONE, null, BigDecimal.ONE, null, null,
-                null, null, ItemStatus.ACTIVE, openingStock);
+                null, null, ItemStatus.ACTIVE, openingStock, null, RowOptions.NONE, null);
     }
 
     private List<String> codesOf(RowVerdict verdict) {
@@ -204,7 +205,7 @@ class ImportValidatorTest {
         ItemImportRecord service = new ItemImportRecord(
                 "Repair", null, null, "Services", null, ItemType.SERVICE,
                 BigDecimal.TEN, null, null, null, null,
-                null, null, ItemStatus.ACTIVE, new BigDecimal("5"));
+                null, null, ItemStatus.ACTIVE, new BigDecimal("5"), null, RowOptions.NONE, null);
 
         RowVerdict verdict = itemValidator.validate(
                 service, 2, emptyShop(),
@@ -219,7 +220,7 @@ class ImportValidatorTest {
         ItemImportRecord noCost = new ItemImportRecord(
                 "Espresso", "ESP-1", null, "Drinks", null, ItemType.PHYSICAL,
                 BigDecimal.ONE, null, null, null, null,
-                null, null, ItemStatus.ACTIVE, new BigDecimal("10"));
+                null, null, ItemStatus.ACTIVE, new BigDecimal("10"), null, RowOptions.NONE, null);
 
         RowVerdict verdict = itemValidator.validate(
                 noCost, 2, emptyShop(),
@@ -292,5 +293,122 @@ class ImportValidatorTest {
 
         assertThat(verdict.status()).isEqualTo(ImportRowStatus.INVALID);
         assertThat(codesOf(verdict)).contains("NEGATIVE_QUANTITY");
+    }
+
+    // --- items sold in options -----------------------------------------------------
+
+    private ItemImportRecord anOption(
+            String name, String groupKey, String sku, String size, String colour) {
+        return new ItemImportRecord(
+                name, sku, null, "Apparel", null, ItemType.PHYSICAL,
+                new BigDecimal("19.99"), null, new BigDecimal("5.50"), null, null,
+                null, null, ItemStatus.ACTIVE, new BigDecimal("10"), groupKey,
+                RowOptions.of("Size", size, "Color", colour), null);
+    }
+
+    /**
+     * A variant export repeats the item's name on every row on purpose. Without
+     * grouping, the second row of every item would be called a duplicate of the
+     * first and nothing with options could ever be imported.
+     */
+    @Test
+    void treatsRowsSharingAGroupAsOneItemRatherThanDuplicates() {
+        ValidationContext context = emptyShop();
+        MappingPlan plan = plan(ImportTargetType.ITEM, ImportDuplicateStrategy.SKIP, UNIT_ID);
+
+        RowVerdict first = itemValidator.validate(
+                anOption("T-Shirt", "APP-TS-001", "TS-S-BLK", "Small", "Black"), 2, context, plan);
+        RowVerdict second = itemValidator.validate(
+                anOption("T-Shirt", "APP-TS-001", "TS-M-BLK", "Medium", "Black"), 3, context, plan);
+
+        assertThat(first.status()).isEqualTo(ImportRowStatus.VALID);
+        assertThat(second.status()).isEqualTo(ImportRowStatus.VALID);
+        assertThat(context.distinctGroups()).isEqualTo(1);
+    }
+
+    /** The same size in the same colour twice is one shelf counted twice over. */
+    @Test
+    void refusesTheSameOptionTwiceWithinAnItem() {
+        ValidationContext context = emptyShop();
+        MappingPlan plan = plan(ImportTargetType.ITEM, ImportDuplicateStrategy.SKIP, UNIT_ID);
+
+        itemValidator.validate(
+                anOption("T-Shirt", "APP-TS-001", "TS-S-BLK", "Small", "Black"), 2, context, plan);
+        RowVerdict repeat = itemValidator.validate(
+                anOption("T-Shirt", "APP-TS-001", "TS-S-BLK-2", "Small", "Black"), 3, context, plan);
+
+        assertThat(repeat.status()).isEqualTo(ImportRowStatus.DUPLICATE);
+        assertThat(codesOf(repeat)).contains("DUPLICATE_OPTION_IN_FILE");
+    }
+
+    /** Each option is scanned and counted on its own, so its code must be its own. */
+    @Test
+    void stillRefusesTwoOptionsSharingASku() {
+        ValidationContext context = emptyShop();
+        MappingPlan plan = plan(ImportTargetType.ITEM, ImportDuplicateStrategy.SKIP, UNIT_ID);
+
+        itemValidator.validate(
+                anOption("T-Shirt", "APP-TS-001", "TS-DUP", "Small", "Black"), 2, context, plan);
+        RowVerdict clash = itemValidator.validate(
+                anOption("T-Shirt", "APP-TS-001", "TS-DUP", "Medium", "Black"), 3, context, plan);
+
+        assertThat(clash.status()).isEqualTo(ImportRowStatus.DUPLICATE);
+        assertThat(codesOf(clash)).contains("DUPLICATE_IN_FILE");
+    }
+
+    /** Two shirts are two items even when their sizes are named the same. */
+    @Test
+    void keepsSeparateGroupsApart() {
+        ValidationContext context = emptyShop();
+        MappingPlan plan = plan(ImportTargetType.ITEM, ImportDuplicateStrategy.SKIP, UNIT_ID);
+
+        itemValidator.validate(
+                anOption("T-Shirt", "APP-TS-001", "TS-S", "Small", "Black"), 2, context, plan);
+        RowVerdict other = itemValidator.validate(
+                anOption("Hoodie", "APP-HD-001", "HD-S", "Small", "Black"), 3, context, plan);
+
+        assertThat(other.status()).isEqualTo(ImportRowStatus.VALID);
+        assertThat(context.distinctGroups()).isEqualTo(2);
+    }
+
+    /**
+     * An item is filed on a leaf, never on a parent. The catalogue refuses it,
+     * so the row has to be refused at checking — otherwise a shop agrees to an
+     * import that then fails item by item for a reason it never mentioned.
+     */
+    @Test
+    void refusesAnItemFiledOnACategoryThatHasSubCategories() {
+        ItemGroup beverages = group("Beverages", null);
+        ItemGroup coffee = group("Coffee", beverages);
+
+        ItemImportRecord onParent = new ItemImportRecord(
+                "Latte", "LAT-1", null, "Beverages", null, ItemType.PHYSICAL,
+                BigDecimal.ONE, null, BigDecimal.ONE, null, null,
+                null, null, ItemStatus.ACTIVE, null, null, RowOptions.NONE, null);
+
+        RowVerdict verdict = itemValidator.validate(
+                onParent, 2, context(List.of(beverages, coffee), List.of(), Set.of(), Set.of()),
+                plan(ImportTargetType.ITEM, ImportDuplicateStrategy.SKIP, UNIT_ID));
+
+        assertThat(verdict.status()).isEqualTo(ImportRowStatus.INVALID);
+        assertThat(codesOf(verdict)).contains("CATEGORY_HAS_SUBCATEGORIES");
+    }
+
+    /** A leaf category is exactly where an item belongs. */
+    @Test
+    void acceptsAnItemFiledOnALeafCategory() {
+        ItemGroup beverages = group("Beverages", null);
+        ItemGroup coffee = group("Coffee", beverages);
+
+        ItemImportRecord onLeaf = new ItemImportRecord(
+                "Latte", "LAT-1", null, "Coffee", null, ItemType.PHYSICAL,
+                BigDecimal.ONE, null, BigDecimal.ONE, null, null,
+                null, null, ItemStatus.ACTIVE, null, null, RowOptions.NONE, null);
+
+        RowVerdict verdict = itemValidator.validate(
+                onLeaf, 2, context(List.of(beverages, coffee), List.of(), Set.of(), Set.of()),
+                plan(ImportTargetType.ITEM, ImportDuplicateStrategy.SKIP, UNIT_ID));
+
+        assertThat(verdict.status()).isEqualTo(ImportRowStatus.VALID);
     }
 }
