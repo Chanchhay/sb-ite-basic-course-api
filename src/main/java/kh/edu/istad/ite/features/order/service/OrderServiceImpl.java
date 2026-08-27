@@ -1337,15 +1337,18 @@ public class OrderServiceImpl implements OrderService {
         order.setDiscountAmount(totalDiscount.setScale(scale, RoundingMode.HALF_UP));
 
         BigDecimal netSubtotal = grossSubtotal.subtract(totalDiscount);
-        BigDecimal taxAmount = order.getTaxAmount() != null ? order.getTaxAmount() : BigDecimal.ZERO;
-        BigDecimal total = netSubtotal;
-        if (TaxInclusionType.EXCLUSIVE.equals(order.getTaxInclusionType()) && taxAmount.compareTo(BigDecimal.ZERO) > 0) {
-            total = netSubtotal.add(taxAmount);
+        if (netSubtotal.compareTo(BigDecimal.ZERO) < 0) {
+            netSubtotal = BigDecimal.ZERO;
         }
 
-        if (total.compareTo(BigDecimal.ZERO) < 0) {
-            total = BigDecimal.ZERO;
-        }
-        order.setTotal(total.setScale(scale, RoundingMode.HALF_UP));
+        // The order was first priced (possibly against an empty $0 cart) back
+        // in createOrder; every item/discount edit since has to re-run the
+        // same calculator against the new net amount, or tax stays frozen at
+        // whatever it was on that first, often-empty, cart.
+        TaxCalculator.Result taxResult = taxCalculator.apply(order.getBusiness(), netSubtotal, scale);
+        order.setTaxInclusionType(taxResult.inclusionType());
+        order.setTaxRate(taxResult.taxRate());
+        order.setTaxAmount(taxResult.taxAmount());
+        order.setTotal(taxResult.total());
     }
 }

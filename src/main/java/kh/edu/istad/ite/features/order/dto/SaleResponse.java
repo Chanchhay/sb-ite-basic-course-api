@@ -29,6 +29,10 @@ public class SaleResponse {
     private OrderChannel channel;
     private BigDecimal subtotal;
     private BigDecimal discountAmount;
+    /** What to call the discount on a receipt — the coupon code, the discount's
+     *  own name, or a plain "X% OFF" when neither is available. Null when there
+     *  is no discount at all. */
+    private String discountLabel;
     private BigDecimal taxRate;
     private BigDecimal taxAmount;
     private TaxInclusionType taxInclusionType;

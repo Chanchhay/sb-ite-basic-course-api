@@ -212,7 +212,11 @@ public class StorefrontMapper {
                 openNow,
                 onlineHours == null
                         ? null
-                        : onlineHours.describeDay(LocalDateTime.now().getDayOfWeek())
+                        : onlineHours.describeDay(LocalDateTime.now().getDayOfWeek()),
+                business.getTaxEnabled(),
+                business.getTaxRate(),
+                business.getTaxInclusionType(),
+                business.getTaxLabel()
         );
     }
 }
