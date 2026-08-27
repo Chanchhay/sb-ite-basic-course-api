@@ -55,11 +55,13 @@ app:
       - "https://*.fluxibiz.store"
       - "https://fluxibiz.store"
       - "https://administrator.fluxibiz.store"
+      - "https://*.ngrok-free.dev"
+      - "https://*.ngrok-free.app"
   storefront:
     base-domain: ${BASE_STOREFRONT_DOMAIN:fluxibiz.store}
     protocol: ${STOREFRONT_PROTOCOL:https}
     path-prefix: /store
-    subdomain-enabled: true
+    subdomain-enabled: ${STOREFRONT_SUBDOMAIN_ENABLED:true}
   security:
     credential-encryption-key: ${CREDENTIAL_ENCRYPTION_KEY:}
 

@@ -1,6 +1,5 @@
 package kh.edu.istad.ite.features.social.facebook;
 
-import kh.edu.istad.ite.config.props.StorefrontProps;
 import kh.edu.istad.ite.config.security.CredentialCipher;
 import kh.edu.istad.ite.features.business.entity.Business;
 import kh.edu.istad.ite.features.business.repository.BusinessRepository;
@@ -86,7 +85,6 @@ public class FacebookCheckoutService {
     private final ReceiptService receiptService;
     private final ApplicationEventPublisher eventPublisher;
     private final FacebookGraphClient graphClient;
-    private final StorefrontProps storefrontProps;
 
     public record CheckoutDraft(
             java.util.UUID orderId,
@@ -98,7 +96,8 @@ public class FacebookCheckoutService {
             String md5,
             byte[] qrPng,
             java.time.LocalDateTime expiresAt,
-            java.util.UUID qrCodeId
+            java.util.UUID qrCodeId,
+            String bakongDeepLink
     ) {}
 
     public record VerifyResult(
@@ -109,12 +108,13 @@ public class FacebookCheckoutService {
             String receiptText
     ) {}
 
-    @Transactional
-    public CheckoutDraft createCheckout(UUID businessId, UUID customerId) {
+    /** Everything a Messenger checkout needs regardless of how it's paid: the
+     * business, its cart validated against stock, and a saved PENDING order. */
+    private record DraftOrder(Business business, Order order, int itemCount) {}
+
+    private DraftOrder buildOrder(UUID businessId, UUID customerId) {
         Business business = businessRepository.findById(businessId)
                 .orElseThrow(() -> new RuntimeException("⚠️ រកមិនឃើញព័ត៌មានហាងទេ។"));
-
-        requireKhqrFeature(businessId);
 
         Customer customer = customerRepository.findByIdAndBusinessId(customerId, businessId)
                 .orElseThrow(() -> new RuntimeException(
@@ -168,13 +168,25 @@ public class FacebookCheckoutService {
         order.setDiscountAmount(BigDecimal.ZERO.setScale(scale, RoundingMode.HALF_UP));
         order.setTotal(order.getSubtotal().subtract(order.getDiscountAmount()));
         order.setStatus(OrderStatus.PENDING);
-        
+
         List<OrderItem> orderItems = cart.getItems().stream()
                 .map(this::toOrderItem)
                 .toList();
 
         orderItems.forEach(order::addItem);
         orderRepository.save(order);
+
+        return new DraftOrder(business, order, orderItems.size());
+    }
+
+    @Transactional
+    public CheckoutDraft createCheckout(UUID businessId, UUID customerId) {
+        requireKhqrFeature(businessId);
+
+        DraftOrder draft = buildOrder(businessId, customerId);
+        Business business = draft.business();
+        Order order = draft.order();
+        String currency = order.getCurrency();
 
         BusinessPaymentSetting setting = requireActiveBakongSetting(businessId);
 
@@ -203,6 +215,7 @@ public class FacebookCheckoutService {
         paymentQrCodeRepository.save(qrCode);
 
         byte[] png = qrImageRenderer.toPngBytes(result.qr(), QR_IMAGE_SIZE);
+        String deepLink = resolveBakongDeepLink(business, setting, result.qr());
 
         eventPublisher.publishEvent(new FacebookQrGeneratedEvent(qrCode.getId()));
 
@@ -211,13 +224,66 @@ public class FacebookCheckoutService {
                 order.getInvoiceNumber(),
                 order.getTotal(),
                 currency,
-                orderItems.size(),
+                draft.itemCount(),
                 result.qr(),
                 result.md5(),
                 png,
                 expiresAtLocal,
-                qrCode.getId()
+                qrCode.getId(),
+                deepLink
         );
+    }
+
+    /**
+     * A Pay Later checkout never touches Bakong — it just parks the order at
+     * PENDING with {@code awaitingPayLaterApproval} set, exactly like the web
+     * storefront's Pay Later path, so the business owner approves it from the
+     * same dashboard screen regardless of which channel it came from.
+     */
+    @Transactional
+    public CheckoutDraft createPayLaterCheckout(UUID businessId, UUID customerId) {
+        DraftOrder draft = buildOrder(businessId, customerId);
+        Order order = draft.order();
+        order.setAwaitingPayLaterApproval(true);
+        orderRepository.save(order);
+
+        return new CheckoutDraft(
+                order.getId(),
+                order.getInvoiceNumber(),
+                order.getTotal(),
+                order.getCurrency(),
+                draft.itemCount(),
+                null,
+                null,
+                null,
+                null,
+                null,
+                null
+        );
+    }
+
+    /**
+     * Turns the KHQR payload into a real link the Bakong app (and other
+     * KHQR-participating bank apps) will open directly, via Bakong's own
+     * generate_deeplink_by_qr endpoint — the same call the storefront's
+     * public order-status endpoint makes for the Telegram/web checkout page.
+     */
+    private String resolveBakongDeepLink(Business business, BusinessPaymentSetting setting, String qrPayload) {
+        if (!StringUtils.hasText(setting.getApiTokenEncrypted())) {
+            return null;
+        }
+
+        String accessToken;
+        try {
+            accessToken = credentialCipher.decrypt(setting.getApiTokenEncrypted());
+        } catch (Exception exception) {
+            log.warn("Could not decrypt Bakong API token for business {} — no Messenger deep link this time: {}",
+                    business.getId(), exception.getMessage());
+            return null;
+        }
+
+        String appName = StringUtils.hasText(business.getDisplayName()) ? business.getDisplayName() : "iPOS";
+        return bakongTransactionClient.generateDeeplinkByQr(accessToken, qrPayload, null, appName).orElse(null);
     }
 
     private OrderItem toOrderItem(CartItem cartItem) {
@@ -495,44 +561,64 @@ public class FacebookCheckoutService {
     public void handleCheckout(kh.edu.istad.ite.features.social.entity.BusinessFacebookPage page, kh.edu.istad.ite.features.social.entity.BotSession session, String psid) {
         try {
             CheckoutDraft draft = createCheckout(page.getBusiness().getId(), session.getCustomer().getId());
-            
-            String baseDomain = storefrontProps.getProtocol() + "://" + storefrontProps.getBaseDomain();
-            String checkoutWebUrl = baseDomain + "/m-app/" + page.getBusiness().getId() + "/checkout?orderId=" + draft.orderId();
-            
-            log.info("Generated Messenger checkoutWebUrl: {}", checkoutWebUrl);
-            
-            boolean isHttpsAndNoPort = checkoutWebUrl.startsWith("https://") && !checkoutWebUrl.substring(8).contains(":");
 
-            if (isHttpsAndNoPort) {
-                graphClient.whitelistDomain(page.getPageAccessTokenEncrypted(), List.of(baseDomain));
-            }
+            // The QR goes straight into the chat — same as Telegram — instead of
+            // making the customer open a webview page first just to see it.
+            graphClient.sendImage(page.getPageId(), page.getPageAccessTokenEncrypted(), psid, draft.qrPng());
 
             String text = "✅ ការបញ្ជាទិញបានបង្កើតដោយជោគជ័យ!\n\n" +
                           "វិក្កយបត្រ៖ " + draft.invoiceNumber() + "\n" +
                           "ចំនួនទំនិញ៖ " + draft.itemCount() + "\n" +
                           "សរុបទឹកប្រាក់៖ $" + draft.total().setScale(2) + "\n\n" +
-                          "សូមចុចប៊ូតុងខាងក្រោមដើម្បីទូទាត់ប្រាក់ ៖";
+                          "📲 សូមស្កែន QR ខាងលើជាមួយ App ធនាគារ ឬចុច \"Open Bakong App\" ខាងក្រោម៖";
 
-            Map<String, Object> webUrlButton = new java.util.HashMap<>();
-            webUrlButton.put("type", "web_url");
-            webUrlButton.put("url", checkoutWebUrl);
-            webUrlButton.put("title", "💳 គិតលុយ (Pay Now)");
-            webUrlButton.put("webview_height_ratio", "tall");
-            if (isHttpsAndNoPort) {
-                webUrlButton.put("messenger_extensions", true);
+            List<Map<String, Object>> buttons = new java.util.ArrayList<>();
+
+            if (StringUtils.hasText(draft.bakongDeepLink())) {
+                Map<String, Object> deepLinkButton = new java.util.HashMap<>();
+                deepLinkButton.put("type", "web_url");
+                deepLinkButton.put("url", draft.bakongDeepLink());
+                deepLinkButton.put("title", "🏦 Open Bakong App");
+                buttons.add(deepLinkButton);
             }
 
-            List<Map<String, Object>> buttons = List.of(
-                    webUrlButton,
-                    Map.of(
-                            "type", "postback",
-                            "title", "❌ បោះបង់ការបញ្ជាទិញ",
-                            "payload", "ORDER_CANCEL:" + draft.orderId()
-                    )
-            );
+            buttons.add(Map.of(
+                    "type", "postback",
+                    "title", "❌ បោះបង់ការបញ្ជាទិញ",
+                    "payload", "ORDER_CANCEL:" + draft.orderId()
+            ));
 
             graphClient.sendButtonTemplate(page.getPageId(), page.getPageAccessTokenEncrypted(), psid, text, buttons);
-            
+
+        } catch (RuntimeException e) {
+            graphClient.sendTextMessage(page.getPageId(), page.getPageAccessTokenEncrypted(), psid, "⚠️ " + e.getMessage());
+        }
+    }
+
+    /** Asked once at "Checkout", before either payment path runs — mirrors the
+     * choice the web storefront gives (KHQR now vs. Pay Later, approved by
+     * the business afterward), which the Messenger bot never offered before. */
+    public void promptPaymentMethod(kh.edu.istad.ite.features.social.entity.BusinessFacebookPage page, String psid) {
+        List<Map<String, Object>> buttons = List.of(
+                Map.of("type", "postback", "title", "💳 ទូទាត់ឥឡូវ (KHQR)", "payload", "CHECKOUT_KHQR"),
+                Map.of("type", "postback", "title", "🕒 បង់ប្រាក់ពេលក្រោយ (Pay Later)", "payload", "CHECKOUT_PAY_LATER")
+        );
+
+        graphClient.sendButtonTemplate(page.getPageId(), page.getPageAccessTokenEncrypted(), psid,
+                "តើអ្នកចង់ទូទាត់ប្រាក់តាមរបៀបណា?", buttons);
+    }
+
+    public void handlePayLaterCheckout(kh.edu.istad.ite.features.social.entity.BusinessFacebookPage page, kh.edu.istad.ite.features.social.entity.BotSession session, String psid) {
+        try {
+            CheckoutDraft draft = createPayLaterCheckout(page.getBusiness().getId(), session.getCustomer().getId());
+
+            String text = "✅ ការបញ្ជាទិញត្រូវបានកត់ត្រាដោយជោគជ័យ!\n\n" +
+                          "វិក្កយបត្រ៖ " + draft.invoiceNumber() + "\n" +
+                          "ចំនួនទំនិញ៖ " + draft.itemCount() + "\n" +
+                          "សរុបទឹកប្រាក់៖ $" + draft.total().setScale(2) + "\n\n" +
+                          "🕒 ការបញ្ជាទិញនេះកំពុងរង់ចាំការអនុម័តពីហាង។ អ្នកនឹងបង់ប្រាក់នៅពេលទទួលទំនិញ។";
+
+            graphClient.sendTextMessage(page.getPageId(), page.getPageAccessTokenEncrypted(), psid, text);
         } catch (RuntimeException e) {
             graphClient.sendTextMessage(page.getPageId(), page.getPageAccessTokenEncrypted(), psid, "⚠️ " + e.getMessage());
         }

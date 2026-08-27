@@ -158,8 +158,23 @@ public class KeycloakBotAuthService {
     }
 
     public KeycloakUserInfo findOrCreateTelegramKeycloakUser(Long telegramId, String firstName, String lastName, String username, String phoneNumber) {
-        String primaryUsername = (username != null && !username.isBlank()) ? username : "telegram_" + telegramId;
-        String fallbackUsername = "telegram_" + telegramId;
+        return findOrCreateChannelKeycloakUser("telegram", String.valueOf(telegramId), firstName, lastName, username, phoneNumber);
+    }
+
+    /**
+     * Same shape as {@link #findOrCreateTelegramKeycloakUser}, for a
+     * Messenger PSID instead of a Telegram user id — Messenger's webview
+     * (via `signed_request`) never gives us a username or a real email
+     * either, so this needs the identical synthetic-attribute handling.
+     */
+    public KeycloakUserInfo findOrCreateFacebookKeycloakUser(String psid, String firstName, String lastName) {
+        return findOrCreateChannelKeycloakUser("facebook", psid, firstName, lastName, null, null);
+    }
+
+    private KeycloakUserInfo findOrCreateChannelKeycloakUser(
+            String channel, String externalId, String firstName, String lastName, String username, String phoneNumber) {
+        String primaryUsername = (username != null && !username.isBlank()) ? username : channel + "_" + externalId;
+        String fallbackUsername = channel + "_" + externalId;
         try {
             RealmResource realmResource = keycloakAdminClient.realm(realm);
             UsersResource usersResource = realmResource.users();
@@ -178,7 +193,7 @@ public class KeycloakBotAuthService {
                     updated = true;
                 }
                 if (username != null && !username.isBlank()) {
-                    u.singleAttribute("telegramUsername", username);
+                    u.singleAttribute(channel + "Username", username);
                     updated = true;
                 }
                 // Self-heal accounts created before required actions were
@@ -200,7 +215,7 @@ public class KeycloakBotAuthService {
                 // actions. A synthetic address satisfies that validation
                 // without claiming to be a real, reachable inbox.
                 if (u.getEmail() == null || u.getEmail().isBlank()) {
-                    u.setEmail("telegram_" + telegramId + "@telegram.fluxibiz");
+                    u.setEmail(fallbackUsername + "@" + channel + ".fluxibiz");
                     updated = true;
                 }
                 // Same story for last name — Telegram users very often have
@@ -239,14 +254,14 @@ public class KeycloakBotAuthService {
             UserRepresentation user = new UserRepresentation();
             user.setEnabled(true);
             user.setUsername(primaryUsername);
-            user.setFirstName(firstName != null ? firstName : "Telegram");
+            user.setFirstName(firstName != null ? firstName : capitalize(channel));
             user.setLastName(lastName != null ? lastName : "User");
-            // Telegram never gives us a real email — a realm with
+            // This channel never gives us a real email — a realm with
             // declarative User Profile can mark email as required, and a
             // missing one can itself present as "Account is not fully set
             // up" on password-grant. A synthetic address satisfies that
             // validation without claiming to be a real, reachable inbox.
-            user.setEmail("telegram_" + telegramId + "@telegram.fluxibiz");
+            user.setEmail(fallbackUsername + "@" + channel + ".fluxibiz");
             user.setEmailVerified(true);
             // The realm's default required actions (verify email, update
             // password, etc.) get attached to every new user unless cleared
@@ -255,9 +270,9 @@ public class KeycloakBotAuthService {
             // was never meant to need any of them (there's no email to
             // verify and the password is a once-off, backend-generated one).
             user.setRequiredActions(Collections.emptyList());
-            user.singleAttribute("telegramId", String.valueOf(telegramId));
+            user.singleAttribute(channel + "Id", externalId);
             if (username != null && !username.isBlank()) {
-                user.singleAttribute("telegramUsername", username);
+                user.singleAttribute(channel + "Username", username);
             }
             if (phoneNumber != null && !phoneNumber.isBlank()) {
                 user.singleAttribute("phoneNumber", phoneNumber);
@@ -265,7 +280,7 @@ public class KeycloakBotAuthService {
 
             Response response = usersResource.create(user);
             if (response.getStatus() == 201) {
-                log.info("Successfully registered Telegram user {} into Keycloak", primaryUsername);
+                log.info("Successfully registered {} user {} into Keycloak", channel, primaryUsername);
                 List<UserRepresentation> createdList = usersResource.search(primaryUsername, true);
                 if (!createdList.isEmpty()) {
                     UserRepresentation created = createdList.get(0);
@@ -282,8 +297,8 @@ public class KeycloakBotAuthService {
                         try {
                             usersResource.get(created.getId()).update(created);
                         } catch (Exception ex) {
-                            log.warn("Could not clear required actions on newly created Telegram user {}: {}",
-                                    primaryUsername, ex.getMessage());
+                            log.warn("Could not clear required actions on newly created {} user {}: {}",
+                                    channel, primaryUsername, ex.getMessage());
                         }
                     }
                     return new KeycloakUserInfo(
@@ -296,14 +311,17 @@ public class KeycloakBotAuthService {
                     );
                 }
             } else {
-                log.error("Failed to create Telegram user in Keycloak. Status: {}", response.getStatus());
+                log.error("Failed to create {} user in Keycloak. Status: {}", channel, response.getStatus());
             }
         } catch (Exception e) {
-            log.error("Exception in findOrCreateTelegramKeycloakUser for tgId {}: {}", telegramId, e.getMessage(), e);
+            log.error("Exception in findOrCreateChannelKeycloakUser ({}) for id {}: {}", channel, externalId, e.getMessage(), e);
         }
-        return new KeycloakUserInfo("tg_" + telegramId, primaryUsername, null, firstName, lastName, phoneNumber != null ? phoneNumber : "N/A");
+        return new KeycloakUserInfo(channel + "_" + externalId, primaryUsername, null, firstName, lastName, phoneNumber != null ? phoneNumber : "N/A");
     }
 
+    private String capitalize(String value) {
+        return value.isEmpty() ? value : Character.toUpperCase(value.charAt(0)) + value.substring(1);
+    }
 
     public KeycloakUserInfo loginAndFetchUserInfo(String emailOrUsername, String password) {
         try {
