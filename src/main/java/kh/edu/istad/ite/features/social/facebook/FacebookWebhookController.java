@@ -2,6 +2,7 @@ package kh.edu.istad.ite.features.social.facebook;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import kh.edu.istad.ite.config.props.FacebookProps;
+import kh.edu.istad.ite.config.props.StorefrontProps;
 import kh.edu.istad.ite.features.social.entity.BotSession;
 import kh.edu.istad.ite.features.social.entity.BusinessFacebookPage;
 import kh.edu.istad.ite.features.social.service.BusinessFacebookPageService;
@@ -16,6 +17,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -32,6 +35,7 @@ public class FacebookWebhookController {
     private final FacebookCartService cartService;
     private final FacebookCheckoutService checkoutService;
     private final FacebookGraphClient graphClient;
+    private final StorefrontProps storefrontProps;
 
 
     @GetMapping(produces = org.springframework.http.MediaType.TEXT_PLAIN_VALUE)
@@ -129,15 +133,29 @@ public class FacebookWebhookController {
         String text = messageNode.path("text").asText();
         log.info("📩 Message from PSID [{}] to Page [{}]: {}", senderId, pageId, text);
 
-        if (isCatalogCommand(text)) {
-            catalogService.showCatalog(page, senderId);
-        } else if (text != null && (text.contains("ប្រភេទទំនិញ") || text.toLowerCase().contains("category"))) {
-            catalogService.showCategories(page, senderId);
-        } else if (text != null && text.trim().length() >= 2) {
-            catalogService.searchItems(page, senderId, text.trim());
-        } else {
-            catalogService.sendWelcomeMenu(page, senderId);
-        }
+        // Shopping happens entirely inside the Mini App webview now — the
+        // bot's only job in a text conversation is to point back at it,
+        // never to browse/search the catalog through chat itself.
+        sendOpenShopPrompt(page, senderId);
+    }
+
+    /** Messenger's equivalent of Telegram's "Open Shop" prompt — a single
+     * web_url button into the same storefront webview the persistent menu
+     * already offers, so a customer who just types something still lands
+     * back in the Mini App rather than a text-based catalog flow. */
+    private void sendOpenShopPrompt(BusinessFacebookPage page, String psid) {
+        String miniAppUrl = storefrontProps.buildMessengerMiniAppUrl(page.getBusiness().getSlug());
+
+        Map<String, Object> shopButton = new java.util.HashMap<>();
+        shopButton.put("type", "web_url");
+        shopButton.put("url", miniAppUrl);
+        shopButton.put("title", "🛍 បើកហាង");
+        shopButton.put("webview_height_ratio", "tall");
+        shopButton.put("messenger_extensions", true);
+
+        graphClient.sendButtonTemplate(page.getPageId(), page.getPageAccessTokenEncrypted(), psid,
+                "👋 សូមស្វាគមន៍មកកាន់ " + page.getBusiness().getDisplayName() + "! ចុចប៊ូតុងខាងក្រោមដើម្បីទិញទំនិញ៖",
+                List.of(shopButton));
     }
 
     private void handlePostback(BusinessFacebookPage page, String psid, String payload) {
@@ -172,7 +190,17 @@ public class FacebookWebhookController {
         }
 
         if ("CART_CHECKOUT".equals(payload)) {
+            checkoutService.promptPaymentMethod(page, psid);
+            return;
+        }
+
+        if ("CHECKOUT_KHQR".equals(payload)) {
             checkoutService.handleCheckout(page, session, psid);
+            return;
+        }
+
+        if ("CHECKOUT_PAY_LATER".equals(payload)) {
+            checkoutService.handlePayLaterCheckout(page, session, psid);
             return;
         }
 
@@ -238,23 +266,8 @@ public class FacebookWebhookController {
             return;
         }
 
-        if ("CATALOG".equals(payload) || (payload != null && (payload.contains("CATALOG") || payload.contains("មើលផលិតផល")))) {
-            catalogService.showCatalog(page, psid);
-            return;
-        }
-
         if ("GET_STARTED".equals(payload)) {
-            catalogService.sendWelcomeMenu(page, psid);
+            sendOpenShopPrompt(page, psid);
         }
-    }
-
-    private boolean isCatalogCommand(String text) {
-        if (text == null) return false;
-        String normalized = text.trim().toLowerCase();
-        return normalized.contains("catalog") 
-                || normalized.contains("menu")
-                || normalized.contains("ម៉ឺនុយ") 
-                || normalized.contains("ផលិតផល")
-                || normalized.contains("មើលផលិតផល");
     }
 }

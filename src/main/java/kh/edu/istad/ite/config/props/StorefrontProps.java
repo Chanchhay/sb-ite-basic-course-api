@@ -22,9 +22,23 @@ public class StorefrontProps {
 
     private boolean subdomainEnabled = false;
 
+    /**
+     * Bump this (env var, no redeploy needed) after every ipos-frontend
+     * deploy. Telegram's in-app WebView caches a web_app URL aggressively —
+     * without something changing in the URL itself, a shopper can keep
+     * getting served yesterday's JS bundle indefinitely, even though the
+     * button they tap and the domain behind it never changed.
+     */
+    private String miniAppVersion = "1";
+
     /** The Telegram Mini App entry point for one business's own storefront. */
     public String buildMiniAppUrl(String slug) {
-        return protocol + "://" + baseDomain + pathPrefix + "/" + slug + "?tma=true";
+        return protocol + "://" + baseDomain + pathPrefix + "/" + slug + "?tma=true&v=" + miniAppVersion;
+    }
+
+    /** Same storefront page, opened as a Messenger webview instead — the frontend tells the two apart by which flag is present. */
+    public String buildMessengerMiniAppUrl(String slug) {
+        return protocol + "://" + baseDomain + pathPrefix + "/" + slug + "?messenger=true&v=" + miniAppVersion;
     }
 
     private Set<String> reservedSlugs = new LinkedHashSet<>(Set.of(

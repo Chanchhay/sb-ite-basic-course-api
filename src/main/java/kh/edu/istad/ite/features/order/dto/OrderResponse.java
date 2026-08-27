@@ -25,7 +25,7 @@ public class OrderResponse {
     private String invoiceNumber;
     private OrderChannel channel;
     private OrderStatus status;
-    /** How the sale that closed this order was paid. Null while still PENDING. */
+
     private PaymentMethodType paymentMethod;
     private BigDecimal subtotal;
     private BigDecimal discountAmount;
@@ -42,7 +42,7 @@ public class OrderResponse {
     private String displayCurrency;
     private BigDecimal displayExchangeRate;
     private String note;
-    /** True only for a Pay Later web order still waiting on the owner to approve it. */
+
     private boolean awaitingPayLaterApproval;
     private List<OrderItemResponse> items;
     private LocalDateTime createdDate;

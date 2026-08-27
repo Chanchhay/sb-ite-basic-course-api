@@ -21,6 +21,8 @@ public interface ItemRepository extends JpaRepository<Item, UUID>, JpaSpecificat
 
         List<Item> findAllByBusinessIdOrderByNameAsc(UUID businessId);
 
+        Page<Item> findAllByBusinessId(UUID businessId, Pageable pageable);
+
         Optional<Item> findByIdAndBusinessId(UUID id, UUID businessId);
 
         boolean existsByBusinessIdAndNameIgnoreCase(UUID businessId, String name);

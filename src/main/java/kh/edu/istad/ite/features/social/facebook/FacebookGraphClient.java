@@ -230,19 +230,28 @@ public class FacebookGraphClient {
 
 
 
-    public void setupMessengerProfile(String pageAccessToken) {
+    /**
+     * The Messenger equivalent of Telegram's persistent menu button — a
+     * single web_url entry that opens the storefront webview, exactly like
+     * the Mini App button. {@code messenger_extensions: true} is what makes
+     * Facebook append a verifiable {@code signed_request} to the URL, which
+     * {@code FacebookWebAppAuthService} needs to sign the visitor in.
+     */
+    public void setupMessengerProfile(String pageAccessToken, String miniAppUrl) {
         try {
+            Map<String, Object> shopButton = new java.util.HashMap<>();
+            shopButton.put("type", "web_url");
+            shopButton.put("title", "🛍 បើកហាង");
+            shopButton.put("url", miniAppUrl);
+            shopButton.put("webview_height_ratio", "tall");
+            shopButton.put("messenger_extensions", true);
+
             Map<String, Object> body = Map.of(
                     "get_started", Map.of("payload", "GET_STARTED"),
                     "persistent_menu", List.of(Map.of(
                             "locale", "default",
-                            "composer_input_disabled", false,
-                            "call_to_actions", List.of(
-                                    Map.of("type", "postback", "title", "🗂️ មើលផលិតផល", "payload", "CATALOG"),
-                                    Map.of("type", "postback", "title", "🛒 មើលកន្ត្រក", "payload", "CART_VIEW"),
-                                    Map.of("type", "postback", "title", "💳 គិតលុយ", "payload", "CART_CHECKOUT"),
-                                    Map.of("type", "postback", "title", "📝 ប្រវត្តិបញ្ជាទិញ", "payload", "ORDER_HISTORY")
-                            )
+                            "composer_input_disabled", true,
+                            "call_to_actions", List.of(shopButton)
                     ))
             );
 
@@ -256,11 +265,19 @@ public class FacebookGraphClient {
                     .retrieve()
                     .toBodilessEntity();
 
-            log.info("Configured Messenger 'Get Started' button + persistent menu");
+            whitelistDomain(pageAccessToken, List.of(baseDomainOf(miniAppUrl)));
+
+            log.info("Configured Messenger 'Get Started' button + Open Shop persistent menu");
         } catch (Exception e) {
             // Non-fatal: page is still registered/usable, it just won't show the menu button until this succeeds.
             log.error("Failed to configure Messenger profile: {}", e.getMessage());
         }
+    }
+
+    private String baseDomainOf(String url) {
+        int schemeEnd = url.indexOf("://");
+        int pathStart = url.indexOf('/', schemeEnd + 3);
+        return pathStart < 0 ? url : url.substring(0, pathStart);
     }
 
     public void whitelistDomain(String pageAccessToken, List<String> domains) {

@@ -141,10 +141,6 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
         // gets its own order and its own approval.
         Order openOrder = payLater ? null : findOpenOrder(shopper).orElse(null);
 
-        // One open order at a time across all shops: if they navigated away to
-        // another shop, they must deal with the first one before starting a
-        // second. Otherwise two tabs generate two KHQRs for two different
-        // merchants and the wrong one gets credited.
         if (openOrder != null && !openOrder.getBusiness().getId().equals(business.getId())) {
             throw new ResponseStatusException(
                     HttpStatus.CONFLICT,
@@ -215,7 +211,11 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
         order.setCashierId(null);
         order.setNote(StringUtils.hasText(request.note())
                 ? request.note()
-                : (channel == OrderChannel.TELEGRAM ? "Telegram Mini App order" : "Storefront web order"));
+                : switch (channel) {
+                    case TELEGRAM -> "Telegram Mini App order";
+                    case MESSENGER -> "Messenger Mini App order";
+                    default -> "Storefront web order";
+                });
 
         int scale = scaleFor(order.getCurrency());
         BigDecimal rawSubtotal = BigDecimal.ZERO;
@@ -645,7 +645,17 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
             return;
         }
 
-
+        // A retried request (network hiccup, a second tab, a double-tapped
+        // Approve button) can read the order as still PENDING before an
+        // earlier, already-committed call finishes — the PENDING check
+        // above alone doesn't close that window. Without this, the second
+        // caller falls through to insert a second Sale for the same order
+        // and dies on `uk_sales_order`, which the generic constraint
+        // handler then reports as a customer phone/email clash — a
+        // confusing message for something that was never about a customer
+        // at all. Finding an existing Sale first turns that crash into a
+        // no-op: the order was already settled, so there's nothing left
+        // for this call to do.
         if (saleRepository.findByOrderId(order.getId()).isPresent()) {
             log.info("Order {} ({}) already has a sale — treating this settle() call as already done",
                     order.getId(), order.getInvoiceNumber());
@@ -773,7 +783,11 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
                 });
     }
 
- // to this check once orders started actually being tagged TELEGRAM.
+    // Both channels the storefront checkout itself can produce (see
+    // resolveOrderChannel) — a pending Telegram order must block a second
+    // checkout the same way a pending web one always did. Hardcoding WEB
+    // alone here meant a Telegram customer's pending order was invisible
+    // to this check once orders started actually being tagged TELEGRAM.
     private static final List<OrderChannel> STOREFRONT_CHANNELS = List.of(OrderChannel.WEB, OrderChannel.TELEGRAM);
 
     private Optional<Order> findOpenOrder(GlobalCustomer shopper) {
@@ -995,9 +1009,16 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
         boolean isTelegramCustomer = customerChannelIdentityRepository
                 .findByBusiness_IdAndChannelAndCustomer_Id(businessId, ChannelType.TELEGRAM, customerId)
                 .isPresent();
-        log.info("resolveOrderChannel: business={} customer={} telegramLinkFound={}",
-                businessId, customerId, isTelegramCustomer);
-        return isTelegramCustomer ? OrderChannel.TELEGRAM : OrderChannel.WEB;
+        if (isTelegramCustomer) {
+            return OrderChannel.TELEGRAM;
+        }
+
+        boolean isMessengerCustomer = customerChannelIdentityRepository
+                .findByBusiness_IdAndChannelAndCustomer_Id(businessId, ChannelType.MESSENGER, customerId)
+                .isPresent();
+        log.info("resolveOrderChannel: business={} customer={} telegramLinkFound={} messengerLinkFound={}",
+                businessId, customerId, isTelegramCustomer, isMessengerCustomer);
+        return isMessengerCustomer ? OrderChannel.MESSENGER : OrderChannel.WEB;
     }
 
     private String nextInvoiceNumber(UUID businessId) {
