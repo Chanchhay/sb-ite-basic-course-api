@@ -1,10 +1,14 @@
 package kh.edu.istad.ite.features.business.dto;
 
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.DecimalMax;
+import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
+import kh.edu.istad.ite.shared.enums.TaxInclusionType;
 
+import java.math.BigDecimal;
 import java.util.List;
 
 public record UpdateBusinessRequest(
@@ -40,6 +44,23 @@ public record UpdateBusinessRequest(
         @Size(max = 255, message = "cityOrProvince must be at most 255 characters")
         String cityOrProvince,
 
+        @Size(max = 150, message = "provinceName must be at most 150 characters")
+        String provinceName,
+
+        @Size(max = 150, message = "districtName must be at most 150 characters")
+        String districtName,
+
+        @Size(max = 150, message = "communeName must be at most 150 characters")
+        String communeName,
+
+        @DecimalMin(value = "9.0", message = "latitude must be within Cambodia's bounds")
+        @DecimalMax(value = "15.0", message = "latitude must be within Cambodia's bounds")
+        BigDecimal latitude,
+
+        @DecimalMin(value = "102.0", message = "longitude must be within Cambodia's bounds")
+        @DecimalMax(value = "108.0", message = "longitude must be within Cambodia's bounds")
+        BigDecimal longitude,
+
         @Size(max = 255, message = "website must be at most 255 characters")
         String website,
 
@@ -51,6 +72,17 @@ public record UpdateBusinessRequest(
         String openTime,
 
         @Size(max = 30, message = "closeTime must be at most 30 characters")
-        String closeTime
+        String closeTime,
+
+        Boolean taxEnabled,
+
+        @DecimalMin(value = "0.0", message = "taxRate must not be negative")
+        @DecimalMax(value = "100.0", message = "taxRate must be at most 100")
+        BigDecimal taxRate,
+
+        TaxInclusionType taxInclusionType,
+
+        @Size(max = 30, message = "taxLabel must be at most 30 characters")
+        String taxLabel
 ) {
 }

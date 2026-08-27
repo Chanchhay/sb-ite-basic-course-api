@@ -6,6 +6,10 @@ import kh.edu.istad.ite.features.customer.dto.MembershipTypeResponse;
 import kh.edu.istad.ite.features.customer.dto.UpdateMembershipTypeRequest;
 import kh.edu.istad.ite.features.customer.service.MembershipTypeService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -38,8 +42,12 @@ public class MembershipTypeController {
     }
 
     @GetMapping
-    public List<MembershipTypeResponse> findAllMembershipTypes(@PathVariable UUID businessId) {
-        return membershipTypeService.findAllMembershipTypes(businessId);
+    public Page<MembershipTypeResponse> findAllMembershipTypes(
+            @PathVariable UUID businessId,
+            @PageableDefault(sort = "typeName", direction = Sort.Direction.ASC)Pageable pageable
+
+            ) {
+        return membershipTypeService.findAllMembershipTypes(businessId , pageable);
     }
 
     @GetMapping("/{membershipTypeId}")

@@ -1,7 +1,9 @@
 package kh.edu.istad.ite.features.business.dto;
 
 import kh.edu.istad.ite.features.channel.dto.ChannelScheduleDto;
+import kh.edu.istad.ite.shared.enums.TaxInclusionType;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -16,6 +18,12 @@ public record PublicStoreDetailResponse(
         String phoneNumber,
         String address,
         String cityOrProvince,
+        String provinceName,
+        String districtName,
+        Double latitude,
+        Double longitude,
+        /** Straight-line distance from the shopper's position; null unless they shared it. */
+        Double distanceKm,
         String googleMap,
         String website,
         String storefrontUrl,
@@ -36,6 +44,15 @@ public record PublicStoreDetailResponse(
         /** Whether those hours say it is taking orders this minute. */
         Boolean openNow,
         /** What it is open for today, for a line worth reading. */
-        String hoursToday
+        String hoursToday,
+        /**
+         * The store's single tax rule, so the cart and checkout can show the
+         * same tax the order will actually be charged instead of a bare
+         * subtotal. Mirrors {@code TaxCalculator} — see Business Settings.
+         */
+        Boolean taxEnabled,
+        BigDecimal taxRate,
+        TaxInclusionType taxInclusionType,
+        String taxLabel
 ) {
 }

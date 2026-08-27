@@ -2,6 +2,8 @@ package kh.edu.istad.ite.features.discount.repository;
 
 import kh.edu.istad.ite.features.discount.entity.Discount;
 import kh.edu.istad.ite.shared.enums.RecordStatus;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -16,6 +18,8 @@ public interface DiscountRepository extends JpaRepository<Discount, UUID> {
     Optional<Discount> findByIdAndBusinessId(UUID id, UUID businessId);
 
     List<Discount> findAllByBusinessIdOrderByCreatedDateDesc(UUID businessId);
+
+    Page<Discount> findAllByBusinessId(UUID businessId, Pageable pageable);
 
     @Query("""
         SELECT d FROM Discount d

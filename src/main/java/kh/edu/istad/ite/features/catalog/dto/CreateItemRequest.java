@@ -52,12 +52,10 @@ public record CreateItemRequest(
         @Digits(integer = 10, fraction = 2, message = "price must have at most 10 integer digits and 2 decimal places")
         BigDecimal price,
 
-        @DecimalMin(value = "0.0", inclusive = true, message = "compareAtPrice must be at least zero")
-        @Digits(integer = 10, fraction = 2, message = "compareAtPrice must have at most 10 integer digits and 2 decimal places")
-        BigDecimal compareAtPrice,
-
         @NotNull(message = "itemType cannot be null")
         ItemType itemType,
+
+        Boolean trackInventory,
 
         List<@Valid ItemAttributeRequest> attributes,
 

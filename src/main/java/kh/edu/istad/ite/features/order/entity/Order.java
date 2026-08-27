@@ -67,6 +67,12 @@ public class Order extends BasedAuditingEntity {
     @Column(name = "discount_amount", nullable = false, precision = 12, scale = 2)
     private BigDecimal discountAmount = BigDecimal.ZERO;
 
+    @Column(name = "discount_id")
+    private UUID discountId;
+
+    @Column(name = "discount_code", length = 100)
+    private String discountCode;
+
     @Column(name = "tax_rate", precision = 5, scale = 2)
     private BigDecimal taxRate = BigDecimal.ZERO;
 
@@ -98,6 +104,11 @@ public class Order extends BasedAuditingEntity {
 
     @Column(columnDefinition = "text")
     private String note;
+
+
+    @Column(name = "awaiting_pay_later_approval", nullable = false,
+            columnDefinition = "boolean not null default false")
+    private boolean awaitingPayLaterApproval = false;
 
     @OneToMany(mappedBy = "order", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     private List<OrderItem> items = new ArrayList<>();

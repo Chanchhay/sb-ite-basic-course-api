@@ -23,7 +23,9 @@ import kh.edu.istad.ite.features.minio.MinioService;
 import kh.edu.istad.ite.features.channel.repository.ItemChannelRepository;
 import kh.edu.istad.ite.features.channel.entity.ItemChannel;
 import org.springframework.web.multipart.MultipartFile;
+import kh.edu.istad.ite.shared.dto.PageResponse;
 import kh.edu.istad.ite.shared.enums.ItemStatus;
+import kh.edu.istad.ite.shared.enums.ItemType;
 import kh.edu.istad.ite.shared.helper.BusinessHelper;
 import kh.edu.istad.ite.shared.helper.SlugHelper;
 import kh.edu.istad.ite.shared.helper.TextHelper;
@@ -111,6 +113,11 @@ public class ItemServiceImpl implements ItemService {
         item.setBarcode(TextHelper.trimToNull(request.barcode()));
         item.setPrice(normalizePrice(request.price()));
         item.setItemType(request.itemType());
+        if (request.trackInventory() != null) {
+            item.setTrackInventory(request.trackInventory());
+        } else {
+            item.setTrackInventory(request.itemType() == ItemType.PHYSICAL);
+        }
         if (files != null && !files.isEmpty()) {
             for (MultipartFile file : files) {
                 String imageKey = minioService.uploadAsset(file);
@@ -122,7 +129,6 @@ public class ItemServiceImpl implements ItemService {
             }
         }
         item.setBadge(TextHelper.trimToNull(request.badge()));
-        item.setCompareAtPrice(normalizePrice(request.compareAtPrice()));
         item.setDescriptionBlocks(mapDescriptionBlocks(request.descriptionBlocks()));
         item.setAttributes(mapAttributes(request.attributes()));
         item.setColors(mapColors(request.colors()));
@@ -142,12 +148,10 @@ public class ItemServiceImpl implements ItemService {
 
     @Override
     @Transactional(readOnly = true)
-    public List<ItemResponse> findAllItems(UUID businessId) {
+    public PageResponse<ItemResponse> findAllItems(UUID businessId, Pageable pageable) {
         businessHelper.findOwnedBusiness(businessId);
-        return itemRepository.findAllByBusinessIdOrderByNameAsc(businessId)
-                .stream()
-                .map(itemMapper::toResponse)
-                .toList();
+        Page<Item> items = itemRepository.findAllByBusinessId(businessId, pageable);
+        return PageResponse.from(items.map(itemMapper::toResponse));
     }
 
     @Override
@@ -205,6 +209,9 @@ public class ItemServiceImpl implements ItemService {
         if (request.itemType() != null) {
             item.setItemType(request.itemType());
         }
+        if (request.trackInventory() != null) {
+            item.setTrackInventory(request.trackInventory());
+        }
         if (files != null && !files.isEmpty()) {
             for (MultipartFile file : files) {
                 String imageKey = minioService.uploadAsset(file);
@@ -218,18 +225,28 @@ public class ItemServiceImpl implements ItemService {
         if (request.badge() != null) {
             item.setBadge(TextHelper.trimToNull(request.badge()));
         }
-        if (request.compareAtPrice() != null) {
-            item.setCompareAtPrice(normalizePrice(request.compareAtPrice()));
-        }
         if (request.descriptionBlocks() != null) {
             item.setDescriptionBlocks(mapDescriptionBlocks(request.descriptionBlocks()));
         }
         if (request.attributes() != null) {
             item.setAttributes(mapAttributes(request.attributes()));
+        }
+        /*
+         * Colours used to be applied inside the attributes check, so a save
+         * that changed the colours without also sending attributes was
+         * silently ignored. The item form always sends both and never noticed;
+         * anything that does not — a data migration, for one — had its colours
+         * dropped on the floor.
+         */
+        if (request.colors() != null) {
             item.setColors(mapColors(request.colors()));
         }
         if (request.variants() != null) {
             replaceVariants(item, item.getBusiness(), request.variants());
+        }
+        // Either half of the pair changing can leave an option naming a colour
+        // the item no longer comes in.
+        if (request.colors() != null || request.variants() != null) {
             requireDeclaredColors(item);
         }
         if (request.addOnIds() != null) {
@@ -348,7 +365,7 @@ public class ItemServiceImpl implements ItemService {
     }
 
     @Override
-    public Page<ItemResponse> filterItems(UUID businessId, RequestDto requestDto, Pageable pageable) {
+    public PageResponse<ItemResponse> filterItems(UUID businessId, RequestDto requestDto, Pageable pageable) {
         businessHelper.findAccessibleBusiness(businessId);
 
         org.springframework.data.jpa.domain.Specification<Item> spec = filterSpecification.getSearchSpecificationDynamic(
@@ -358,7 +375,8 @@ public class ItemServiceImpl implements ItemService {
         org.springframework.data.jpa.domain.Specification<Item> businessSpec = (root, query, cb) ->
                 cb.equal(root.get("business").get("id"), businessId);
 
-        return itemRepository.findAll(businessSpec.and(spec), pageable).map(itemMapper::toResponse);
+        Page<Item> items = itemRepository.findAll(businessSpec.and(spec), pageable);
+        return PageResponse.from(items.map(itemMapper::toResponse));
     }
 
     @Override
@@ -383,14 +401,14 @@ public class ItemServiceImpl implements ItemService {
         ItemGroup itemGroup = itemGroupRepository.findByIdAndBusinessId(itemGroupId, businessId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Item group has not been found"));
 
-        // An item is filed on a sub group, never on a top-level one. A parent
-        // is a heading: what it holds is the sum of its children, so an item
-        // sitting directly on it would be counted outside every child and
-        // again in the parent's own total.
-        if (itemGroup.getParent() == null) {
+        //An item may now be filed directly on a main (parent) item group or
+        // on one of its sub groups.Both are valid picks in the "Category"
+        // field on item creation/update.
+        if (itemGroup.getParent() == null
+                && itemGroupRepository.existsByBusinessIdAndParentId(businessId, itemGroup.getId())) {
             throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST,
-                    "Items must be filed under a sub group, not a main item group"
+                    "This category has sub-categories; choose one of its sub-categories instead"
             );
         }
 

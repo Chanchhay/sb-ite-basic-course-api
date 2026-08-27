@@ -96,12 +96,17 @@ public class Item extends BasedAuditingEntity {
     @Column(precision = 12, scale = 2)
     private BigDecimal price;
 
-    @Column(name = "compare_at_price", precision = 12, scale = 2)
-    private BigDecimal compareAtPrice;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "item_type", nullable = false, length = 20)
     private ItemType itemType = ItemType.PHYSICAL;
+
+    @Column(name = "track_inventory", nullable = false, columnDefinition = "boolean default true")
+    private Boolean trackInventory = true;
+
+    public boolean isStockTracked() {
+        return Boolean.TRUE.equals(trackInventory);
+    }
 
     @OneToMany(mappedBy = "item", cascade = CascadeType.ALL, orphanRemoval = true)
     @OrderBy("position ASC")

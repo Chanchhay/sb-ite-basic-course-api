@@ -21,9 +21,18 @@ public class SaleResponse {
     private UUID orderId;
     private String invoiceNumber;
     private UUID cashierId;
+    /** Null for a walk-in sale never linked to a customer record. */
+    private UUID customerId;
+    private String customerName;
+    private String customerPhone;
+    private String customerEmail;
     private OrderChannel channel;
     private BigDecimal subtotal;
     private BigDecimal discountAmount;
+    /** What to call the discount on a receipt — the coupon code, the discount's
+     *  own name, or a plain "X% OFF" when neither is available. Null when there
+     *  is no discount at all. */
+    private String discountLabel;
     private BigDecimal taxRate;
     private BigDecimal taxAmount;
     private TaxInclusionType taxInclusionType;

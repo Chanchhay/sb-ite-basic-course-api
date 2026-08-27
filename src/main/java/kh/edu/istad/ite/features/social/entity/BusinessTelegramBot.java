@@ -56,4 +56,8 @@ public class BusinessTelegramBot extends BasedAuditingEntity {
 
     @Column(name = "notification_chat_id", length = 100)
     private String notificationChatId;
+
+    /** Whether the bot's menu button opens the Mini App (a real web UI) instead of Telegram's default commands list. */
+    @Column(name = "is_mini_app_enabled", nullable = false)
+    private Boolean isMiniAppEnabled = false;
 }

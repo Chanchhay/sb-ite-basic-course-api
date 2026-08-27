@@ -6,6 +6,10 @@ import kh.edu.istad.ite.features.catalog.dto.CreateAddOnRequest;
 import kh.edu.istad.ite.features.catalog.dto.UpdateAddOnRequest;
 import kh.edu.istad.ite.features.catalog.service.AddOnService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -37,8 +41,11 @@ public class AddOnController {
     }
 
     @GetMapping
-    public List<AddOnResponse> findAllAddOns(@PathVariable UUID businessId) {
-        return addOnService.findAllAddOns(businessId);
+    public Page<AddOnResponse> findAllAddOns(
+            @PathVariable UUID businessId,
+            @PageableDefault(sort = "name", direction = Sort.Direction.ASC)Pageable pageable
+            ) {
+        return addOnService.findAllAddOns(businessId, pageable);
     }
 
     @PutMapping("/{addOnId}")

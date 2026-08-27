@@ -7,6 +7,9 @@ import kh.edu.istad.ite.features.business.dto.BusinessRoleRequest;
 import kh.edu.istad.ite.features.business.dto.BusinessRoleResponse;
 import kh.edu.istad.ite.features.business.service.KeycloakRoleAdapter;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 
@@ -22,9 +25,12 @@ public class BusinessRoleController {
     private final KeycloakRoleAdapter roleAdapter;
 
     @GetMapping
-    public List<BusinessRoleResponse> getRoles(@PathVariable UUID businessId) {
+    public Page<BusinessRoleResponse> getRoles(
+            @PathVariable UUID businessId,
+            @PageableDefault Pageable pageable
+            ) {
         securityValidator.validateBusinessOwner(businessId);
-        return roleAdapter.getBusinessRoles(businessId);
+        return roleAdapter.getBusinessRoles(businessId, pageable);
     }
 
     @PostMapping

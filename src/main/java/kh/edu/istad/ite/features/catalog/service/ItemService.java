@@ -5,6 +5,8 @@ import kh.edu.istad.ite.features.catalog.dto.ItemResponse;
 import kh.edu.istad.ite.features.catalog.dto.ReorderItemImagesRequest;
 import kh.edu.istad.ite.features.catalog.dto.UpdateItemRequest;
 import kh.edu.istad.ite.features.catalog.dto.UploadItemImagesRequest;
+import kh.edu.istad.ite.shared.dto.PageResponse;
+import org.springframework.data.domain.Pageable;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
@@ -20,7 +22,7 @@ public interface ItemService {
 
     ItemResponse deleteItemImage(UUID businessId, UUID itemId, UUID imageId);
 
-    List<ItemResponse> findAllItems(UUID businessId);
+    PageResponse<ItemResponse> findAllItems(UUID businessId, Pageable pageable);
 
     ItemResponse findItemById(UUID businessId, UUID itemId);
 
@@ -41,5 +43,5 @@ public interface ItemService {
 
     ItemResponse findItemByBarcode(UUID businessId, String barcode);
     
-    org.springframework.data.domain.Page<ItemResponse> filterItems(UUID businessId, kh.edu.istad.ite.config.filter.RequestDto requestDto, org.springframework.data.domain.Pageable pageable);
+    PageResponse<ItemResponse> filterItems(UUID businessId, kh.edu.istad.ite.config.filter.RequestDto requestDto, org.springframework.data.domain.Pageable pageable);
 }

@@ -21,7 +21,7 @@ spring:
     oauth2:
       resourceserver:
         jwt:
-          issuer-uri: ${ISSUER_URI}
+          issuer-uri: ${ISSUER_URI:https://auth.chanchhay.site/realms/istad-fluxipos-auth}
 
   jpa:
     hibernate:
@@ -33,7 +33,7 @@ spring:
 
   datasource:
     driver-class-name: org.postgresql.Driver
-    url: jdbc:postgresql://${PGHOST:localhost}:${PGPORT:1681}/${PGDATABASE:fluxibix}
+    url: jdbc:postgresql://${PGHOST:localhost}:${PGPORT:5432}/${PGDATABASE:fluxibix}
     username: ${DB_USER}
     password: ${DB_PASS}
 
@@ -55,18 +55,20 @@ app:
       - "https://*.fluxibiz.store"
       - "https://fluxibiz.store"
       - "https://administrator.fluxibiz.store"
+      - "https://*.ngrok-free.dev"
+      - "https://*.ngrok-free.app"
   storefront:
     base-domain: ${BASE_STOREFRONT_DOMAIN:fluxibiz.store}
     protocol: ${STOREFRONT_PROTOCOL:https}
     path-prefix: /store
-    subdomain-enabled: true
+    subdomain-enabled: ${STOREFRONT_SUBDOMAIN_ENABLED:true}
   security:
     credential-encryption-key: ${CREDENTIAL_ENCRYPTION_KEY:}
 
   telegram:
     api-base-url: https://api.telegram.org
     webhook-base-url: ${TELEGRAM_WEBHOOK_BASE_URL:}
-    payment-poll-interval-ms: 5000
+    payment-poll-interval-ms: 10000
     payment-poll-initial-delay-ms: 10000
 
   facebook:
@@ -80,8 +82,11 @@ app:
     base-url: https://api-bakong.nbc.gov.kh
     timeout: 8s
 
+  public-api:
+    base-url: ${SERVER_URL:http://localhost:8080}
+
   aba-payway:
-    enabled: ${ABA_PAYWAY_ENABLED:false}
+    enabled: false
     base-url: https://checkout-sandbox.payway.com.kh
     merchant-id: ${ABA_MERCHANT_ID:}
     api-key: ${ABA_API_KEY:}
@@ -92,3 +97,7 @@ minio:
   secret-key: ${MINIO_SECRET_KEY}
   bucket:
     assets: fluxibix
+    # Migration uploads are a shop's whole price list. They are read back only
+    # by the import that owns them, never linked to, so they are kept out of
+    # the asset bucket whose objects are served straight to browsers.
+    imports: fluxibiz-imports

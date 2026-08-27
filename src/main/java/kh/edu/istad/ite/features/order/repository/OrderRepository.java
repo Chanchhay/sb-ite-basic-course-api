@@ -19,6 +19,8 @@ import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 public interface OrderRepository extends JpaRepository<Order, UUID>, JpaSpecificationExecutor<Order> {
 
     Optional<Order> findByIdAndBusinessId(UUID id, UUID businessId);
+    Optional<Order> findByBusinessIdAndInvoiceNumber(UUID businessId, String invoiceNumber);
+    boolean existsByInvoiceNumber(String invoiceNumber);
     long countByBusinessId(UUID businessId);
 
     long countByCashierIdAndCreatedDateBetween(UUID cashierId, java.time.LocalDateTime start, java.time.LocalDateTime end);
@@ -50,18 +52,25 @@ public interface OrderRepository extends JpaRepository<Order, UUID>, JpaSpecific
 
     long countByBusinessIdAndCustomerIdAndStatus(UUID businessId, UUID customerId, OrderStatus status);
 
+    long countByBusinessIdAndCustomerIdAndDiscountCodeIgnoreCaseAndStatusNot(
+            UUID businessId,
+            UUID customerId,
+            String discountCode,
+            OrderStatus status
+    );
+
 
     @Query("""
             SELECT DISTINCT o FROM Order o
             JOIN FETCH o.business
             WHERE o.customer.id IN :customerIds
-              AND o.channel = :channel
+              AND o.channel IN :channels
               AND o.status = :status
             ORDER BY o.createdDate DESC
             """)
     List<Order> findOpenOrdersForShopper(
             @Param("customerIds") Collection<UUID> customerIds,
-            @Param("channel") OrderChannel channel,
+            @Param("channels") Collection<OrderChannel> channels,
             @Param("status") OrderStatus status);
 
     @Query("""

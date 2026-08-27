@@ -1,7 +1,9 @@
 package kh.edu.istad.ite.features.business.dto;
 
 import kh.edu.istad.ite.shared.enums.BusinessOwnerStatus;
+import kh.edu.istad.ite.shared.enums.TaxInclusionType;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
@@ -21,6 +23,11 @@ public record BusinessResponse(
         String googleMap,
         String address,
         String cityOrProvince,
+        String provinceName,
+        String districtName,
+        String communeName,
+        BigDecimal latitude,
+        BigDecimal longitude,
         String website,
         String email,
         Boolean isEnabled,
@@ -31,6 +38,10 @@ public record BusinessResponse(
         String displayCurrency,
         List<Map<String, String>> socialLinks,
         String openTime,
-        String closeTime
+        String closeTime,
+        Boolean taxEnabled,
+        BigDecimal taxRate,
+        TaxInclusionType taxInclusionType,
+        String taxLabel
 ) {
 }

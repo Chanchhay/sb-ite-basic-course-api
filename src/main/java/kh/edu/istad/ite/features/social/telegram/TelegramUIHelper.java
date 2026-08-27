@@ -251,6 +251,11 @@ public class TelegramUIHelper {
         if (order.getDiscountAmount() != null && order.getDiscountAmount().signum() > 0) {
             sb.append("🏷️ បញ្ចុះតម្លៃ ៖ ").append(formatPrice(order.getDiscountAmount(), business)).append("\n");
         }
+        if (order.getTaxAmount() != null && order.getTaxAmount().signum() > 0) {
+            String taxLabel = business.getTaxLabel() != null && !business.getTaxLabel().isBlank()
+                    ? business.getTaxLabel() : "ពន្ធ (Tax)";
+            sb.append("🧮 ").append(taxLabel).append(" ៖ ").append(formatPrice(order.getTaxAmount(), business)).append("\n");
+        }
         sb.append("💳 *សរុបទាំងអស់ ៖* ").append(formatPrice(order.getTotal(), business)).append("\n");
         sb.append(DIVIDER).append("\n");
         sb.append("✅ _អរគុណសម្រាប់ការទិញទំនិញ!_");

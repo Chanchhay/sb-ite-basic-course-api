@@ -2,6 +2,7 @@ package kh.edu.istad.ite.features.order.dto;
 
 import kh.edu.istad.ite.shared.enums.OrderChannel;
 import kh.edu.istad.ite.shared.enums.OrderStatus;
+import kh.edu.istad.ite.shared.enums.PaymentMethodType;
 import kh.edu.istad.ite.shared.enums.TaxInclusionType;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
@@ -24,8 +25,14 @@ public class OrderResponse {
     private String invoiceNumber;
     private OrderChannel channel;
     private OrderStatus status;
+
+    private PaymentMethodType paymentMethod;
     private BigDecimal subtotal;
     private BigDecimal discountAmount;
+    /** What to call the discount on a receipt — the coupon code, the discount's
+     *  own name, or a plain "X% OFF" when neither is available. Null when there
+     *  is no discount at all. */
+    private String discountLabel;
     private BigDecimal taxRate;
     private BigDecimal taxAmount;
     private TaxInclusionType taxInclusionType;
@@ -35,6 +42,8 @@ public class OrderResponse {
     private String displayCurrency;
     private BigDecimal displayExchangeRate;
     private String note;
+
+    private boolean awaitingPayLaterApproval;
     private List<OrderItemResponse> items;
     private LocalDateTime createdDate;
 }

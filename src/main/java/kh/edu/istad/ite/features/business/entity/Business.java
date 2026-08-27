@@ -3,12 +3,14 @@ package kh.edu.istad.ite.features.business.entity;
 import jakarta.persistence.*;
 import kh.edu.istad.ite.config.audit.BasedAuditingEntity;
 import kh.edu.istad.ite.shared.enums.BusinessOwnerStatus;
+import kh.edu.istad.ite.shared.enums.TaxInclusionType;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -67,8 +69,33 @@ public class Business extends BasedAuditingEntity {
     @Column(nullable = false, length = 255)
     private String address;
 
+    /** @deprecated superseded by {@link #provinceName}; kept until every active business has one set. */
+    @Deprecated
     @Column(name = "city_or_province", length = 255)
     private String cityOrProvince;
+
+    /**
+     * Province/city, district/khan, commune/sangkat — read from a geocoder's
+     * address components when the owner drops the map pin, not typed by hand.
+     * Plain text rather than a foreign key into a hand-seeded division table:
+     * nobody here maintains Cambodia's ~1,600 communes, and a geocoder already
+     * normalizes spelling/casing far better than free entry ever did.
+     */
+    @Column(name = "province_name", length = 150)
+    private String provinceName;
+
+    @Column(name = "district_name", length = 150)
+    private String districtName;
+
+    @Column(name = "commune_name", length = 150)
+    private String communeName;
+
+    /** The shopfront's exact map pin, same source as the names above. */
+    @Column(precision = 9, scale = 6)
+    private BigDecimal latitude;
+
+    @Column(precision = 9, scale = 6)
+    private BigDecimal longitude;
 
     @Column(length = 255)
     private String website;
@@ -123,4 +150,30 @@ public class Business extends BasedAuditingEntity {
             columnDefinition = "varchar(10) default 'USD'"
     )
     private String displayCurrency = "USD";
+
+    /**
+     * The one tax rate this business charges, applied the same way on every
+     * channel — POS, web storefront, Telegram, Messenger — rather than each
+     * one carrying its own copy.
+     */
+    // Not NOT NULL: ddl-auto: update cannot add a NOT NULL column to a table
+    // that already has rows (see SchemaScriptRunner's note on orders.tax_amount).
+    // Every read already treats null the same as false.
+    @Column(name = "tax_enabled")
+    private Boolean taxEnabled = false;
+
+    @Column(name = "tax_rate", precision = 5, scale = 2)
+    private BigDecimal taxRate = BigDecimal.ZERO;
+
+    @Enumerated(EnumType.STRING)
+    @Column(
+            name = "tax_inclusion_type",
+            length = 20,
+            columnDefinition = "varchar(20) default 'EXCLUSIVE'"
+    )
+    private TaxInclusionType taxInclusionType = TaxInclusionType.EXCLUSIVE;
+
+    /** What to call it on a receipt — "VAT", "GST", "Sales Tax". */
+    @Column(name = "tax_label", length = 30)
+    private String taxLabel;
 }

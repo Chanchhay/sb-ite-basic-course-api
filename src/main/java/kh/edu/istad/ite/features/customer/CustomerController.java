@@ -6,6 +6,10 @@ import kh.edu.istad.ite.features.customer.dto.CustomerResponse;
 import kh.edu.istad.ite.features.customer.dto.UpdateCustomerRequest;
 import kh.edu.istad.ite.features.customer.service.CustomerService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -38,8 +42,11 @@ public class CustomerController {
     }
 
     @GetMapping
-    public List<CustomerResponse> findAllCustomers(@PathVariable UUID businessId) {
-        return customerService.findAllCustomers(businessId);
+    public Page<CustomerResponse> findAllCustomers(
+            @PathVariable UUID businessId,
+            @PageableDefault(sort = "createdDate", direction= Sort.Direction.DESC)Pageable pageable
+            ) {
+        return customerService.findAllCustomers(businessId, pageable);
     }
 
     @GetMapping("/{customerId}")

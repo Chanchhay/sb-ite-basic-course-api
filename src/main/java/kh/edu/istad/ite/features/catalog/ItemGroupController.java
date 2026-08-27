@@ -7,6 +7,10 @@ import kh.edu.istad.ite.features.catalog.dto.ItemSubGroupResponse;
 import kh.edu.istad.ite.features.catalog.dto.UpdateItemGroupRequest;
 import kh.edu.istad.ite.features.catalog.service.ItemGroupService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -38,8 +42,11 @@ public class ItemGroupController {
     }
 
     @GetMapping
-    public List<ItemGroupResponse> findAllItemGroups(@PathVariable UUID businessId) {
-        return itemGroupService.findAllItemGroups(businessId);
+    public Page<ItemGroupResponse> findAllItemGroups(
+            @PathVariable UUID businessId,
+            @PageableDefault(sort = "name", direction = Sort.Direction.ASC)Pageable pageable
+            ) {
+        return itemGroupService.findAllItemGroups(businessId, pageable);
     }
 
     @PutMapping("/{itemGroupId}")

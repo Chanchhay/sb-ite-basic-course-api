@@ -12,11 +12,13 @@ import kh.edu.istad.ite.features.minio.MinioService;
 import kh.edu.istad.ite.shared.enums.DiscountRuleType;
 import kh.edu.istad.ite.shared.enums.DiscountScope;
 import kh.edu.istad.ite.shared.enums.DiscountType;
+import kh.edu.istad.ite.shared.enums.OrderChannel;
 import kh.edu.istad.ite.shared.enums.RecordStatus;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
+import java.time.DayOfWeek;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -56,38 +58,62 @@ public class StorefrontMapper {
         return minioService.getPublicUrl(key);
     }
 
+    /** provinceName once a business has been through the location rework, its old cityOrProvince text otherwise — same fallback the filter itself matches on. */
+    private String effectiveProvinceName(Business business) {
+        return business.getProvinceName() != null ? business.getProvinceName() : business.getCityOrProvince();
+    }
+
     public String resolveDiscountLabel(Business business) {
         if (business == null || business.getId() == null) {
             return null;
         }
+        LocalDateTime now = LocalDateTime.now();
+        DayOfWeek today = now.getDayOfWeek();
+
         List<Discount> activeDiscounts = discountRepository.findActiveDiscountsByBusinessId(
                 business.getId(),
                 RecordStatus.ACTIVE,
-                LocalDateTime.now()
+                now
         ).stream()
-         .filter(d -> d.getScope() == DiscountScope.ORDER || d.getScope() == DiscountScope.ALL_ITEMS)
+         .filter(d -> !Boolean.TRUE.equals(d.getRequiresCoupon()))
+         .filter(d -> d.getApplicableChannels() == null
+                 || d.getApplicableChannels().isEmpty()
+                 || d.getApplicableChannels().contains(OrderChannel.WEB))
+         .filter(d -> d.getSelectedDays() == null
+                 || d.getSelectedDays().isEmpty()
+                 || d.getSelectedDays().contains(today))
          .toList();
+
         if (activeDiscounts == null || activeDiscounts.isEmpty()) {
             return null;
         }
 
-        Discount primary = activeDiscounts.stream()
+        List<Discount> generalDiscounts = activeDiscounts.stream()
+                .filter(d -> d.getScope() == DiscountScope.ORDER || d.getScope() == DiscountScope.ALL_ITEMS)
+                .toList();
+
+        List<Discount> candidates = generalDiscounts.isEmpty() ? activeDiscounts : generalDiscounts;
+
+        Discount primary = candidates.stream()
                 .filter(d -> d.getType() == DiscountType.PERCENTAGE)
-                .max((d1, d2) -> d1.getValue().compareTo(d2.getValue()))
-                .orElse(activeDiscounts.get(0));
+                .max((d1, d2) -> (d1.getValue() != null ? d1.getValue() : BigDecimal.ZERO)
+                        .compareTo(d2.getValue() != null ? d2.getValue() : BigDecimal.ZERO))
+                .orElse(candidates.get(0));
+
+        if (primary.getName() != null && !primary.getName().isBlank()) {
+            return primary.getName();
+        }
 
         if (primary.getRuleType() == DiscountRuleType.BUY_X_GET_Y) {
             int buy = primary.getBuyQuantity() != null ? primary.getBuyQuantity() : 1;
             int get = primary.getGetQuantity() != null ? primary.getGetQuantity() : 1;
             return "Buy " + buy + " Get " + get;
-        }
-        if (primary.getType() == DiscountType.PERCENTAGE && primary.getValue() != null) {
+        } else if (primary.getType() == DiscountType.PERCENTAGE && primary.getValue() != null) {
             String pct = primary.getValue().stripTrailingZeros().toPlainString();
-            return pct + "% OFF";
-        }
-        if (primary.getType() == DiscountType.FIXED_AMOUNT && primary.getValue() != null) {
+            return (generalDiscounts.isEmpty() ? "Up to " : "") + pct + "% OFF";
+        } else if (primary.getType() == DiscountType.FIXED_AMOUNT && primary.getValue() != null) {
             String amt = primary.getValue().stripTrailingZeros().toPlainString();
-            return "$" + amt + " OFF";
+            return (generalDiscounts.isEmpty() ? "Up to $" : "$") + amt + " OFF";
         }
         return primary.getName();
     }
@@ -117,6 +143,11 @@ public class StorefrontMapper {
     }
 
     public PublicStoreResponse toPublicResponse(Business business) {
+        return toPublicResponse(business, null);
+    }
+
+    /** {@code distanceKm} is null unless the caller supplied their own position. */
+    public PublicStoreResponse toPublicResponse(Business business, Double distanceKm) {
         boolean isClosed = Boolean.TRUE.equals(business.getIsClosed());
         return new PublicStoreResponse(
                 business.getId(),
@@ -125,7 +156,12 @@ public class StorefrontMapper {
                 toPublicUrl(business.getLogo()),
                 toPublicUrl(business.getThumbnail()),
                 business.getAbout(),
+                business.getAddress(),
                 business.getCityOrProvince(),
+                effectiveProvinceName(business),
+                business.getLatitude() == null ? null : business.getLatitude().doubleValue(),
+                business.getLongitude() == null ? null : business.getLongitude().doubleValue(),
+                distanceKm,
                 buildStorefrontUrl(business.getSlug()),
                 businessMapper.toSubCategoryResponse(business.getBusinessCategory()),
                 isClosed,
@@ -137,6 +173,11 @@ public class StorefrontMapper {
     }
 
     public PublicStoreDetailResponse toPublicDetailResponse(Business business) {
+        return toPublicDetailResponse(business, null);
+    }
+
+    /** {@code distanceKm} is null unless the caller supplied their own position. */
+    public PublicStoreDetailResponse toPublicDetailResponse(Business business, Double distanceKm) {
         boolean isClosed = Boolean.TRUE.equals(business.getIsClosed());
         ChannelScheduleDto onlineHours = onlineHoursOf(business);
         boolean openNow = isTakingWebOrders(business);
@@ -150,6 +191,11 @@ public class StorefrontMapper {
                 business.getPhoneNumber(),
                 business.getAddress(),
                 business.getCityOrProvince(),
+                effectiveProvinceName(business),
+                business.getDistrictName(),
+                business.getLatitude() == null ? null : business.getLatitude().doubleValue(),
+                business.getLongitude() == null ? null : business.getLongitude().doubleValue(),
+                distanceKm,
                 business.getGoogleMap(),
                 business.getWebsite(),
                 buildStorefrontUrl(business.getSlug()),
@@ -166,7 +212,11 @@ public class StorefrontMapper {
                 openNow,
                 onlineHours == null
                         ? null
-                        : onlineHours.describeDay(LocalDateTime.now().getDayOfWeek())
+                        : onlineHours.describeDay(LocalDateTime.now().getDayOfWeek()),
+                business.getTaxEnabled(),
+                business.getTaxRate(),
+                business.getTaxInclusionType(),
+                business.getTaxLabel()
         );
     }
 }

@@ -37,6 +37,11 @@ public class BusinessMapper {
                 business.getGoogleMap(),
                 business.getAddress(),
                 business.getCityOrProvince(),
+                business.getProvinceName(),
+                business.getDistrictName(),
+                business.getCommuneName(),
+                business.getLatitude(),
+                business.getLongitude(),
                 business.getWebsite(),
                 business.getBusinessEmail(),
                 business.getIsEnabled(),
@@ -47,7 +52,11 @@ public class BusinessMapper {
                 business.getDisplayCurrency(),
                 business.getSocialLinks(),
                 business.getOpenTime(),
-                business.getCloseTime()
+                business.getCloseTime(),
+                business.getTaxEnabled(),
+                business.getTaxRate(),
+                business.getTaxInclusionType(),
+                business.getTaxLabel()
         );
     }
 

@@ -40,6 +40,8 @@ public final class PublicStoreSpecifications {
 
     public static Specification<Business> withFilters(
             UUID categoryId,
+            String province,
+            String district,
             String cityOrProvince,
             String keyword
     ) {
@@ -49,9 +51,30 @@ public final class PublicStoreSpecifications {
             spec = spec.and((root, query, cb) -> cb.equal(root.get("businessCategory").get("id"), categoryId));
         }
 
-        if (StringUtils.hasText(cityOrProvince)) {
+        // Matches whichever field is a business's *effective* province —
+        // provinceName when the location rework has reached it, its old
+        // cityOrProvince text otherwise. The filter dropdown offers exactly
+        // this same COALESCE'd value (see findDistinctProvinceNames), so a
+        // business never becomes unreachable just for not having been
+        // migrated yet, and a plain equality is enough either way: neither
+        // side is free-typed once it's the value driving this filter — one
+        // comes from a geocoder, the other from the picklist itself.
+        if (StringUtils.hasText(province)) {
+            spec = spec.and((root, query, cb) -> cb.equal(
+                    cb.lower(cb.coalesce(root.get("provinceName"), root.get("cityOrProvince"))),
+                    province.trim().toLowerCase()
+            ));
+        } else if (StringUtils.hasText(cityOrProvince)) {
+            // Only reached by a caller that still sends the old standalone
+            // param name without `province` — kept for callers mid-rollout.
             spec = spec.and((root, query, cb) -> cb.equal(
                     cb.lower(root.get("cityOrProvince")), cityOrProvince.trim().toLowerCase()
+            ));
+        }
+
+        if (StringUtils.hasText(district)) {
+            spec = spec.and((root, query, cb) -> cb.equal(
+                    cb.lower(root.get("districtName")), district.trim().toLowerCase()
             ));
         }
 
@@ -60,7 +83,8 @@ public final class PublicStoreSpecifications {
             spec = spec.and((root, query, cb) -> cb.or(
                     cb.like(cb.lower(root.get("displayName")), pattern),
                     cb.like(cb.lower(root.get("about")), pattern),
-                    cb.like(cb.lower(root.get("cityOrProvince")), pattern)
+                    cb.like(cb.lower(root.get("cityOrProvince")), pattern),
+                    cb.like(cb.lower(root.get("provinceName")), pattern)
             ));
         }
 

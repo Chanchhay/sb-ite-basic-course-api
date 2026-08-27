@@ -24,6 +24,11 @@ public record StorefrontOrderResponse(
         String paymentMethod,
         BigDecimal subtotal,
         BigDecimal discountAmount,
+        String discountLabel,
+        BigDecimal taxRate,
+        BigDecimal taxAmount,
+        String taxInclusionType,
+        String taxLabel,
         BigDecimal total,
         String currency,
         /** The second currency this order was shown in, frozen at checkout. */
@@ -39,6 +44,7 @@ public record StorefrontOrderResponse(
             String itemName,
             int quantity,
             BigDecimal unitPrice,
+            BigDecimal discountAmount,
             BigDecimal lineTotal,
             /**
              * The options this line was ordered with — "Sugar Level: 50%".

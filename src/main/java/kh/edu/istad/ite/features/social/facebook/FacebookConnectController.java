@@ -1,5 +1,6 @@
 package kh.edu.istad.ite.features.social.facebook;
 
+import kh.edu.istad.ite.shared.helper.BusinessHelper;
 import kh.edu.istad.ite.config.props.FacebookProps;
 import kh.edu.istad.ite.config.security.BusinessSecurityValidator;
 import kh.edu.istad.ite.config.security.SecurityUtils;
@@ -36,10 +37,10 @@ public class FacebookConnectController {
     private final BusinessFacebookPageService pageService;
     private final BusinessSecurityValidator businessSecurityValidator;
     private final BusinessRepository businessRepository;
+    private final BusinessHelper businessHelper;
 
     private Business findMyBusiness() {
-        return businessRepository.findByKeycloakUserId(UUID.fromString(SecurityUtils.extractUserId()))
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Business has not been found"));
+        return businessHelper.currentBusiness();
     }
 
     @GetMapping("/api/v1/businesses/social-settings/facebook")
@@ -88,6 +89,7 @@ public class FacebookConnectController {
         pageService.disconnectPage(businessId);
         return ResponseEntity.noContent().build();
     }
+
 
     @GetMapping("/api/v1/businesses/{businessId}/social/facebook")
     public ResponseEntity<FacebookPageSettingResponse> getFacebookPageSetting(@PathVariable UUID businessId) {
@@ -172,16 +174,17 @@ public class FacebookConnectController {
                 return redirectToDashboard("facebook_no_pages");
             }
 
-            Map<String, Object> firstPage = pages.get(0);
-            String pageId = String.valueOf(firstPage.get("id"));
-            String pageName = String.valueOf(firstPage.get("name"));
-            String pageAccessToken = String.valueOf(firstPage.get("access_token"));
-
-            pageService.registerPage(businessId, pageId, pageName, pageAccessToken);
+            for (Map<String, Object> pageMap : pages) {
+                String pageId = String.valueOf(pageMap.get("id"));
+                String pageName = String.valueOf(pageMap.get("name"));
+                String pageAccessToken = String.valueOf(pageMap.get("access_token"));
+                log.info("Registering Facebook Page [{}] ({}) for business [{}]", pageName, pageId, businessId);
+                pageService.registerPage(businessId, pageId, pageName, pageAccessToken);
+            }
 
             return redirectToDashboard("facebook_connected");
         } catch (Exception e) {
-            log.error("Facebook connect failed for business {}: {}", businessId, e.getMessage());
+            log.error("Facebook connect failed for business " + businessId, e);
             return redirectToDashboard("facebook_connect_failed");
         }
     }

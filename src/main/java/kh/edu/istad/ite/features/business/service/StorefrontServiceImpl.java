@@ -16,8 +16,10 @@ import kh.edu.istad.ite.features.business.specification.PublicStoreSpecification
 import kh.edu.istad.ite.features.catalog.repository.ItemRepository;
 import kh.edu.istad.ite.shared.enums.BusinessFeature;
 import kh.edu.istad.ite.shared.enums.BusinessOwnerStatus;
+import kh.edu.istad.ite.shared.helper.GeoDistanceHelper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -26,20 +28,25 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
 import java.util.regex.Pattern;
 
+import kh.edu.istad.ite.features.catalog.dto.ItemGroupResponse;
 import kh.edu.istad.ite.features.catalog.dto.ItemResponse;
 import kh.edu.istad.ite.features.catalog.entity.Item;
 import kh.edu.istad.ite.features.catalog.mapper.ItemMapper;
+import kh.edu.istad.ite.features.catalog.service.ItemGroupService;
 import kh.edu.istad.ite.shared.enums.ItemStatus;
 
 import kh.edu.istad.ite.features.discount.service.DiscountService;
 import kh.edu.istad.ite.features.discount.dto.DiscountResponse;
 import kh.edu.istad.ite.shared.enums.OrderChannel;
 import kh.edu.istad.ite.shared.enums.DiscountType;
+import kh.edu.istad.ite.shared.enums.DiscountRuleType;
+import kh.edu.istad.ite.shared.enums.DiscountScope;
 import kh.edu.istad.ite.shared.enums.ItemType;
 import kh.edu.istad.ite.features.catalog.dto.ItemVariantResponse;
 import kh.edu.istad.ite.features.catalog.entity.ItemVariant;
@@ -48,6 +55,7 @@ import kh.edu.istad.ite.features.channel.service.ItemChannelStockService;
 import kh.edu.istad.ite.features.inventory.dto.StockSummaryResponse;
 import kh.edu.istad.ite.features.inventory.service.StockEntryService;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -71,6 +79,7 @@ public class StorefrontServiceImpl implements StorefrontService {
     private final ChannelPriceResolver channelPriceResolver;
     private final ItemChannelStockService itemChannelStockService;
     private final StockEntryService stockEntryService;
+    private final ItemGroupService itemGroupService;
 
     @Override
     @Transactional(readOnly = true)
@@ -131,7 +140,9 @@ public class StorefrontServiceImpl implements StorefrontService {
     public SlugAvailabilityResponse checkSlugAvailability(String slug) {
         String normalized = normalizeSlug(slug);
 
-        UUID currentBusinessId = businessRepository.findByKeycloakUserId(currentUserId())
+        // A caller with no business at all is allowed here: rejectionReason
+        // treats null as "nothing of mine to clash with".
+        UUID currentBusinessId = businessHelper.currentBusinessOrEmpty()
                 .map(Business::getId)
                 .orElse(null);
 
@@ -147,16 +158,61 @@ public class StorefrontServiceImpl implements StorefrontService {
     @Transactional(readOnly = true)
     public Page<PublicStoreResponse> getPublicStores(
             UUID categoryId,
+            String province,
+            String district,
             String cityOrProvince,
             String keyword,
+            Double lat,
+            Double lng,
             Pageable pageable) {
-        var spec = PublicStoreSpecifications.withFilters(categoryId, cityOrProvince, keyword);
-        return businessRepository.findAll(spec, pageable).map(storefrontMapper::toPublicResponse);
+        var spec = PublicStoreSpecifications.withFilters(categoryId, province, district, cityOrProvince, keyword);
+
+        if (lat == null || lng == null) {
+            return businessRepository.findAll(spec, pageable).map(storefrontMapper::toPublicResponse);
+        }
+
+        // Distance ranks the whole filtered set, so it has to be sorted before
+        // paging — there's nowhere in the DB query to compute it yet, and
+        // paging first would only sort each page instead of the results. Fine
+        // at today's store counts; a count large enough for this full scan to
+        // matter is the cue to move it into a native Haversine query instead.
+        List<Business> matches = businessRepository.findAll(spec);
+        // java.util.Map.entry(k, v) — unlike AbstractMap.SimpleEntry — throws
+        // NPE on a null value via an internal Objects.requireNonNull, and
+        // distanceKm() returns null for any business with no saved
+        // coordinates. SimpleEntry holds it fine. The sort itself uses
+        // nullsLast rather than a ternary sentinel for the same reason: a
+        // primitive/boxed-Double ternary forces an unconditional unbox and
+        // throws on null regardless of which branch is picked.
+        List<java.util.Map.Entry<Business, Double>> ranked = matches.stream()
+                .map(business -> (java.util.Map.Entry<Business, Double>)
+                        new java.util.AbstractMap.SimpleEntry<>(business, distanceKm(business, lat, lng)))
+                .sorted(Comparator.comparing(
+                        java.util.Map.Entry::getValue,
+                        Comparator.nullsLast(Comparator.naturalOrder())))
+                .toList();
+
+        int start = Math.min((int) pageable.getOffset(), ranked.size());
+        int end = Math.min(start + pageable.getPageSize(), ranked.size());
+        List<PublicStoreResponse> pageContent = ranked.subList(start, end).stream()
+                .map(entry -> storefrontMapper.toPublicResponse(entry.getKey(), entry.getValue()))
+                .toList();
+
+        return new PageImpl<>(pageContent, pageable, ranked.size());
+    }
+
+    /** Null when the business hasn't dropped a map pin yet — nothing to rank it by. */
+    private Double distanceKm(Business business, double lat, double lng) {
+        if (business.getLatitude() == null || business.getLongitude() == null) {
+            return null;
+        }
+        return GeoDistanceHelper.haversineKm(
+                lat, lng, business.getLatitude().doubleValue(), business.getLongitude().doubleValue());
     }
 
     @Override
     @Transactional(readOnly = true)
-    public PublicStoreDetailResponse getPublicStoreBySlug(String slugOrId) {
+    public PublicStoreDetailResponse getPublicStoreBySlug(String slugOrId, Double lat, Double lng) {
         String normalized = normalizeSlug(slugOrId);
 
         org.springframework.data.jpa.domain.Specification<Business> spec = PublicStoreSpecifications.publiclyVisible()
@@ -174,28 +230,14 @@ public class StorefrontServiceImpl implements StorefrontService {
         Business business = businessRepository.findOne(spec)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Store has not been found"));
 
-        return storefrontMapper.toPublicDetailResponse(business);
+        Double distance = (lat == null || lng == null) ? null : distanceKm(business, lat, lng);
+        return storefrontMapper.toPublicDetailResponse(business, distance);
     }
 
     @Override
     @Transactional(readOnly = true)
     public List<ItemResponse> getPublicStoreItems(String slugOrId) {
-        String normalized = normalizeSlug(slugOrId);
-
-        org.springframework.data.jpa.domain.Specification<Business> spec = PublicStoreSpecifications.publiclyVisible()
-                .and((root, query, cb) -> {
-                    try {
-                        UUID uuid = UUID.fromString(slugOrId);
-                        return cb.or(
-                                cb.equal(root.get("slug"), normalized),
-                                cb.equal(root.get("id"), uuid));
-                    } catch (IllegalArgumentException e) {
-                        return cb.equal(root.get("slug"), normalized);
-                    }
-                });
-
-        Business business = businessRepository.findOne(spec)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Store has not been found"));
+        Business business = resolvePublicBusiness(slugOrId);
 
         org.springframework.data.jpa.domain.Specification<Item> specItems = org.springframework.data.jpa.domain.Specification
                 .where(kh.edu.istad.ite.features.catalog.specification.ItemSpecifications.hasBusinessId(business.getId()))
@@ -220,8 +262,6 @@ public class StorefrontServiceImpl implements StorefrontService {
                             item,
                             business.getId());
 
-                    if (base.price() == null) return base;
-
                     try {
                         List<DiscountResponse> applicable = discountService.findApplicableDiscounts(
                                 business.getId(),
@@ -231,33 +271,76 @@ public class StorefrontServiceImpl implements StorefrontService {
                         );
                         
                         if (!applicable.isEmpty()) {
-                            // Apply the first/best discount for display
-                            DiscountResponse best = applicable.get(0);
-                            BigDecimal originalPrice = base.price();
-                            BigDecimal discountAmount = BigDecimal.ZERO;
-                            
-                            if (best.type() == DiscountType.PERCENTAGE && best.value() != null) {
-                                discountAmount = originalPrice.multiply(best.value()).divide(new BigDecimal("100"));
-                            } else if (best.type() == DiscountType.FIXED_AMOUNT && best.value() != null) {
-                                discountAmount = best.value();
-                            }
-                            
-                            BigDecimal newPrice = originalPrice.subtract(discountAmount);
-                            if (newPrice.compareTo(BigDecimal.ZERO) < 0) {
-                                newPrice = BigDecimal.ZERO;
-                            }
-                            
-                            // Prevent overwriting if already discounted or if new price is not actually cheaper
-                            if (newPrice.compareTo(originalPrice) < 0) {
-                                String computedBadge = best.type() == DiscountType.PERCENTAGE ? 
-                                    best.value().stripTrailingZeros().toPlainString() + "% OFF" : 
-                                    best.name();
+                            List<DiscountResponse> autoDiscounts = applicable.stream()
+                                    .filter(d -> !Boolean.TRUE.equals(d.requiresCoupon()))
+                                    .toList();
+
+                            if (!autoDiscounts.isEmpty()) {
+                                DiscountResponse best = autoDiscounts.stream()
+                                        .sorted((d1, d2) -> {
+                                            int s1 = (d1.scope() == DiscountScope.SPECIFIC_ITEMS || d1.scope() == DiscountScope.ITEM) ? 2
+                                                    : (d1.scope() == DiscountScope.SPECIFIC_CATEGORIES || d1.scope() == DiscountScope.CATEGORY) ? 1 : 0;
+                                            int s2 = (d2.scope() == DiscountScope.SPECIFIC_ITEMS || d2.scope() == DiscountScope.ITEM) ? 2
+                                                    : (d2.scope() == DiscountScope.SPECIFIC_CATEGORIES || d2.scope() == DiscountScope.CATEGORY) ? 1 : 0;
+                                            if (s1 != s2) return Integer.compare(s2, s1);
+
+                                            int r1 = d1.ruleType() == DiscountRuleType.BUY_X_GET_Y ? 2 : 0;
+                                            int r2 = d2.ruleType() == DiscountRuleType.BUY_X_GET_Y ? 2 : 0;
+                                            if (r1 != r2) return Integer.compare(r2, r1);
+
+                                            BigDecimal v1 = d1.value() != null ? d1.value() : BigDecimal.ZERO;
+                                            BigDecimal v2 = d2.value() != null ? d2.value() : BigDecimal.ZERO;
+                                            return v2.compareTo(v1);
+                                        })
+                                        .findFirst()
+                                        .orElse(autoDiscounts.get(0));
+
+                                String computedBadge = null;
+                                if (best.name() != null && !best.name().isBlank()) {
+                                    computedBadge = best.name();
+                                } else if (best.ruleType() == DiscountRuleType.BUY_X_GET_Y) {
+                                    int buy = best.buyQuantity() != null ? best.buyQuantity() : 1;
+                                    int get = best.getQuantity() != null ? best.getQuantity() : 1;
+                                    computedBadge = "Buy " + buy + " Get " + get;
+                                } else if (best.type() == DiscountType.PERCENTAGE && best.value() != null) {
+                                    computedBadge = best.value().stripTrailingZeros().toPlainString() + "% OFF";
+                                } else if (best.type() == DiscountType.FIXED_AMOUNT && best.value() != null) {
+                                    computedBadge = "$" + best.value().stripTrailingZeros().toPlainString() + " OFF";
+                                }
+
+                                String effectiveBadge = computedBadge != null ? computedBadge : base.badge();
+
+                                if (base.price() != null) {
+                                    BigDecimal originalPrice = base.price();
+                                    BigDecimal discountAmount = BigDecimal.ZERO;
                                     
-                                return base.toBuilder()
-                                    .price(newPrice)
-                                    .compareAtPrice(originalPrice)
-                                    .badge(base.badge() != null && !base.badge().isBlank() ? base.badge() : computedBadge)
-                                    .build();
+                                    if (best.type() == DiscountType.PERCENTAGE && best.value() != null) {
+                                        discountAmount = originalPrice.multiply(best.value()).divide(new BigDecimal("100"), 2, RoundingMode.HALF_UP);
+                                    } else if (best.type() == DiscountType.FIXED_AMOUNT && best.value() != null) {
+                                        discountAmount = best.value();
+                                    }
+                                    
+                                    BigDecimal newPrice = originalPrice.subtract(discountAmount);
+                                    if (newPrice.compareTo(BigDecimal.ZERO) < 0) {
+                                        newPrice = BigDecimal.ZERO;
+                                    }
+                                    
+                                    if (newPrice.compareTo(originalPrice) < 0) {
+                                        return base.toBuilder()
+                                            .price(newPrice)
+                                            .compareAtPrice(originalPrice)
+                                            .badge(effectiveBadge)
+                                            .build();
+                                    } else {
+                                        return base.toBuilder()
+                                            .badge(effectiveBadge)
+                                            .build();
+                                    }
+                                } else {
+                                    return base.toBuilder()
+                                        .badge(effectiveBadge)
+                                        .build();
+                                }
                             }
                         }
                     } catch (Exception e) {
@@ -270,9 +353,49 @@ public class StorefrontServiceImpl implements StorefrontService {
 
     @Override
     @Transactional(readOnly = true)
-    public Page<PublicStoreResponse> getRecommendedStores(UUID categoryId, Pageable pageable) {
+    public List<ItemGroupResponse> getPublicStoreItemGroups(String slugOrId) {
+        Business business = resolvePublicBusiness(slugOrId);
+        return itemGroupService.findAllItemGroupsPublic(business.getId());
+    }
+
+    /** Resolves a publicly-visible business by slug (or id, for callers that already have it) — 404 otherwise. Shared by every public-menu lookup. */
+    private Business resolvePublicBusiness(String slugOrId) {
+        String normalized = normalizeSlug(slugOrId);
+
+        org.springframework.data.jpa.domain.Specification<Business> spec = PublicStoreSpecifications.publiclyVisible()
+                .and((root, query, cb) -> {
+                    try {
+                        UUID uuid = UUID.fromString(slugOrId);
+                        return cb.or(
+                                cb.equal(root.get("slug"), normalized),
+                                cb.equal(root.get("id"), uuid));
+                    } catch (IllegalArgumentException e) {
+                        return cb.equal(root.get("slug"), normalized);
+                    }
+                });
+
+        return businessRepository.findOne(spec)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Store has not been found"));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Page<PublicStoreResponse> getRecommendedStores(UUID categoryId, Double lat, Double lng, Pageable pageable) {
+        // Ranking here stays sales/recency-based — "recommended" isn't
+        // "nearest" — this only annotates each card with its distance for
+        // display, same as the plain listing does.
+        if (lat == null || lng == null) {
+            return businessRepository.findRecommendedStores(categoryId, pageable)
+                    .map(storefrontMapper::toPublicResponse);
+        }
         return businessRepository.findRecommendedStores(categoryId, pageable)
-                .map(storefrontMapper::toPublicResponse);
+                .map(business -> storefrontMapper.toPublicResponse(business, distanceKm(business, lat, lng)));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<String> getDistinctProvinces() {
+        return businessRepository.findDistinctProvinceNames();
     }
 
     /**
@@ -427,8 +550,7 @@ public class StorefrontServiceImpl implements StorefrontService {
     }
 
     private Business findMyBusiness() {
-        return businessRepository.findByKeycloakUserId(currentUserId())
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Business has not been found"));
+        return businessHelper.currentBusiness();
     }
 
     private UUID currentUserId() {

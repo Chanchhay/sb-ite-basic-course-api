@@ -105,6 +105,54 @@ public class TelegramBotClient {
         }
     }
 
+    /**
+     * Sets the bot's persistent "Open App" menu button (bottom-left of the
+     * chat, next to the message box) to launch the Mini App at the given
+     * URL. Called with no {@code chat_id}, this sets the default for every
+     * chat with the bot — exactly what's wanted here, since each business
+     * has its own dedicated bot rather than one shared bot serving many.
+     */
+    public void setChatMenuButton(String botToken, String webAppUrl, String buttonText) {
+        try {
+            Map<String, Object> menuButton = Map.of(
+                    "type", "web_app",
+                    "text", buttonText,
+                    "web_app", Map.of("url", webAppUrl));
+
+            Map<String, Object> requestBody = Map.of("menu_button", menuButton);
+
+            Map<String, Object> body = restClient.post()
+                    .uri("/bot" + botToken + "/setChatMenuButton")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(requestBody)
+                    .retrieve()
+                    .body(new ParameterizedTypeReference<Map<String, Object>>() {
+                    });
+
+            if (body == null || !Boolean.TRUE.equals(body.get("ok"))) {
+                log.warn("Telegram setChatMenuButton was not accepted: {}", body);
+            }
+        } catch (RestClientException exception) {
+            log.warn("Telegram setChatMenuButton failed: {}", exception.getMessage());
+        }
+    }
+
+    /** Reverts the menu button to Telegram's default (a commands list) — used when Mini App mode is turned off. */
+    public void resetChatMenuButton(String botToken) {
+        try {
+            Map<String, Object> requestBody = Map.of("menu_button", Map.of("type", "default"));
+
+            restClient.post()
+                    .uri("/bot" + botToken + "/setChatMenuButton")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(requestBody)
+                    .retrieve()
+                    .toBodilessEntity();
+        } catch (RestClientException exception) {
+            log.warn("Telegram resetChatMenuButton failed: {}", exception.getMessage());
+        }
+    }
+
     public void deleteWebhook(String botToken) {
         try {
             restClient.get()
@@ -322,12 +370,12 @@ public class TelegramBotClient {
             return null;
         }
 
-        List<List<Map<String, String>>> rows = keyboard.stream()
+        List<List<Map<String, Object>>> rows = keyboard.stream()
                 .filter(row -> row != null && !row.isEmpty())
                 .map(row -> row.stream()
                         .filter(button -> button != null
                                 && button.label() != null
-                                && (button.isLink() || button.callbackData() != null))
+                                && (button.isLink() || button.isWebApp() || button.callbackData() != null))
                         .map(this::toButtonMap)
                         .toList())
                 .filter(row -> !row.isEmpty())
@@ -340,7 +388,10 @@ public class TelegramBotClient {
         return Map.of("inline_keyboard", rows);
     }
 
-    private Map<String, String> toButtonMap(InlineKeyboardButton button) {
+    private Map<String, Object> toButtonMap(InlineKeyboardButton button) {
+        if (button.isWebApp()) {
+            return Map.of("text", button.label(), "web_app", Map.of("url", button.webAppUrl()));
+        }
         return button.isLink()
                 ? Map.of("text", button.label(), "url", button.url())
                 : Map.of("text", button.label(), "callback_data", truncateCallbackData(button.callbackData()));

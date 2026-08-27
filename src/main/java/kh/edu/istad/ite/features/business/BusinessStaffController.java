@@ -8,6 +8,10 @@ import kh.edu.istad.ite.features.user.dto.StaffStatusRequest;
 import kh.edu.istad.ite.features.user.dto.UpdateStaffRequest;
 import kh.edu.istad.ite.features.user.service.StaffManagementService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 
@@ -30,9 +34,12 @@ public class BusinessStaffController {
     }
 
     @GetMapping
-    public List<StaffResponse> getStaffList(@PathVariable UUID businessId) {
+    public Page<StaffResponse> getStaffList(
+            @PathVariable UUID businessId,
+            @PageableDefault(sort = "JoinedAt", direction = Sort.Direction.DESC)Pageable pageable
+            ) {
         securityValidator.validateBusinessOwner(businessId);
-        return staffService.getBusinessStaffList(businessId);
+        return staffService.getBusinessStaffList(businessId , pageable);
     }
 
     @GetMapping("/{userId}")

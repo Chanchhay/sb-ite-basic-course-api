@@ -13,6 +13,8 @@ import kh.edu.istad.ite.shared.helper.BusinessHelper;
 import kh.edu.istad.ite.shared.helper.TextHelper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -32,15 +34,14 @@ public class AddOnSetServiceImpl implements AddOnSetService {
     private final AddOnRepository addOnRepository;
     private final AddOnSetMapper addOnSetMapper;
 
+
     @Override
     @Transactional(readOnly = true)
-    public List<AddOnSetResponse> findAllAddOnSets(UUID businessId) {
+    public Page<AddOnSetResponse> findAllAddOnSets(UUID businessId, Pageable pageable) {
         businessHelper.findAccessibleBusiness(businessId);
 
-        return addOnSetRepository.findByBusinessIdOrderByNameAsc(businessId)
-                .stream()
-                .map(addOnSetMapper::toResponse)
-                .toList();
+        return addOnSetRepository.findByBusinessId(businessId, pageable)
+                .map(addOnSetMapper::toResponse);
     }
 
     @Override

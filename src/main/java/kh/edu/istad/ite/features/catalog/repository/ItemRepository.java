@@ -21,6 +21,8 @@ public interface ItemRepository extends JpaRepository<Item, UUID>, JpaSpecificat
 
         List<Item> findAllByBusinessIdOrderByNameAsc(UUID businessId);
 
+        Page<Item> findAllByBusinessId(UUID businessId, Pageable pageable);
+
         Optional<Item> findByIdAndBusinessId(UUID id, UUID businessId);
 
         boolean existsByBusinessIdAndNameIgnoreCase(UUID businessId, String name);
@@ -38,6 +40,19 @@ public interface ItemRepository extends JpaRepository<Item, UUID>, JpaSpecificat
         boolean existsByBusiness_Id(UUID businessId);
 
         Optional<Item> findByBusinessIdAndBarcode(UUID businessId, String barcode);
+
+        /**
+         * Items matching a SKU, ignoring case.
+         *
+         * A list rather than an optional because nothing in the schema stops a
+         * shop having two items with the same SKU — the unique constraints are
+         * on name and slug — and a migration must not blow up on a catalogue
+         * that was already like that.
+         */
+        List<Item> findByBusinessIdAndSkuIgnoreCase(UUID businessId, String sku);
+
+        /** The same, by name, which the catalogue does keep unique per shop. */
+        List<Item> findByBusinessIdAndNameIgnoreCase(UUID businessId, String name);
 
         Page<Item> findByBusinessIdAndStatusAndItemGroup_IdOrderByNameAsc(
                         UUID businessId, ItemStatus status, UUID itemGroupId, Pageable pageable);

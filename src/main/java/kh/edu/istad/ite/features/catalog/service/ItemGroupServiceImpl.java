@@ -14,6 +14,8 @@ import kh.edu.istad.ite.shared.helper.SlugHelper;
 import kh.edu.istad.ite.shared.helper.TextHelper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -77,9 +79,27 @@ public class ItemGroupServiceImpl implements ItemGroupService {
 
     @Override
     @Transactional(readOnly = true)
-    public List<ItemGroupResponse> findAllItemGroups(UUID businessId) {
+    public Page<ItemGroupResponse> findAllItemGroups(UUID businessId, Pageable pageable) {
         businessHelper.findOwnedBusiness(businessId);
 
+        Map<UUID, List<ItemGroup>> subGroupsByParentId=
+                itemGroupRepository.findByBusinessIdAndParentIsNotNullOrderByNameAsc(businessId)
+                        .stream()
+                        .collect(Collectors.groupingBy(itemGroup -> itemGroup.getParent().getId()));
+        return itemGroupRepository.findByBusinessIdAndParentIsNull(businessId, pageable)
+                .map(itemGroup -> itemGroupMapper.toItemGroupTreeResponse(
+                        itemGroup,
+                        subGroupsByParentId.getOrDefault(itemGroup.getId(), List.of())
+                ));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<ItemGroupResponse> findAllItemGroupsPublic(UUID businessId) {
+        // No businessHelper.findOwnedBusiness() here — the caller (public
+        // storefront/menu) is never the business owner, just a shopper
+        // browsing categories, so there is no "owned by the current user"
+        // check to make.
         Map<UUID, List<ItemGroup>> subGroupsByParentId =
                 itemGroupRepository.findByBusinessIdAndParentIsNotNullOrderByNameAsc(businessId)
                         .stream()
@@ -93,6 +113,7 @@ public class ItemGroupServiceImpl implements ItemGroupService {
                 ))
                 .toList();
     }
+
 
     @Override
     @Transactional

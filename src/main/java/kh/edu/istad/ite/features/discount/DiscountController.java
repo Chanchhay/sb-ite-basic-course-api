@@ -7,6 +7,10 @@ import kh.edu.istad.ite.features.discount.dto.UpdateDiscountRequest;
 import kh.edu.istad.ite.features.discount.service.DiscountService;
 import kh.edu.istad.ite.shared.enums.OrderChannel;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 
@@ -30,8 +34,11 @@ public class DiscountController {
     }
 
     @GetMapping
-    public List<DiscountResponse> findAllDiscounts(@PathVariable UUID businessId) {
-        return discountService.findAllDiscounts(businessId);
+    public Page<DiscountResponse> findAllDiscounts(
+            @PathVariable UUID businessId,
+            @PageableDefault(sort = "createdDate",direction = Sort.Direction.DESC)Pageable pageable
+            ) {
+        return discountService.findAllDiscounts(businessId , pageable);
     }
 
     @GetMapping("/{discountId}")

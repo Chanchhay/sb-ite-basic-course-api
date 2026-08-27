@@ -76,10 +76,10 @@ public class BusinessServiceImpl implements BusinessService {
     @Override
     @Transactional(readOnly = true)
     public BusinessResponse getMyBusiness() {
-        UUID keycloakUserId = AuthHelper.currentUserId();
-        Business business = businessRepository.findByKeycloakUserId(keycloakUserId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Business has not been found"));
-        return businessMapper.toResponse(business);
+        // Owner or staff. The dashboard resolves every other business id
+        // through this one call, so answering only for owners left staff with
+        // an application in which nothing loaded at all.
+        return businessMapper.toResponse(businessHelper.currentBusiness());
     }
 
     @Override
@@ -123,6 +123,30 @@ public class BusinessServiceImpl implements BusinessService {
         if (request.cityOrProvince() != null) {
             business.setCityOrProvince(TextHelper.trimToNull(request.cityOrProvince()));
         }
+        if (request.provinceName() != null) {
+            business.setProvinceName(TextHelper.trimToNull(request.provinceName()));
+            // The map picker setting a real province retires the old
+            // free-text field for this business — nothing should keep
+            // reading cityOrProvince once provinceName is driving it, so it
+            // shouldn't keep sitting in the row looking authoritative.
+            // Skipped only if this same request also touched cityOrProvince
+            // directly, so an explicit set still wins.
+            if (request.cityOrProvince() == null) {
+                business.setCityOrProvince(null);
+            }
+        }
+        if (request.districtName() != null) {
+            business.setDistrictName(TextHelper.trimToNull(request.districtName()));
+        }
+        if (request.communeName() != null) {
+            business.setCommuneName(TextHelper.trimToNull(request.communeName()));
+        }
+        if (request.latitude() != null) {
+            business.setLatitude(request.latitude());
+        }
+        if (request.longitude() != null) {
+            business.setLongitude(request.longitude());
+        }
         if (request.website() != null) {
             business.setWebsite(TextHelper.trimToNull(request.website()));
         }
@@ -134,6 +158,18 @@ public class BusinessServiceImpl implements BusinessService {
         }
         if (request.closeTime() != null) {
             business.setCloseTime(TextHelper.trimToNull(request.closeTime()));
+        }
+        if (request.taxEnabled() != null) {
+            business.setTaxEnabled(request.taxEnabled());
+        }
+        if (request.taxRate() != null) {
+            business.setTaxRate(request.taxRate());
+        }
+        if (request.taxInclusionType() != null) {
+            business.setTaxInclusionType(request.taxInclusionType());
+        }
+        if (request.taxLabel() != null) {
+            business.setTaxLabel(TextHelper.trimToNull(request.taxLabel()));
         }
 
         return businessMapper.toResponse(businessRepository.save(business));
