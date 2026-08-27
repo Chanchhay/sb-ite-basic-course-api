@@ -1,6 +1,7 @@
 package kh.edu.istad.ite.features.admin.service;
 
 import kh.edu.istad.ite.features.admin.dto.request.BusinessStatusActionRequest;
+import kh.edu.istad.ite.features.admin.dto.response.ProvinceBackfillResponse;
 import kh.edu.istad.ite.features.business.dto.BusinessResponse;
 import kh.edu.istad.ite.shared.enums.BusinessOwnerStatus;
 import org.springframework.data.domain.Page;
@@ -34,4 +35,13 @@ public interface AdminBusinessService {
     BusinessResponse reopen(UUID businessId);
 
     BusinessResponse delete(UUID businessId);
+
+    /**
+     * One-time backfill: matches every business's old free-text
+     * cityOrProvince against Cambodia's fixed 25-province list and fills in
+     * provinceName where a match is found. Never guesses — a business left
+     * unmatched keeps its old data untouched, for the owner to fix via the
+     * map picker.
+     */
+    ProvinceBackfillResponse backfillProvinceNames();
 }

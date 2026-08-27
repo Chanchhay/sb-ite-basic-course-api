@@ -26,8 +26,17 @@ public record ItemResponse(
         String badge,
         String barcode,
         BigDecimal price,
+
+        /**
+         * What this item cost before a discount was applied to it, filled
+         * in by the storefront when one is running and null everywhere
+         * else. Not a price anyone sets: an item is worth what it is
+         * priced at, and a struck-through figure has to be a real former
+         * price rather than a number somebody typed to look generous.
+         */
         BigDecimal compareAtPrice,
         ItemType itemType,
+        Boolean trackInventory,
         List<ItemAttributeResponse> attributes,
         /** The colours this item comes in, declared once for every size. */
         List<ItemColorResponse> colors,

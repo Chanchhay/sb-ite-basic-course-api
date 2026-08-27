@@ -198,6 +198,10 @@ public class ItemChannelStockServiceImpl implements ItemChannelStockService {
     @Transactional(readOnly = true)
     public BigDecimal availableFor(
             Item item, ItemVariant variant, OrderChannel channel, BigDecimal onHand) {
+        if (item != null && !item.isStockTracked()) {
+            return BigDecimal.valueOf(999999999);
+        }
+
         BigDecimal shelf = onHand == null ? BigDecimal.ZERO : onHand;
 
         if (!ChannelStockMode.ALLOCATED.equals(modeOf(item)) || channel == null) {
@@ -215,6 +219,10 @@ public class ItemChannelStockServiceImpl implements ItemChannelStockService {
     @Transactional(readOnly = true)
     public void requireAllocation(
             Item item, ItemVariant variant, OrderChannel channel, BigDecimal baseQuantity) {
+        if (item != null && !item.isStockTracked()) {
+            return;
+        }
+
         if (!ChannelStockMode.ALLOCATED.equals(modeOf(item))
                 || channel == null
                 || baseQuantity == null
@@ -241,6 +249,9 @@ public class ItemChannelStockServiceImpl implements ItemChannelStockService {
     @Override
     public void consume(
             Item item, ItemVariant variant, OrderChannel channel, BigDecimal baseQuantity) {
+        if (item != null && !item.isStockTracked()) {
+            return;
+        }
         if (!ChannelStockMode.ALLOCATED.equals(modeOf(item))
                 || channel == null
                 || baseQuantity == null

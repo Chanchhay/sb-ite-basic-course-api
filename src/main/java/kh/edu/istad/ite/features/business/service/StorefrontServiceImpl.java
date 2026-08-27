@@ -16,8 +16,10 @@ import kh.edu.istad.ite.features.business.specification.PublicStoreSpecification
 import kh.edu.istad.ite.features.catalog.repository.ItemRepository;
 import kh.edu.istad.ite.shared.enums.BusinessFeature;
 import kh.edu.istad.ite.shared.enums.BusinessOwnerStatus;
+import kh.edu.istad.ite.shared.helper.GeoDistanceHelper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -26,14 +28,17 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
 import java.util.regex.Pattern;
 
+import kh.edu.istad.ite.features.catalog.dto.ItemGroupResponse;
 import kh.edu.istad.ite.features.catalog.dto.ItemResponse;
 import kh.edu.istad.ite.features.catalog.entity.Item;
 import kh.edu.istad.ite.features.catalog.mapper.ItemMapper;
+import kh.edu.istad.ite.features.catalog.service.ItemGroupService;
 import kh.edu.istad.ite.shared.enums.ItemStatus;
 
 import kh.edu.istad.ite.features.discount.service.DiscountService;
@@ -71,6 +76,7 @@ public class StorefrontServiceImpl implements StorefrontService {
     private final ChannelPriceResolver channelPriceResolver;
     private final ItemChannelStockService itemChannelStockService;
     private final StockEntryService stockEntryService;
+    private final ItemGroupService itemGroupService;
 
     @Override
     @Transactional(readOnly = true)
@@ -131,7 +137,9 @@ public class StorefrontServiceImpl implements StorefrontService {
     public SlugAvailabilityResponse checkSlugAvailability(String slug) {
         String normalized = normalizeSlug(slug);
 
-        UUID currentBusinessId = businessRepository.findByKeycloakUserId(currentUserId())
+        // A caller with no business at all is allowed here: rejectionReason
+        // treats null as "nothing of mine to clash with".
+        UUID currentBusinessId = businessHelper.currentBusinessOrEmpty()
                 .map(Business::getId)
                 .orElse(null);
 
@@ -147,16 +155,61 @@ public class StorefrontServiceImpl implements StorefrontService {
     @Transactional(readOnly = true)
     public Page<PublicStoreResponse> getPublicStores(
             UUID categoryId,
+            String province,
+            String district,
             String cityOrProvince,
             String keyword,
+            Double lat,
+            Double lng,
             Pageable pageable) {
-        var spec = PublicStoreSpecifications.withFilters(categoryId, cityOrProvince, keyword);
-        return businessRepository.findAll(spec, pageable).map(storefrontMapper::toPublicResponse);
+        var spec = PublicStoreSpecifications.withFilters(categoryId, province, district, cityOrProvince, keyword);
+
+        if (lat == null || lng == null) {
+            return businessRepository.findAll(spec, pageable).map(storefrontMapper::toPublicResponse);
+        }
+
+        // Distance ranks the whole filtered set, so it has to be sorted before
+        // paging — there's nowhere in the DB query to compute it yet, and
+        // paging first would only sort each page instead of the results. Fine
+        // at today's store counts; a count large enough for this full scan to
+        // matter is the cue to move it into a native Haversine query instead.
+        List<Business> matches = businessRepository.findAll(spec);
+        // java.util.Map.entry(k, v) — unlike AbstractMap.SimpleEntry — throws
+        // NPE on a null value via an internal Objects.requireNonNull, and
+        // distanceKm() returns null for any business with no saved
+        // coordinates. SimpleEntry holds it fine. The sort itself uses
+        // nullsLast rather than a ternary sentinel for the same reason: a
+        // primitive/boxed-Double ternary forces an unconditional unbox and
+        // throws on null regardless of which branch is picked.
+        List<java.util.Map.Entry<Business, Double>> ranked = matches.stream()
+                .map(business -> (java.util.Map.Entry<Business, Double>)
+                        new java.util.AbstractMap.SimpleEntry<>(business, distanceKm(business, lat, lng)))
+                .sorted(Comparator.comparing(
+                        java.util.Map.Entry::getValue,
+                        Comparator.nullsLast(Comparator.naturalOrder())))
+                .toList();
+
+        int start = Math.min((int) pageable.getOffset(), ranked.size());
+        int end = Math.min(start + pageable.getPageSize(), ranked.size());
+        List<PublicStoreResponse> pageContent = ranked.subList(start, end).stream()
+                .map(entry -> storefrontMapper.toPublicResponse(entry.getKey(), entry.getValue()))
+                .toList();
+
+        return new PageImpl<>(pageContent, pageable, ranked.size());
+    }
+
+    /** Null when the business hasn't dropped a map pin yet — nothing to rank it by. */
+    private Double distanceKm(Business business, double lat, double lng) {
+        if (business.getLatitude() == null || business.getLongitude() == null) {
+            return null;
+        }
+        return GeoDistanceHelper.haversineKm(
+                lat, lng, business.getLatitude().doubleValue(), business.getLongitude().doubleValue());
     }
 
     @Override
     @Transactional(readOnly = true)
-    public PublicStoreDetailResponse getPublicStoreBySlug(String slugOrId) {
+    public PublicStoreDetailResponse getPublicStoreBySlug(String slugOrId, Double lat, Double lng) {
         String normalized = normalizeSlug(slugOrId);
 
         org.springframework.data.jpa.domain.Specification<Business> spec = PublicStoreSpecifications.publiclyVisible()
@@ -174,28 +227,14 @@ public class StorefrontServiceImpl implements StorefrontService {
         Business business = businessRepository.findOne(spec)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Store has not been found"));
 
-        return storefrontMapper.toPublicDetailResponse(business);
+        Double distance = (lat == null || lng == null) ? null : distanceKm(business, lat, lng);
+        return storefrontMapper.toPublicDetailResponse(business, distance);
     }
 
     @Override
     @Transactional(readOnly = true)
     public List<ItemResponse> getPublicStoreItems(String slugOrId) {
-        String normalized = normalizeSlug(slugOrId);
-
-        org.springframework.data.jpa.domain.Specification<Business> spec = PublicStoreSpecifications.publiclyVisible()
-                .and((root, query, cb) -> {
-                    try {
-                        UUID uuid = UUID.fromString(slugOrId);
-                        return cb.or(
-                                cb.equal(root.get("slug"), normalized),
-                                cb.equal(root.get("id"), uuid));
-                    } catch (IllegalArgumentException e) {
-                        return cb.equal(root.get("slug"), normalized);
-                    }
-                });
-
-        Business business = businessRepository.findOne(spec)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Store has not been found"));
+        Business business = resolvePublicBusiness(slugOrId);
 
         org.springframework.data.jpa.domain.Specification<Item> specItems = org.springframework.data.jpa.domain.Specification
                 .where(kh.edu.istad.ite.features.catalog.specification.ItemSpecifications.hasBusinessId(business.getId()))
@@ -270,9 +309,49 @@ public class StorefrontServiceImpl implements StorefrontService {
 
     @Override
     @Transactional(readOnly = true)
-    public Page<PublicStoreResponse> getRecommendedStores(UUID categoryId, Pageable pageable) {
+    public List<ItemGroupResponse> getPublicStoreItemGroups(String slugOrId) {
+        Business business = resolvePublicBusiness(slugOrId);
+        return itemGroupService.findAllItemGroupsPublic(business.getId());
+    }
+
+    /** Resolves a publicly-visible business by slug (or id, for callers that already have it) — 404 otherwise. Shared by every public-menu lookup. */
+    private Business resolvePublicBusiness(String slugOrId) {
+        String normalized = normalizeSlug(slugOrId);
+
+        org.springframework.data.jpa.domain.Specification<Business> spec = PublicStoreSpecifications.publiclyVisible()
+                .and((root, query, cb) -> {
+                    try {
+                        UUID uuid = UUID.fromString(slugOrId);
+                        return cb.or(
+                                cb.equal(root.get("slug"), normalized),
+                                cb.equal(root.get("id"), uuid));
+                    } catch (IllegalArgumentException e) {
+                        return cb.equal(root.get("slug"), normalized);
+                    }
+                });
+
+        return businessRepository.findOne(spec)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Store has not been found"));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Page<PublicStoreResponse> getRecommendedStores(UUID categoryId, Double lat, Double lng, Pageable pageable) {
+        // Ranking here stays sales/recency-based — "recommended" isn't
+        // "nearest" — this only annotates each card with its distance for
+        // display, same as the plain listing does.
+        if (lat == null || lng == null) {
+            return businessRepository.findRecommendedStores(categoryId, pageable)
+                    .map(storefrontMapper::toPublicResponse);
+        }
         return businessRepository.findRecommendedStores(categoryId, pageable)
-                .map(storefrontMapper::toPublicResponse);
+                .map(business -> storefrontMapper.toPublicResponse(business, distanceKm(business, lat, lng)));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<String> getDistinctProvinces() {
+        return businessRepository.findDistinctProvinceNames();
     }
 
     /**
@@ -427,8 +506,7 @@ public class StorefrontServiceImpl implements StorefrontService {
     }
 
     private Business findMyBusiness() {
-        return businessRepository.findByKeycloakUserId(currentUserId())
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Business has not been found"));
+        return businessHelper.currentBusiness();
     }
 
     private UUID currentUserId() {

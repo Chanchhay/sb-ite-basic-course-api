@@ -2,15 +2,20 @@ package kh.edu.istad.ite.features.order.service;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.DayOfWeek;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
+import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.http.HttpStatus;
@@ -34,8 +39,18 @@ import kh.edu.istad.ite.features.catalog.entity.Unit;
 import kh.edu.istad.ite.features.catalog.repository.ItemRepository;
 import kh.edu.istad.ite.features.customer.entity.Customer;
 import kh.edu.istad.ite.features.customer.repository.CustomerRepository;
+import kh.edu.istad.ite.features.discount.entity.Coupon;
+import kh.edu.istad.ite.features.discount.entity.Discount;
+import kh.edu.istad.ite.features.discount.entity.DiscountTarget;
+import kh.edu.istad.ite.features.discount.repository.CouponRepository;
+import kh.edu.istad.ite.features.discount.repository.DiscountRepository;
+import kh.edu.istad.ite.features.discount.repository.DiscountTargetRepository;
 import kh.edu.istad.ite.features.channel.service.ItemChannelStockService;
 import kh.edu.istad.ite.features.inventory.service.StockEntryService;
+import kh.edu.istad.ite.features.order.dto.OfflineOrderDto;
+import kh.edu.istad.ite.features.order.dto.OfflineOrderItemDto;
+import kh.edu.istad.ite.features.order.dto.SyncOfflineOrdersRequest;
+import kh.edu.istad.ite.features.order.dto.SyncOfflineOrdersResponse;
 import kh.edu.istad.ite.features.order.dto.AddOrderItemRequest;
 import kh.edu.istad.ite.features.order.dto.CreateOrderItemRequest;
 import kh.edu.istad.ite.features.order.dto.CreateOrderRequest;
@@ -44,6 +59,7 @@ import kh.edu.istad.ite.features.order.dto.PayOrderRequest;
 import kh.edu.istad.ite.features.order.dto.PaymentStatusResponse;
 import kh.edu.istad.ite.features.order.dto.SaleResponse;
 import kh.edu.istad.ite.features.order.dto.UpdateOrderItemRequest;
+import kh.edu.istad.ite.features.order.dto.UpdateOrderDiscountRequest;
 import kh.edu.istad.ite.features.order.dto.UpdateOrderNoteRequest;
 import kh.edu.istad.ite.features.order.entity.Order;
 import kh.edu.istad.ite.features.order.entity.OrderItem;
@@ -70,10 +86,16 @@ import kh.edu.istad.ite.shared.enums.PaymentMethodType;
 import kh.edu.istad.ite.shared.enums.QrStatus;
 import kh.edu.istad.ite.shared.enums.ReceiptType;
 import kh.edu.istad.ite.shared.enums.SessionStatus;
+import kh.edu.istad.ite.shared.enums.TaxInclusionType;
 import kh.edu.istad.ite.shared.helper.AuthHelper;
 import kh.edu.istad.ite.shared.helper.BusinessHelper;
 import kh.edu.istad.ite.shared.helper.CurrencyDisplayHelper;
 import kh.edu.istad.ite.features.social.service.TelegramAlertService;
+import kh.edu.istad.ite.shared.enums.CouponStatus;
+import kh.edu.istad.ite.shared.enums.DiscountRuleType;
+import kh.edu.istad.ite.shared.enums.DiscountScope;
+import kh.edu.istad.ite.shared.enums.DiscountType;
+import kh.edu.istad.ite.shared.enums.RecordStatus;
 import lombok.RequiredArgsConstructor;
 
 @Service
@@ -81,7 +103,7 @@ import lombok.RequiredArgsConstructor;
 public class OrderServiceImpl implements OrderService {
 
     private static final String CURRENCY_KHR = "KHR";
-    private static final int QR_VALIDITY_MINUTES = 5;
+    private static final int QR_VALIDITY_MINUTES = 2;
     private static final DateTimeFormatter INVOICE_DATE = DateTimeFormatter.ofPattern("yyyyMMdd");
 
     private final BusinessHelper businessHelper;
@@ -98,6 +120,9 @@ public class OrderServiceImpl implements OrderService {
     private final OrderMapper orderMapper;
     private final SaleRepository saleRepository;
     private final StockEntryService stockEntryService;
+    private final DiscountRepository discountRepository;
+    private final CouponRepository couponRepository;
+    private final DiscountTargetRepository discountTargetRepository;
 
     private final ItemChannelStockService itemChannelStockService;
     private final ReceiptService receiptService;
@@ -123,14 +148,17 @@ public class OrderServiceImpl implements OrderService {
         order.setStatus(OrderStatus.PENDING);
         order.setNote(request.note());
         order.setCurrency(resolveCurrency(request.currency(), business));
+        TaxInclusionType inclusionType = resolveTaxInclusionType(request.taxInclusionType());
+        order.setTaxInclusionType(inclusionType);
         applyDisplayCurrency(business, order);
         order.setInvoiceNumber(nextInvoiceNumber(business.getId()));
         // Whoever is signed in is the one working the till.
         order.setCashierId(AuthHelper.currentUserId());
 
+        Customer customer = null;
         if (request.customerId() != null) {
             // Scoped by business so one shop cannot attach another shop's customer.
-            Customer customer = customerRepository.findByIdAndBusinessId(request.customerId(), businessId)
+            customer = customerRepository.findByIdAndBusinessId(request.customerId(), businessId)
                     .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Customer has not been found"));
             order.setCustomer(customer);
         }
@@ -163,17 +191,35 @@ public class OrderServiceImpl implements OrderService {
             subtotal = subtotal.add(item.getLineTotal());
         }
 
-        BigDecimal discount = request.discountAmount() == null ? BigDecimal.ZERO : request.discountAmount();
+        BigDecimal discount = resolveOrderDiscountAmount(
+                businessId,
+                order,
+                customer,
+                request.discountId(),
+                request.discountCode(),
+                request.discountAmount(),
+                true);
 
         if (discount.compareTo(subtotal) > 0) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Discount cannot exceed the order subtotal");
+            discount = subtotal;
         }
 
         int scale = CURRENCY_KHR.equalsIgnoreCase(order.getCurrency()) ? 0 : 2;
 
+        BigDecimal taxRate = request.taxRate() != null ? request.taxRate() : BigDecimal.ZERO;
+        BigDecimal taxAmount = request.taxAmount() != null ? request.taxAmount() : BigDecimal.ZERO;
+        order.setTaxRate(taxRate);
+        order.setTaxAmount(taxAmount);
+
+        BigDecimal afterDiscount = subtotal.subtract(discount);
+        BigDecimal total = afterDiscount;
+        if (TaxInclusionType.EXCLUSIVE.equals(inclusionType) && taxAmount.compareTo(BigDecimal.ZERO) > 0) {
+            total = afterDiscount.add(taxAmount);
+        }
+
         order.setSubtotal(subtotal.setScale(scale, RoundingMode.HALF_UP));
         order.setDiscountAmount(discount.setScale(scale, RoundingMode.HALF_UP));
-        order.setTotal(subtotal.subtract(discount).setScale(scale, RoundingMode.HALF_UP));
+        order.setTotal(total.setScale(scale, RoundingMode.HALF_UP));
 
         return orderMapper.toResponse(orderRepository.save(order));
     }
@@ -182,7 +228,15 @@ public class OrderServiceImpl implements OrderService {
     @Transactional(readOnly = true)
     public OrderResponse findOrderById(UUID businessId, UUID orderId) {
         businessHelper.findAccessibleBusiness(businessId);
-        return orderMapper.toResponse(findOrder(businessId, orderId));
+        Order order = findOrder(businessId, orderId);
+        OrderResponse response = orderMapper.toResponse(order);
+
+        if (OrderStatus.PAID.equals(order.getStatus())) {
+            saleRepository.findByOrderId(order.getId())
+                    .ifPresent(sale -> response.setPaymentMethod(sale.getPaymentMethod()));
+        }
+
+        return response;
     }
 
     @Override
@@ -261,7 +315,7 @@ public class OrderServiceImpl implements OrderService {
         Business business = businessHelper.findAccessibleBusiness(businessId);
         Order order = findOrder(businessId, orderId);
 
-        requirePending(order);
+        requireSettleable(order);
 
         if (OrderChannel.POS.equals(order.getChannel())) {
             boolean hasOpenSession = false;
@@ -276,19 +330,35 @@ public class OrderServiceImpl implements OrderService {
         }
 
         int scale = scaleFor(order);
-        BigDecimal total = order.getTotal();
+        TaxInclusionType inclusionType = request.taxInclusionType() != null
+                ? request.taxInclusionType()
+                : (order.getTaxInclusionType() != null ? order.getTaxInclusionType() : TaxInclusionType.EXCLUSIVE);
+        BigDecimal taxAmount = request.taxAmount() != null
+                ? request.taxAmount()
+                : (order.getTaxAmount() != null ? order.getTaxAmount() : BigDecimal.ZERO);
 
-        BigDecimal received = request.receivedAmount() == null
-                ? total
-                : request.receivedAmount().setScale(scale, RoundingMode.HALF_UP);
-
-        if (received.compareTo(total) < 0) {
-            throw new ResponseStatusException(
-                    HttpStatus.BAD_REQUEST,
-                    "Received " + received + " is less than the total " + total);
+        BigDecimal effectiveTotal = order.getTotal();
+        if (TaxInclusionType.EXCLUSIVE.equals(inclusionType) && taxAmount.compareTo(BigDecimal.ZERO) > 0) {
+            effectiveTotal = order.getTotal().add(taxAmount).setScale(scale, RoundingMode.HALF_UP);
         }
 
-        return toSaleResponse(settle(business, order, request.paymentMethod(), received, request.note()));
+        BigDecimal received;
+        if (PaymentMethodType.PAY_LATER.equals(request.paymentMethod())) {
+            // Pay later collects nothing right now — whatever the client sent is ignored.
+            received = BigDecimal.ZERO.setScale(scale, RoundingMode.HALF_UP);
+        } else {
+            received = request.receivedAmount() == null
+                    ? effectiveTotal
+                    : request.receivedAmount().setScale(scale, RoundingMode.HALF_UP);
+
+            if (received.compareTo(effectiveTotal) < 0) {
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST,
+                        "Received " + received + " is less than the total " + effectiveTotal);
+            }
+        }
+
+        return toSaleResponse(settle(business, order, request, request.paymentMethod(), received, request.note()));
     }
 
     @Override
@@ -341,7 +411,7 @@ public class OrderServiceImpl implements OrderService {
         qrCode.setStatus(QrStatus.PAID);
         qrCode.setPaidAt(paidAt);
 
-        settle(business, order, PaymentMethodType.DIGITAL, order.getTotal(), null);
+        settle(business, order, null, PaymentMethodType.DIGITAL, order.getTotal(), null);
 
         telegramAlertService.sendQrPaymentAlert(order);
 
@@ -354,82 +424,60 @@ public class OrderServiceImpl implements OrderService {
     private Sale settle(
             Business business,
             Order order,
+            PayOrderRequest request,
             PaymentMethodType paymentMethod,
             BigDecimal received,
             String note
     ) {
-        requirePending(order);
+        requireSettleable(order);
 
-        // Nothing has been written yet, so a line that would sell past this
-        // channel's share stops the whole sale here rather than halfway
-        // through the ledger. Items whose stock is shared are untouched by it.
-        for (OrderItem line : order.getItems()) {
-            itemChannelStockService.requireAllocation(
-                    line.getItem(),
-                    line.getVariant(),
-                    order.getChannel(),
-                    line.baseQuantity());
+        // A confirmed order already took its stock off the shelf — pricing
+        // it a second time here would empty it twice for one sale. Only a
+        // still-pending order needs the shelf touched now.
+        if (OrderStatus.PENDING.equals(order.getStatus())) {
+            consumeStockForOrder(business, order);
         }
 
         int scale = scaleFor(order);
         BigDecimal total = order.getTotal();
 
+        // Whichever call took the stock — this one, or confirm() earlier —
+        // left its cost on the line and its add-ons, so the total is just a
+        // sum of what is already there.
         BigDecimal totalCost = BigDecimal.ZERO;
         int itemCount = 0;
 
         for (OrderItem line : order.getItems()) {
-            // The sale consumes stock batches oldest first, so its own entry
-            // already carries what those units cost. Asking the item again
-            // afterwards would price the sale at whatever is left on the shelf.
-            BigDecimal unitCost = stockEntryService.recordSale(
-                    business,
-                    line.getItem(),
-                    line.getVariant(),
-                    // A case of twenty-four takes twenty-four off the shelf;
-                    // the ledger still reads back as the one case that sold.
-                    line.baseQuantity(),
-                    BigDecimal.valueOf(line.getQuantity()),
-                    line.getUnit(),
-                    order.getId(),
-                    order.getInvoiceNumber()
-            ).getUnitCost();
+            BigDecimal unitCost = line.getUnitCost() == null ? BigDecimal.ZERO : line.getUnitCost();
+            totalCost = totalCost.add(unitCost.multiply(line.baseQuantity()));
 
-            if (unitCost == null) {
-                unitCost = BigDecimal.ZERO;
-            }
-
-            line.setUnitCost(unitCost.setScale(2, RoundingMode.HALF_UP));
-
-            // The sale uses up the channel's share of the shelf as well as the
-            // shelf itself. Does nothing for an item whose stock is shared,
-            // which is most of them.
-            itemChannelStockService.consume(
-                    line.getItem(),
-                    line.getVariant(),
-                    order.getChannel(),
-                    line.baseQuantity());
-
-            // The extras go out with it: a tub of pearls empties whether it
-            // was scooped into one drink or ten.
             for (OrderItemAddOn chosen : line.getAddOns()) {
-                if (chosen.getAddOn() == null) {
-                    continue;
-                }
-
-                stockEntryService.recordAddOnSale(
-                        business,
-                        chosen.getAddOn(),
-                        chosen.getUsePerOrder()
-                                .multiply(BigDecimal.valueOf(line.getQuantity())),
-                        order.getId(),
-                        order.getInvoiceNumber()
-                );
+                totalCost = totalCost.add(chosen.getCost() == null ? BigDecimal.ZERO : chosen.getCost());
             }
 
-            totalCost = totalCost.add(unitCost.multiply(BigDecimal.valueOf(line.getQuantity())));
             itemCount += line.getQuantity();
         }
 
+        TaxInclusionType inclusionType = request != null && request.taxInclusionType() != null
+                ? request.taxInclusionType()
+                : (order.getTaxInclusionType() != null ? order.getTaxInclusionType() : TaxInclusionType.EXCLUSIVE);
+
+        BigDecimal taxRate = request != null && request.taxRate() != null
+                ? request.taxRate()
+                : (order.getTaxRate() != null ? order.getTaxRate() : BigDecimal.ZERO);
+
+        BigDecimal taxAmount = request != null && request.taxAmount() != null
+                ? request.taxAmount()
+                : (order.getTaxAmount() != null ? order.getTaxAmount() : BigDecimal.ZERO);
+
+        BigDecimal effectiveTotal = order.getTotal();
+        if (TaxInclusionType.EXCLUSIVE.equals(inclusionType) && taxAmount.compareTo(BigDecimal.ZERO) > 0) {
+            effectiveTotal = order.getTotal().add(taxAmount).setScale(scale, RoundingMode.HALF_UP);
+        }
+
+        order.setTaxInclusionType(inclusionType);
+        order.setTaxRate(taxRate);
+        order.setTaxAmount(taxAmount);
         order.setStatus(OrderStatus.PAID);
         orderRepository.save(order);
 
@@ -442,9 +490,12 @@ public class OrderServiceImpl implements OrderService {
         sale.setChannel(order.getChannel());
         sale.setSubtotal(order.getSubtotal());
         sale.setDiscountAmount(order.getDiscountAmount());
-        sale.setTotalAmount(total);
+        sale.setTaxRate(taxRate);
+        sale.setTaxAmount(taxAmount);
+        sale.setTaxInclusionType(inclusionType);
+        sale.setTotalAmount(effectiveTotal);
         sale.setPaidAmount(received);
-        sale.setChangeAmount(received.subtract(total).setScale(scale, RoundingMode.HALF_UP));
+        sale.setChangeAmount(received.subtract(effectiveTotal).setScale(scale, RoundingMode.HALF_UP));
         sale.setTotalCost(totalCost.setScale(2, RoundingMode.HALF_UP));
         sale.setCurrency(order.getCurrency());
         // Frozen here, not looked up at render time, so a later rate change
@@ -455,6 +506,8 @@ public class OrderServiceImpl implements OrderService {
         sale.setItemCount(itemCount);
         sale.setNote(note);
         sale.setSoldAt(LocalDateTime.now());
+
+        recordCouponUsage(order);
 
         Sale saved = saleRepository.save(sale);
 
@@ -475,39 +528,154 @@ public class OrderServiceImpl implements OrderService {
         return saved;
     }
 
-    private void requirePending(Order order) {
+    private void recordCouponUsage(Order order) {
+        String code = StringUtils.hasText(order.getDiscountCode()) ? order.getDiscountCode().trim() : null;
+        if (!StringUtils.hasText(code) && order.getDiscountId() != null) {
+            code = couponRepository.findAllByBusinessIdAndDiscount_IdOrderByCreatedDateDesc(order.getBusiness().getId(), order.getDiscountId()).stream()
+                    .map(Coupon::getCode)
+                    .findFirst()
+                    .orElse(null);
+        }
+        if (!StringUtils.hasText(code)) {
+            return;
+        }
+
+        couponRepository.findByBusinessIdAndCodeIgnoreCase(order.getBusiness().getId(), code)
+                .ifPresent(coupon -> {
+                    int usedCount = coupon.getUsedCount() == null ? 0 : coupon.getUsedCount();
+                    coupon.setUsedCount(usedCount + 1);
+                    if (coupon.getUsageLimit() != null && coupon.getUsedCount() >= coupon.getUsageLimit()) {
+                        coupon.setStatus(CouponStatus.USED_UP);
+                    }
+                    couponRepository.save(coupon);
+                });
+    }
+
+    private void requireSettleable(Order order) {
+        if (!OrderStatus.PENDING.equals(order.getStatus()) && !OrderStatus.CONFIRMED.equals(order.getStatus())) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "Only a pending or confirmed order can be paid, current status is " + order.getStatus());
+        }
+    }
+
+    /**
+     * Takes every stock-tracked line off the shelf, batch by batch, and
+     * prices the line and its add-ons at what those batches actually cost.
+     *
+     * Called exactly once per order — from {@link #confirmOrder} if the
+     * order is confirmed before it is paid, otherwise from {@link #settle}
+     * at payment time. Never both: a line's cost is persisted the moment it
+     * is priced, and {@code settle} skips this entirely for an order that
+     * arrives already {@link OrderStatus#CONFIRMED}.
+     */
+    private void consumeStockForOrder(Business business, Order order) {
+        // Nothing has been written yet, so a line that would sell past this
+        // channel's share stops the whole sale here rather than halfway
+        // through the ledger. Items whose stock is shared are untouched by it.
+        for (OrderItem line : order.getItems()) {
+            if (line.getItem() != null && line.getItem().isStockTracked()) {
+                itemChannelStockService.requireAllocation(
+                        line.getItem(),
+                        line.getVariant(),
+                        order.getChannel(),
+                        line.baseQuantity());
+            }
+        }
+
+        for (OrderItem line : order.getItems()) {
+            boolean isTracked = line.getItem() != null && line.getItem().isStockTracked();
+            BigDecimal unitCost = BigDecimal.ZERO;
+
+            if (isTracked) {
+                // The sale consumes stock batches oldest first, so its own entry
+                // already carries what those units cost. Asking the item again
+                // afterwards would price the sale at whatever is left on the shelf.
+                var saleEntry = stockEntryService.recordSale(
+                        business,
+                        line.getItem(),
+                        line.getVariant(),
+                        // A case of twenty-four takes twenty-four off the shelf;
+                        // the ledger still reads back as the one case that sold.
+                        line.baseQuantity(),
+                        BigDecimal.valueOf(line.getQuantity()),
+                        line.getUnit(),
+                        order.getId(),
+                        order.getInvoiceNumber()
+                );
+
+                if (saleEntry != null && saleEntry.getUnitCost() != null) {
+                    unitCost = saleEntry.getUnitCost();
+                }
+
+                // The sale uses up the channel's share of the shelf as well as the
+                // shelf itself. Does nothing for an item whose stock is shared,
+                // which is most of them.
+                itemChannelStockService.consume(
+                        line.getItem(),
+                        line.getVariant(),
+                        order.getChannel(),
+                        line.baseQuantity());
+            }
+
+            line.setUnitCost(unitCost.setScale(2, RoundingMode.HALF_UP));
+
+            // The extras go out with it: a tub of pearls empties whether it
+            // was scooped into one drink or ten.
+            for (OrderItemAddOn chosen : line.getAddOns()) {
+                if (chosen.getAddOn() == null) {
+                    continue;
+                }
+
+                // What the extra actually cost, from the batches it emptied.
+                // Kept on the line so a later total (settle, run separately)
+                // can add it up without touching the shelf again.
+                BigDecimal addOnCost = stockEntryService.recordAddOnSale(
+                        business,
+                        chosen.getAddOn(),
+                        chosen.getUsePerOrder()
+                                .multiply(BigDecimal.valueOf(line.getQuantity())),
+                        order.getId(),
+                        order.getInvoiceNumber()
+                ).getCostOfGoods();
+
+                if (addOnCost == null) {
+                    addOnCost = BigDecimal.ZERO;
+                }
+
+                chosen.setCost(addOnCost.setScale(2, RoundingMode.HALF_UP));
+            }
+        }
+    }
+
+    @Override
+    @Transactional
+    public OrderResponse confirmOrder(UUID businessId, UUID orderId) {
+        Business business = businessHelper.findAccessibleBusiness(businessId);
+        Order order = findOrder(businessId, orderId);
+
         if (!OrderStatus.PENDING.equals(order.getStatus())) {
             throw new ResponseStatusException(
                     HttpStatus.CONFLICT,
-                    "Only a pending order can be paid, current status is " + order.getStatus());
+                    "Only a pending order can be confirmed, current status is " + order.getStatus());
         }
+
+        consumeStockForOrder(business, order);
+
+        order.setStatus(OrderStatus.CONFIRMED);
+        return orderMapper.toResponse(orderRepository.save(order));
     }
 
     private int scaleFor(Order order) {
         return CURRENCY_KHR.equalsIgnoreCase(order.getCurrency()) ? 0 : 2;
     }
 
+    private TaxInclusionType resolveTaxInclusionType(TaxInclusionType inclusionType) {
+        return inclusionType == null ? TaxInclusionType.EXCLUSIVE : inclusionType;
+    }
+
     private SaleResponse toSaleResponse(Sale sale) {
-        return new SaleResponse(
-                sale.getId(),
-                sale.getOrder().getId(),
-                sale.getInvoiceNumber(),
-                sale.getCashierId(),
-                sale.getChannel(),
-                sale.getSubtotal(),
-                sale.getDiscountAmount(),
-                sale.getTotalAmount(),
-                sale.getPaidAmount(),
-                sale.getChangeAmount(),
-                sale.getTotalCost(),
-                sale.getCurrency(),
-                sale.getDisplayCurrency(),
-                sale.getDisplayExchangeRate(),
-                sale.getPaymentMethod(),
-                sale.getItemCount(),
-                sale.getNote(),
-                sale.getSoldAt()
-        );
+        return orderMapper.toSaleResponse(sale);
     }
 
     @Override
@@ -516,8 +684,12 @@ public class OrderServiceImpl implements OrderService {
         businessHelper.findAccessibleBusiness(businessId);
         Order order = findOrder(businessId, orderId);
 
-        if (OrderStatus.PAID.equals(order.getStatus())) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "A paid order cannot be cancelled");
+        if (OrderStatus.PAID.equals(order.getStatus()) || OrderStatus.CONFIRMED.equals(order.getStatus())) {
+            // Stock already left the shelf for both — there is no reversal
+            // path here, so cancelling would silently lose it.
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "A " + order.getStatus().name().toLowerCase() + " order cannot be cancelled");
         }
 
         order.setStatus(OrderStatus.CANCELLED);
@@ -772,14 +944,34 @@ public class OrderServiceImpl implements OrderService {
         Specification<Order> businessSpec = (root, query, cb) ->
                 cb.equal(root.get("business").get("id"), businessId);
 
-        return PageResponse.from(
-                orderRepository.findAll(businessSpec.and(spec), pageable).map(orderMapper::toResponse));
+        Page<Order> orders = orderRepository.findAll(businessSpec.and(spec), pageable);
+
+        // One bulk lookup for the whole page rather than one per row — a sale
+        // only exists for a PAID order, so a page of PENDING carts costs
+        // nothing extra here.
+        List<UUID> paidOrderIds = orders.getContent().stream()
+                .filter(order -> OrderStatus.PAID.equals(order.getStatus()))
+                .map(Order::getId)
+                .toList();
+
+        java.util.Map<UUID, PaymentMethodType> paymentMethodByOrderId = paidOrderIds.isEmpty()
+                ? java.util.Map.of()
+                : saleRepository.findByOrder_IdIn(paidOrderIds).stream()
+                        .collect(java.util.stream.Collectors.toMap(
+                                sale -> sale.getOrder().getId(), Sale::getPaymentMethod));
+
+        return PageResponse.from(orders.map(order -> {
+            OrderResponse response = orderMapper.toResponse(order);
+            response.setPaymentMethod(paymentMethodByOrderId.get(order.getId()));
+            return response;
+        }));
     }
 
     @Override
     @Transactional
     public OrderResponse addOrderItem(UUID businessId, UUID orderId, AddOrderItemRequest request) {
         Order order = validateOrderModification(businessId, orderId);
+        BigDecimal orderLevelDiscount = currentOrderLevelDiscount(order);
 
         java.util.Optional<OrderItem> existingOpt = order.getItems().stream()
                 .filter(i -> sameLine(i, request.itemId(), request.variantId(), request.unitId(),
@@ -813,6 +1005,7 @@ public class OrderServiceImpl implements OrderService {
             order.addItem(item);
         }
 
+        order.setDiscountAmount(itemDiscountTotal(order).add(orderLevelDiscount));
         recalculateOrderTotals(order);
         return orderMapper.toResponse(orderRepository.save(order));
     }
@@ -821,6 +1014,7 @@ public class OrderServiceImpl implements OrderService {
     @Transactional
     public OrderResponse updateOrderItem(UUID businessId, UUID orderId, UUID orderItemId, UpdateOrderItemRequest request) {
         Order order = validateOrderModification(businessId, orderId);
+        BigDecimal orderLevelDiscount = currentOrderLevelDiscount(order);
 
         OrderItem item = order.getItems().stream()
                 .filter(i -> i.getId().equals(orderItemId))
@@ -839,6 +1033,7 @@ public class OrderServiceImpl implements OrderService {
         BigDecimal discount = item.getDiscountAmount() != null ? item.getDiscountAmount() : BigDecimal.ZERO;
         item.setLineTotal(item.priceWithAddOns().multiply(BigDecimal.valueOf(item.getQuantity())).subtract(discount));
 
+        order.setDiscountAmount(itemDiscountTotal(order).add(orderLevelDiscount));
         recalculateOrderTotals(order);
         return orderMapper.toResponse(orderRepository.save(order));
     }
@@ -847,12 +1042,14 @@ public class OrderServiceImpl implements OrderService {
     @Transactional
     public OrderResponse removeOrderItem(UUID businessId, UUID orderId, UUID orderItemId) {
         Order order = validateOrderModification(businessId, orderId);
+        BigDecimal orderLevelDiscount = currentOrderLevelDiscount(order);
 
         boolean removed = order.getItems().removeIf(i -> i.getId().equals(orderItemId));
         if (!removed) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Order item not found");
         }
 
+        order.setDiscountAmount(itemDiscountTotal(order).add(orderLevelDiscount));
         recalculateOrderTotals(order);
         return orderMapper.toResponse(orderRepository.save(order));
     }
@@ -865,28 +1062,469 @@ public class OrderServiceImpl implements OrderService {
         return orderMapper.toResponse(orderRepository.save(order));
     }
 
+    @Override
+    @Transactional
+    public OrderResponse updateOrderDiscount(UUID businessId, UUID orderId, UpdateOrderDiscountRequest request) {
+        Order order = validateOrderModification(businessId, orderId);
+        BigDecimal itemDiscount = itemDiscountTotal(order);
+        BigDecimal orderLevelDiscount = resolveOrderDiscountAmount(
+                businessId,
+                order,
+                order.getCustomer(),
+                request.discountId(),
+                request.discountCode(),
+                request.discountAmount(),
+                false);
+        order.setDiscountAmount(itemDiscount.add(orderLevelDiscount));
+        recalculateOrderTotals(order);
+        return orderMapper.toResponse(orderRepository.save(order));
+    }
+
+    private BigDecimal resolveOrderDiscountAmount(
+            UUID businessId,
+            Order order,
+            Customer customer,
+            UUID requestedDiscountId,
+            String requestedDiscountCode,
+            BigDecimal manualDiscountAmount,
+            boolean applyMembershipDiscount
+    ) {
+        BigDecimal discountableSubtotal = grossSubtotal(order).subtract(itemDiscountTotal(order));
+        if (discountableSubtotal.compareTo(BigDecimal.ZERO) <= 0) {
+            clearOrderDiscountSource(order);
+            return BigDecimal.ZERO;
+        }
+
+        if (StringUtils.hasText(requestedDiscountCode)) {
+            Coupon coupon = findUsableCoupon(businessId, requestedDiscountCode.trim(), discountableSubtotal, customer);
+            Discount discount = coupon.getDiscount();
+            if (requestedDiscountId != null && !requestedDiscountId.equals(discount.getId())) {
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST,
+                        "Coupon does not belong to the requested discount");
+            }
+            validateDiscountForOrder(discount, order, customer, true);
+            order.setDiscountId(discount.getId());
+            order.setDiscountCode(coupon.getCode());
+            return calculateDiscountAmount(discount, order, discountableSubtotal);
+        }
+
+        if (requestedDiscountId != null) {
+            Discount discount = findDiscountForOrder(businessId, requestedDiscountId);
+            validateDiscountForOrder(discount, order, customer, false);
+            order.setDiscountId(discount.getId());
+            order.setDiscountCode(null);
+            BigDecimal calculated = calculateDiscountAmount(discount, order, discountableSubtotal);
+            if (calculated.compareTo(BigDecimal.ZERO) > 0) {
+                return calculated;
+            }
+            if (manualDiscountAmount != null && manualDiscountAmount.compareTo(BigDecimal.ZERO) > 0) {
+                return manualDiscountAmount.min(discountableSubtotal);
+            }
+            return calculated;
+        }
+
+        if (applyMembershipDiscount
+                && customer != null
+                && customer.getMembershipType() != null
+                && RecordStatus.ACTIVE.equals(customer.getMembershipType().getStatus())
+                && customer.getMembershipType().getDiscount() != null) {
+            Discount discount = customer.getMembershipType().getDiscount();
+            validateDiscountForOrder(discount, order, customer, false);
+            order.setDiscountId(discount.getId());
+            order.setDiscountCode(null);
+            return calculateDiscountAmount(discount, order, discountableSubtotal);
+        }
+
+        clearOrderDiscountSource(order);
+        return manualDiscountAmount == null ? BigDecimal.ZERO : manualDiscountAmount;
+    }
+
+    private Coupon findUsableCoupon(UUID businessId, String code, BigDecimal subtotal, Customer customer) {
+        Coupon coupon = couponRepository.findByBusinessIdAndCodeIgnoreCase(businessId, code)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Coupon has not been found"));
+
+        if (!CouponStatus.ACTIVE.equals(coupon.getStatus())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Coupon is not active");
+        }
+        LocalDateTime now = LocalDateTime.now();
+        if (coupon.getStartsAt() != null && now.isBefore(coupon.getStartsAt())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Coupon is not active yet");
+        }
+        if (coupon.getEndsAt() != null && now.isAfter(coupon.getEndsAt())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Coupon has expired");
+        }
+        if (coupon.getUsageLimit() != null && coupon.getUsedCount() != null
+                && coupon.getUsedCount() >= coupon.getUsageLimit()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Coupon usage limit has been reached");
+        }
+        if (customer != null && coupon.getUsageLimitPerCustomer() != null) {
+            long customerUses = orderRepository.countByBusinessIdAndCustomerIdAndDiscountCodeIgnoreCaseAndStatusNot(
+                    businessId, customer.getId(), code, OrderStatus.CANCELLED);
+            if (customerUses >= coupon.getUsageLimitPerCustomer()) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "You have reached your maximum usage limit for this coupon");
+            }
+        }
+        if (coupon.getMinPurchaseAmount() != null && subtotal.compareTo(coupon.getMinPurchaseAmount()) < 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Order does not meet coupon minimum purchase amount");
+        }
+
+        return coupon;
+    }
+
+    private Discount findDiscountForOrder(UUID businessId, UUID discountId) {
+        return discountRepository.findByIdAndBusinessId(discountId, businessId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Discount has not been found"));
+    }
+
+    private void validateDiscountForOrder(Discount discount, Order order, Customer customer, boolean couponProvided) {
+        if (!RecordStatus.ACTIVE.equals(discount.getStatus())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Discount is not active");
+        }
+        LocalDateTime now = LocalDateTime.now();
+        if (discount.getStartsAt() != null && now.isBefore(discount.getStartsAt())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Discount is not active yet");
+        }
+        if (discount.getEndsAt() != null && now.isAfter(discount.getEndsAt())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Discount has expired");
+        }
+        List<DayOfWeek> selectedDays = discount.getSelectedDays();
+        if (selectedDays != null && !selectedDays.isEmpty()
+                && selectedDays.stream().noneMatch(day -> day == LocalDate.now().getDayOfWeek())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Discount is not available today");
+        }
+        List<OrderChannel> channels = discount.getApplicableChannels();
+        if (channels != null && !channels.isEmpty() && !channels.contains(order.getChannel())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Discount is not available for this order channel");
+        }
+        if (Boolean.TRUE.equals(discount.getRequiresCoupon()) && !couponProvided) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "This discount requires a coupon code");
+        }
+        if (DiscountScope.SPECIFIC_MEMBERSHIP.equals(discount.getScope())
+                && (customer == null
+                || customer.getMembershipType() == null
+                || customer.getMembershipType().getDiscount() == null
+                || !discount.getId().equals(customer.getMembershipType().getDiscount().getId()))) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Discount requires a matching customer membership type");
+        }
+    }
+
+    private BigDecimal calculateDiscountAmount(Discount discount, Order order, BigDecimal discountableSubtotal) {
+        BigDecimal eligibleSubtotal = eligibleSubtotal(discount, order).min(discountableSubtotal);
+        if (eligibleSubtotal.compareTo(BigDecimal.ZERO) <= 0) {
+            return BigDecimal.ZERO;
+        }
+
+        if (discount.getMinOrderAmount() != null && discountableSubtotal.compareTo(discount.getMinOrderAmount()) < 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Order does not meet discount minimum order amount");
+        }
+        if (DiscountRuleType.MIN_ORDER_AMOUNT.equals(discount.getRuleType())
+                && discount.getMinOrderAmount() != null
+                && discountableSubtotal.compareTo(discount.getMinOrderAmount()) < 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Order does not meet discount minimum order amount");
+        }
+        if (DiscountRuleType.MIN_QUANTITY.equals(discount.getRuleType())) {
+            int eligibleQuantity = eligibleQuantity(discount, order);
+            if (discount.getMinQuantity() == null || eligibleQuantity < discount.getMinQuantity()) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Order does not meet discount minimum quantity");
+            }
+        }
+
+        BigDecimal amount;
+        if (DiscountRuleType.BUY_X_GET_Y.equals(discount.getRuleType())
+                || DiscountType.BUY_X_GET_Y.equals(discount.getType())) {
+            amount = calculateBuyXGetYDiscount(discount, order);
+        } else if (DiscountType.PERCENTAGE.equals(discount.getType())) {
+            amount = eligibleSubtotal.multiply(discount.getValue()).divide(BigDecimal.valueOf(100), 6, RoundingMode.HALF_UP);
+        } else {
+            amount = discount.getValue();
+        }
+
+        if (discount.getMaxDiscountAmount() != null && amount.compareTo(discount.getMaxDiscountAmount()) > 0) {
+            amount = discount.getMaxDiscountAmount();
+        }
+        if (amount.compareTo(eligibleSubtotal) > 0) {
+            amount = eligibleSubtotal;
+        }
+        return amount.max(BigDecimal.ZERO);
+    }
+
+    private BigDecimal calculateBuyXGetYDiscount(Discount discount, Order order) {
+        int buyQuantity = discount.getBuyQuantity() == null ? 0 : discount.getBuyQuantity();
+        int getQuantity = discount.getGetQuantity() == null ? 0 : discount.getGetQuantity();
+        if (buyQuantity <= 0 || getQuantity <= 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Discount is missing buy/get quantities");
+        }
+
+        List<BigDecimal> eligibleUnitPrices = new ArrayList<>();
+        for (OrderItem item : eligibleItems(discount, order)) {
+            BigDecimal unitPrice = item.priceWithAddOns();
+            int quantity = item.getQuantity() == null ? 0 : item.getQuantity();
+            for (int i = 0; i < quantity; i++) {
+                eligibleUnitPrices.add(unitPrice);
+            }
+        }
+
+        int freeQuantity = (eligibleUnitPrices.size() / (buyQuantity + getQuantity)) * getQuantity;
+        if (freeQuantity <= 0) {
+            return BigDecimal.ZERO;
+        }
+
+        return eligibleUnitPrices.stream()
+                .sorted(Comparator.naturalOrder())
+                .limit(freeQuantity)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    private BigDecimal eligibleSubtotal(Discount discount, Order order) {
+        return eligibleItems(discount, order).stream()
+                .map(this::grossLineTotal)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    private int eligibleQuantity(Discount discount, Order order) {
+        return eligibleItems(discount, order).stream()
+                .mapToInt(item -> item.getQuantity() == null ? 0 : item.getQuantity())
+                .sum();
+    }
+
+    private List<OrderItem> eligibleItems(Discount discount, Order order) {
+        DiscountScope scope = normalizeScope(discount.getScope());
+        if (DiscountScope.ALL_ITEMS.equals(scope) || DiscountScope.SPECIFIC_MEMBERSHIP.equals(scope)) {
+            return order.getItems();
+        }
+
+        List<DiscountTarget> targets = discountTargetRepository.findAllByDiscountId(discount.getId());
+        if (targets == null || targets.isEmpty()) {
+            return order.getItems();
+        }
+
+        if (DiscountScope.SPECIFIC_ITEMS.equals(scope)) {
+            Set<UUID> itemIds = targets.stream()
+                    .filter(target -> target.getItem() != null)
+                    .map(target -> target.getItem().getId())
+                    .collect(java.util.stream.Collectors.toSet());
+            if (itemIds.isEmpty()) return order.getItems();
+            List<OrderItem> matching = order.getItems().stream()
+                    .filter(item -> item.getItem() != null && itemIds.contains(item.getItem().getId()))
+                    .toList();
+            return matching.isEmpty() ? order.getItems() : matching;
+        }
+        if (DiscountScope.SPECIFIC_CATEGORIES.equals(scope)) {
+            Set<UUID> itemGroupIds = targets.stream()
+                    .filter(target -> target.getItemGroup() != null)
+                    .map(target -> target.getItemGroup().getId())
+                    .collect(java.util.stream.Collectors.toSet());
+            if (itemGroupIds.isEmpty()) return order.getItems();
+            List<OrderItem> matching = order.getItems().stream()
+                    .filter(item -> item.getItem() != null
+                            && item.getItem().getItemGroup() != null
+                            && itemGroupIds.contains(item.getItem().getItemGroup().getId()))
+                    .toList();
+            return matching.isEmpty() ? order.getItems() : matching;
+        }
+
+        return order.getItems();
+    }
+
+    private DiscountScope normalizeScope(DiscountScope scope) {
+        if (scope == null || DiscountScope.ORDER.equals(scope) || DiscountScope.ALL_ITEMS.equals(scope)) {
+            return DiscountScope.ALL_ITEMS;
+        }
+        if (DiscountScope.ITEM.equals(scope) || DiscountScope.SPECIFIC_ITEMS.equals(scope)) {
+            return DiscountScope.SPECIFIC_ITEMS;
+        }
+        if (DiscountScope.CATEGORY.equals(scope) || DiscountScope.SPECIFIC_CATEGORIES.equals(scope)) {
+            return DiscountScope.SPECIFIC_CATEGORIES;
+        }
+        return scope;
+    }
+
+    private void clearOrderDiscountSource(Order order) {
+        order.setDiscountId(null);
+        order.setDiscountCode(null);
+    }
+
+    private BigDecimal grossSubtotal(Order order) {
+        return order.getItems().stream()
+                .map(this::grossLineTotal)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    private BigDecimal itemDiscountTotal(Order order) {
+        return order.getItems().stream()
+                .map(item -> item.getDiscountAmount() == null ? BigDecimal.ZERO : item.getDiscountAmount())
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    private BigDecimal currentOrderLevelDiscount(Order order) {
+        BigDecimal storedTotalDiscount = order.getDiscountAmount() == null ? BigDecimal.ZERO : order.getDiscountAmount();
+        BigDecimal orderLevelDiscount = storedTotalDiscount.subtract(itemDiscountTotal(order));
+        return orderLevelDiscount.max(BigDecimal.ZERO);
+    }
+
+    private BigDecimal grossLineTotal(OrderItem item) {
+        int qty = item.getQuantity() == null ? 0 : item.getQuantity();
+        return item.priceWithAddOns().multiply(BigDecimal.valueOf(qty));
+    }
+
     private Order validateOrderModification(UUID businessId, UUID orderId) {
         Order order = findOrder(businessId, orderId);
-        if (OrderStatus.PAID.equals(order.getStatus()) || OrderStatus.CANCELLED.equals(order.getStatus())) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "Cannot modify an order that is already paid or cancelled");
+        if (OrderStatus.PAID.equals(order.getStatus())
+                || OrderStatus.CANCELLED.equals(order.getStatus())
+                || OrderStatus.CONFIRMED.equals(order.getStatus())) {
+            // Confirmed already took its stock off the shelf at whatever the
+            // line said then — changing the line after that would desync
+            // the two.
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "Cannot modify an order that is confirmed, paid or cancelled");
         }
         return order;
     }
 
     private void recalculateOrderTotals(Order order) {
-        BigDecimal subtotal = BigDecimal.ZERO;
+        BigDecimal grossSubtotal = BigDecimal.ZERO;
+        BigDecimal itemDiscount = BigDecimal.ZERO;
+
         for (OrderItem item : order.getItems()) {
-            subtotal = subtotal.add(item.getLineTotal());
+            BigDecimal itemGross = grossLineTotal(item);
+            BigDecimal itemDisc = item.getDiscountAmount() != null ? item.getDiscountAmount() : BigDecimal.ZERO;
+            BigDecimal itemNet = itemGross.subtract(itemDisc);
+            if (itemNet.compareTo(BigDecimal.ZERO) < 0) {
+                itemNet = BigDecimal.ZERO;
+            }
+            item.setLineTotal(itemNet);
+
+            grossSubtotal = grossSubtotal.add(itemGross);
+            itemDiscount = itemDiscount.add(itemDisc);
         }
 
-        BigDecimal discount = order.getDiscountAmount() == null ? BigDecimal.ZERO : order.getDiscountAmount();
-        if (discount.compareTo(subtotal) > 0) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Discount cannot exceed the order subtotal");
+        BigDecimal storedTotalDiscount = order.getDiscountAmount() == null ? BigDecimal.ZERO : order.getDiscountAmount();
+        BigDecimal orderDiscount = storedTotalDiscount.subtract(itemDiscount);
+        if (orderDiscount.compareTo(BigDecimal.ZERO) < 0) {
+            orderDiscount = BigDecimal.ZERO;
         }
+        BigDecimal maxAllowedOrderDiscount = grossSubtotal.subtract(itemDiscount);
+        if (maxAllowedOrderDiscount.compareTo(BigDecimal.ZERO) < 0) {
+            maxAllowedOrderDiscount = BigDecimal.ZERO;
+        }
+        if (orderDiscount.compareTo(maxAllowedOrderDiscount) > 0) {
+            orderDiscount = maxAllowedOrderDiscount;
+        }
+        BigDecimal totalDiscount = itemDiscount.add(orderDiscount);
 
         int scale = CURRENCY_KHR.equalsIgnoreCase(order.getCurrency()) ? 0 : 2;
-        order.setSubtotal(subtotal.setScale(scale, RoundingMode.HALF_UP));
-        order.setTotal(subtotal.subtract(discount).setScale(scale, RoundingMode.HALF_UP));
+        order.setSubtotal(grossSubtotal.setScale(scale, RoundingMode.HALF_UP));
+        order.setDiscountAmount(totalDiscount.setScale(scale, RoundingMode.HALF_UP));
+
+        BigDecimal netSubtotal = grossSubtotal.subtract(totalDiscount);
+        BigDecimal taxAmount = order.getTaxAmount() != null ? order.getTaxAmount() : BigDecimal.ZERO;
+        BigDecimal total = netSubtotal;
+        if (TaxInclusionType.EXCLUSIVE.equals(order.getTaxInclusionType()) && taxAmount.compareTo(BigDecimal.ZERO) > 0) {
+            total = netSubtotal.add(taxAmount);
+        }
+
+        if (total.compareTo(BigDecimal.ZERO) < 0) {
+            total = BigDecimal.ZERO;
+        }
+        order.setTotal(total.setScale(scale, RoundingMode.HALF_UP));
     }
 
+    @Override
+    @Transactional
+    public SyncOfflineOrdersResponse syncOfflineOrders(UUID businessId, SyncOfflineOrdersRequest request) {
+        Business business = businessHelper.findAccessibleBusiness(businessId);
+        List<String> syncedUuids = new ArrayList<>();
+
+        if (request == null || request.orders() == null || request.orders().isEmpty()) {
+            return new SyncOfflineOrdersResponse(true, syncedUuids);
+        }
+
+        for (OfflineOrderDto dto : request.orders()) {
+            if (dto.uuid() == null || dto.uuid().isBlank()) {
+                continue;
+            }
+
+            Optional<Order> existingOpt = orderRepository.findByBusinessIdAndInvoiceNumber(business.getId(), dto.uuid());
+
+            Order order;
+            boolean isNewOrder = false;
+
+            if (existingOpt.isPresent()) {
+                order = existingOpt.get();
+                // If it is already paid and has a sale, skip duplicate
+                if (OrderStatus.PAID.equals(order.getStatus()) && saleRepository.findByOrderId(order.getId()).isPresent()) {
+                    syncedUuids.add(dto.uuid());
+                    continue;
+                }
+                // Update existing order status to PAID
+                order.setStatus(dto.status() != null ? dto.status() : OrderStatus.PAID);
+                if (dto.subtotal() != null && dto.subtotal().compareTo(BigDecimal.ZERO) > 0) {
+                    order.setSubtotal(dto.subtotal());
+                }
+                if (dto.discountAmount() != null) {
+                    order.setDiscountAmount(dto.discountAmount());
+                }
+                if (dto.total() != null && dto.total().compareTo(BigDecimal.ZERO) > 0) {
+                    order.setTotal(dto.total());
+                }
+            } else {
+                isNewOrder = true;
+                order = new Order();
+                order.setBusiness(business);
+                order.setInvoiceNumber(dto.uuid());
+                order.setChannel(dto.channel() != null ? dto.channel() : OrderChannel.POS);
+                order.setStatus(dto.status() != null ? dto.status() : OrderStatus.PAID);
+                order.setSubtotal(dto.subtotal() != null ? dto.subtotal() : BigDecimal.ZERO);
+                order.setDiscountAmount(dto.discountAmount() != null ? dto.discountAmount() : BigDecimal.ZERO);
+                order.setTotal(dto.total() != null ? dto.total() : BigDecimal.ZERO);
+
+                if (dto.items() != null) {
+                    for (OfflineOrderItemDto itemDto : dto.items()) {
+                        if (itemDto.productId() == null) continue;
+
+                        Item item = itemRepository.findById(itemDto.productId()).orElse(null);
+                        if (item == null) continue;
+
+                        OrderItem orderItem = new OrderItem();
+                        orderItem.setItem(item);
+                        orderItem.setItemName(item.getName() != null ? item.getName() : "Item");
+                        orderItem.setQuantity(itemDto.quantity() != null ? itemDto.quantity() : 1);
+                        orderItem.setUnitPrice(itemDto.unitPrice() != null ? itemDto.unitPrice() : BigDecimal.ZERO);
+                        orderItem.setLineTotal(itemDto.subtotal() != null ? itemDto.subtotal() : BigDecimal.ZERO);
+
+                        order.addItem(orderItem);
+                    }
+                }
+            }
+
+            Order savedOrder = orderRepository.save(order);
+
+            // Create Sale entity if not already present
+            if (saleRepository.findByOrderId(savedOrder.getId()).isEmpty()) {
+                Sale sale = new Sale();
+                sale.setBusiness(business);
+                sale.setOrder(savedOrder);
+                sale.setInvoiceNumber(savedOrder.getInvoiceNumber());
+                sale.setChannel(savedOrder.getChannel());
+                sale.setSubtotal(savedOrder.getSubtotal());
+                sale.setDiscountAmount(savedOrder.getDiscountAmount());
+                sale.setTotalAmount(savedOrder.getTotal());
+                sale.setPaidAmount(savedOrder.getTotal());
+                sale.setChangeAmount(BigDecimal.ZERO);
+                sale.setPaymentMethod(dto.paymentMethod() != null ? dto.paymentMethod() : PaymentMethodType.CASH);
+                sale.setItemCount(savedOrder.getItems() != null ? savedOrder.getItems().size() : 0);
+                sale.setSoldAt(dto.createdAt() != null ? LocalDateTime.ofInstant(dto.createdAt(), ZoneId.systemDefault()) : LocalDateTime.now());
+                saleRepository.save(sale);
+
+                // Deduct Inventory Stock for Tracked Items
+                consumeStockForOrder(business, savedOrder);
+            }
+
+            syncedUuids.add(dto.uuid());
+        }
+
+        return new SyncOfflineOrdersResponse(true, syncedUuids);
+    }
 }

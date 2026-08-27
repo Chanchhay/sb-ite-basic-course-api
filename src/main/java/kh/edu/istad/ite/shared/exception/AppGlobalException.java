@@ -7,6 +7,7 @@ import com.fasterxml.jackson.databind.exc.MismatchedInputException;
 import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataAccessException;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -115,6 +116,18 @@ public class AppGlobalException {
                 .status(HttpStatus.PAYLOAD_TOO_LARGE.getReasonPhrase())
                 .code(HttpStatus.PAYLOAD_TOO_LARGE.value())
                 .message("File size exceeds maximum permitted upload limit.")
+                .timestamp(Instant.now())
+                .build();
+    }
+
+    @ResponseStatus(HttpStatus.CONFLICT)
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ErrorResponse handleDataIntegrityViolation(DataIntegrityViolationException e) {
+        log.error("Data integrity violation", e);
+        return ErrorResponse.builder()
+                .status(HttpStatus.CONFLICT.getReasonPhrase())
+                .code(HttpStatus.CONFLICT.value())
+                .message("This phone number or email is already registered to another customer.")
                 .timestamp(Instant.now())
                 .build();
     }

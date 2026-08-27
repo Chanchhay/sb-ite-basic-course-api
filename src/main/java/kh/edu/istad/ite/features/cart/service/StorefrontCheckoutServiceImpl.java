@@ -20,6 +20,7 @@ import kh.edu.istad.ite.features.customer.service.CustomerIdentityService;
 import kh.edu.istad.ite.features.inventory.dto.StockSummaryResponse;
 import kh.edu.istad.ite.features.channel.service.ItemChannelStockService;
 import kh.edu.istad.ite.features.inventory.service.StockEntryService;
+import kh.edu.istad.ite.features.order.dto.OrderResponse;
 import kh.edu.istad.ite.features.order.entity.Order;
 import kh.edu.istad.ite.features.order.entity.OrderItem;
 import kh.edu.istad.ite.features.order.entity.OrderItemAddOn;
@@ -38,6 +39,7 @@ import kh.edu.istad.ite.features.payment.repository.PaymentQrCodeRepository;
 import kh.edu.istad.ite.features.payment.service.ReceiptService;
 import kh.edu.istad.ite.shared.enums.BusinessFeature;
 import kh.edu.istad.ite.shared.enums.CartStatus;
+import kh.edu.istad.ite.shared.enums.ChannelType;
 import kh.edu.istad.ite.shared.enums.ItemType;
 import kh.edu.istad.ite.shared.enums.OrderChannel;
 import kh.edu.istad.ite.shared.enums.OrderStatus;
@@ -65,8 +67,10 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import kh.edu.istad.ite.features.social.service.TelegramAlertService;
 import lombok.RequiredArgsConstructor;
@@ -78,7 +82,7 @@ import lombok.extern.slf4j.Slf4j;
 public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService {
 
     private static final String CURRENCY_KHR = "KHR";
-    private static final int QR_VALIDITY_MINUTES = 5;
+    private static final int QR_VALIDITY_MINUTES = 2;
     private static final int QR_IMAGE_SIZE = 512;
     private static final String TERMINAL_LABEL = "WEB";
     private static final DateTimeFormatter INVOICE_DATE = DateTimeFormatter.ofPattern("yyyyMMdd");
@@ -91,6 +95,7 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
     private final CustomerIdentityService customerIdentityService;
     private final OrderRepository orderRepository;
     private final SaleRepository saleRepository;
+    private final kh.edu.istad.ite.features.order.mapper.OrderMapper orderMapper;
     private final BusinessPaymentSettingRepository paymentSettingRepository;
     private final PaymentQrCodeRepository paymentQrCodeRepository;
     private final KhqrGenerator khqrGenerator;
@@ -103,6 +108,7 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
     private final kh.edu.istad.ite.features.channel.service.ChannelPriceResolver channelPriceResolver;
     private final ReceiptService receiptService;
     private final TelegramAlertService telegramAlertService;
+    private final kh.edu.istad.ite.features.customer.repository.CustomerChannelIdentityRepository customerChannelIdentityRepository;
 
 
     @Override
@@ -113,11 +119,23 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
         Business business = businessRepository.findById(request.businessId())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Shop has not been found"));
 
+        boolean payLater = PaymentMethodType.PAY_LATER.equals(request.paymentMethod());
+
         requireShoppable(business);
-        businessHelper.requireFeature(business.getId(), BusinessFeature.KHQR_PAYMENT);
+        // Pay Later never touches Bakong, so it doesn't need KHQR configured for this shop.
+        if (!payLater) {
+            businessHelper.requireFeature(business.getId(), BusinessFeature.KHQR_PAYMENT);
+        }
 
 
-        Order openOrder = findOpenOrder(shopper).orElse(null);
+        // The "one open order at a time" rule exists for Bakong: two live
+        // QR codes for the same shopper would be confusing and could race
+        // on payment. Pay Later never touches Bakong, so a shopper choosing
+        // it should never be blocked by — or silently merged into — an
+        // order still waiting on the business to approve, whether that
+        // wait is at this shop or another one. Each Pay Later checkout
+        // gets its own order and its own approval.
+        Order openOrder = payLater ? null : findOpenOrder(shopper).orElse(null);
 
         if (openOrder != null && !openOrder.getBusiness().getId().equals(business.getId())) {
             throw new ResponseStatusException(
@@ -126,12 +144,15 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
                             + ". Finish or cancel it before paying another shop.");
         }
 
-        // Same store, still pending: reissue a QR rather than stacking orders.
+        // Same store, still pending: settle it the way this request asks for,
+        // rather than stacking orders.
         if (openOrder != null) {
             return issueQrFor(business, openOrder);
         }
 
         Customer customer = customerIdentityService.customerFor(business, shopper);
+        log.info("createCheckout: business={} shopper(globalCustomer)={} customer={}",
+                business.getId(), shopper.getId(), customer.getId());
 
         Cart cart = cartRepository
                 .findActiveCartWithItems(customer.getId(), business.getId(), CartStatus.ACTIVE)
@@ -169,10 +190,12 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
             }
         }
 
+        OrderChannel channel = resolveOrderChannel(business.getId(), customer.getId());
+
         Order order = new Order();
         order.setBusiness(business);
         order.setCustomer(customer);
-        order.setChannel(OrderChannel.WEB);
+        order.setChannel(channel);
         order.setStatus(OrderStatus.PENDING);
         order.setCurrency(resolveCurrency(business));
         currencyDisplayHelper.snapshot(business, order.getCurrency()).ifPresent(snapshot -> {
@@ -182,7 +205,9 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
         order.setInvoiceNumber(nextInvoiceNumber(business.getId()));
         // The shopper rang this up themselves, so there is no cashier.
         order.setCashierId(null);
-        order.setNote(StringUtils.hasText(request.note()) ? request.note() : "Storefront web order");
+        order.setNote(StringUtils.hasText(request.note())
+                ? request.note()
+                : (channel == OrderChannel.TELEGRAM ? "Telegram Mini App order" : "Storefront web order"));
 
         BigDecimal subtotal = BigDecimal.ZERO;
 
@@ -208,7 +233,7 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
                 saved.getId(), saved.getInvoiceNumber(), business.getId(),
                 saved.getTotal(), saved.getCurrency());
 
-        return issueQrFor(business, saved);
+        return payLater ? requestPayLaterApproval(business, saved) : issueQrFor(business, saved);
     }
 
 
@@ -322,7 +347,8 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
         qrCode.setPaidAt(paidAt);
         paymentQrCodeRepository.save(qrCode);
 
-        settle(business, order);
+        settle(business, order, PaymentMethodType.DIGITAL, order.getTotal(),
+                "Paid via Bakong KHQR on the web storefront");
         closeCart(order);
 
         telegramAlertService.sendQrPaymentAlert(order);
@@ -415,9 +441,84 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
                 expiresAtLocal);
     }
 
-    private void settle(Business business, Order order) {
+
+    /**
+     * A Pay Later checkout never touches the shelf on its own — it just
+     * parks the order at PENDING for the business owner to look at. Stock
+     * only leaves once {@link #approvePayLaterOrder} runs.
+     */
+    private StorefrontCheckoutResponse requestPayLaterApproval(Business business, Order order) {
+        order.setAwaitingPayLaterApproval(true);
+        orderRepository.save(order);
+
+        log.info("Storefront order {} ({}) awaiting owner approval as Pay Later at business {} for {} {}",
+                order.getId(), order.getInvoiceNumber(), business.getId(),
+                order.getTotal(), order.getCurrency());
+
+        return new StorefrontCheckoutResponse(
+                order.getId(),
+                order.getInvoiceNumber(),
+                business.getId(),
+                business.getDisplayName(),
+                business.getSlug(),
+                order.getItems().stream().mapToInt(OrderItem::getQuantity).sum(),
+                order.getTotal(),
+                order.getCurrency(),
+                null,
+                null,
+                null,
+                null);
+    }
+
+    @Override
+    @Transactional
+    public OrderResponse approvePayLaterOrder(UUID businessId, UUID orderId) {
+        Business business = businessHelper.findAccessibleBusiness(businessId);
+
+        Order order = orderRepository.findByIdAndBusinessId(orderId, businessId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Order has not been found"));
+
+        if (!order.isAwaitingPayLaterApproval()) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT, "This order is not waiting on a Pay Later approval");
+        }
+
+        int scale = scaleFor(order.getCurrency());
+
+        order.setAwaitingPayLaterApproval(false);
+        settle(business, order, PaymentMethodType.PAY_LATER,
+                BigDecimal.ZERO.setScale(scale, RoundingMode.HALF_UP),
+                "Pay later - collect from customer");
+        closeCart(order);
+
+        log.info("Storefront order {} ({}) approved as Pay Later by owner at business {} for {} {}",
+                order.getId(), order.getInvoiceNumber(), business.getId(),
+                order.getTotal(), order.getCurrency());
+
+        return orderMapper.toResponse(order);
+    }
+
+    private void settle(Business business, Order order, PaymentMethodType paymentMethod,
+                         BigDecimal paidAmount, String note) {
         if (!OrderStatus.PENDING.equals(order.getStatus())) {
             // Two polls can land at once; only the first one settles.
+            return;
+        }
+
+        // A retried request (network hiccup, a second tab, a double-tapped
+        // Approve button) can read the order as still PENDING before an
+        // earlier, already-committed call finishes — the PENDING check
+        // above alone doesn't close that window. Without this, the second
+        // caller falls through to insert a second Sale for the same order
+        // and dies on `uk_sales_order`, which the generic constraint
+        // handler then reports as a customer phone/email clash — a
+        // confusing message for something that was never about a customer
+        // at all. Finding an existing Sale first turns that crash into a
+        // no-op: the order was already settled, so there's nothing left
+        // for this call to do.
+        if (saleRepository.findByOrderId(order.getId()).isPresent()) {
+            log.info("Order {} ({}) already has a sale — treating this settle() call as already done",
+                    order.getId(), order.getInvoiceNumber());
             return;
         }
 
@@ -461,16 +562,34 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
                     continue;
                 }
 
-                stockEntryService.recordAddOnSale(
+                // What the extra actually cost, from the batches it emptied.
+                // Kept on the line as well as added to the sale, so the item
+                // report and the statement stay the same number: the line's
+                // price already includes this add-on, so its cost belongs
+                // beside it.
+                BigDecimal addOnCost = stockEntryService.recordAddOnSale(
                         business,
                         chosen.getAddOn(),
                         chosen.getUsePerOrder()
                                 .multiply(BigDecimal.valueOf(line.getQuantity())),
                         order.getId(),
-                        order.getInvoiceNumber());
+                        order.getInvoiceNumber()).getCostOfGoods();
+
+                if (addOnCost == null) {
+                    addOnCost = BigDecimal.ZERO;
+                }
+
+                chosen.setCost(addOnCost.setScale(2, RoundingMode.HALF_UP));
+                totalCost = totalCost.add(addOnCost);
             }
 
-            totalCost = totalCost.add(unitCost.multiply(BigDecimal.valueOf(line.getQuantity())));
+            // Times the base quantity, not the quantity rung up. `unitCost`
+            // is what one *base* unit cost — it came back from the movement
+            // that took `baseQuantity()` off the shelf — so a case of
+            // twenty-four costed at the price of one unit understated this
+            // sale by a factor of twenty-four, and flattered the margin by the
+            // same.
+            totalCost = totalCost.add(unitCost.multiply(line.baseQuantity()));
             itemCount += line.getQuantity();
         }
 
@@ -489,15 +608,15 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
         sale.setSubtotal(order.getSubtotal());
         sale.setDiscountAmount(order.getDiscountAmount());
         sale.setTotalAmount(order.getTotal());
-        sale.setPaidAmount(order.getTotal());
+        sale.setPaidAmount(paidAmount.setScale(scale, RoundingMode.HALF_UP));
         sale.setChangeAmount(BigDecimal.ZERO.setScale(scale, RoundingMode.HALF_UP));
         sale.setTotalCost(totalCost.setScale(2, RoundingMode.HALF_UP));
         sale.setCurrency(order.getCurrency());
         sale.setDisplayCurrency(order.getDisplayCurrency());
         sale.setDisplayExchangeRate(order.getDisplayExchangeRate());
-        sale.setPaymentMethod(PaymentMethodType.DIGITAL);
+        sale.setPaymentMethod(paymentMethod);
         sale.setItemCount(itemCount);
-        sale.setNote("Paid via Bakong KHQR on the web storefront");
+        sale.setNote(note);
         sale.setSoldAt(LocalDateTime.now());
 
         saleRepository.save(sale);
@@ -521,9 +640,16 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
                 });
     }
 
+    // Both channels the storefront checkout itself can produce (see
+    // resolveOrderChannel) — a pending Telegram order must block a second
+    // checkout the same way a pending web one always did. Hardcoding WEB
+    // alone here meant a Telegram customer's pending order was invisible
+    // to this check once orders started actually being tagged TELEGRAM.
+    private static final List<OrderChannel> STOREFRONT_CHANNELS = List.of(OrderChannel.WEB, OrderChannel.TELEGRAM);
+
     private Optional<Order> findOpenOrder(GlobalCustomer shopper) {
         return orderRepository
-                .findOpenOrdersForShopper(customerIdsOf(shopper), OrderChannel.WEB, OrderStatus.PENDING)
+                .findOpenOrdersForShopper(customerIdsOf(shopper), STOREFRONT_CHANNELS, OrderStatus.PENDING)
                 .stream()
                 .findFirst();
     }
@@ -587,7 +713,7 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
      */
     private boolean hasEnoughStock(
             UUID businessId, Item item, ItemVariant variant, BigDecimal requestedBaseQuantity) {
-        if (item.getItemType() != ItemType.PHYSICAL) {
+        if (!item.isStockTracked()) {
             return true;
         }
 
@@ -727,6 +853,22 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
         return CURRENCY_KHR.equalsIgnoreCase(currency) ? 0 : 2;
     }
 
+    /**
+     * The storefront checkout is shared by the regular website and the
+     * Telegram Mini App (same endpoint, same auth mechanism) — the only
+     * way to tell them apart afterward is whether this customer has a
+     * linked Telegram identity for this business, which the Mini App auth
+     * flow creates on first sign-in and a plain web visitor never has.
+     */
+    private OrderChannel resolveOrderChannel(UUID businessId, UUID customerId) {
+        boolean isTelegramCustomer = customerChannelIdentityRepository
+                .findByBusiness_IdAndChannelAndCustomer_Id(businessId, ChannelType.TELEGRAM, customerId)
+                .isPresent();
+        log.info("resolveOrderChannel: business={} customer={} telegramLinkFound={}",
+                businessId, customerId, isTelegramCustomer);
+        return isTelegramCustomer ? OrderChannel.TELEGRAM : OrderChannel.WEB;
+    }
+
     private String nextInvoiceNumber(UUID businessId) {
         String datePart = LocalDateTime.now().format(INVOICE_DATE);
         long sequence = orderRepository.countByBusinessId(businessId) + 1;
@@ -739,7 +881,16 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
         GlobalCustomer shopper = currentShopper();
         List<UUID> customerIds = customerIdsOf(shopper);
         List<Order> orders = orderRepository.findAllOrdersForShopper(customerIds);
-        return orders.stream().map(this::toStorefrontOrderResponse).toList();
+
+        List<UUID> orderIds = orders.stream().map(Order::getId).toList();
+        Map<UUID, Sale> saleByOrderId = orderIds.isEmpty()
+                ? Map.of()
+                : saleRepository.findByOrder_IdIn(orderIds).stream()
+                        .collect(Collectors.toMap(sale -> sale.getOrder().getId(), sale -> sale));
+
+        return orders.stream()
+                .map(order -> toStorefrontOrderResponse(order, saleByOrderId.get(order.getId())))
+                .toList();
     }
 
     @Override
@@ -747,10 +898,26 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
     public StorefrontOrderResponse getMyOrderReceipt(UUID orderId) {
         GlobalCustomer shopper = currentShopper();
         Order order = requireOwnOrder(shopper, orderId);
-        return toStorefrontOrderResponse(order);
+        Sale sale = saleRepository.findByOrderId(orderId).orElse(null);
+        return toStorefrontOrderResponse(order, sale);
     }
 
-    private StorefrontOrderResponse toStorefrontOrderResponse(Order order) {
+    /** Mirrors the label the frontend already renders for KHQR orders, but reads
+     * the real payment method once a Sale exists instead of always claiming KHQR. */
+    private String paymentMethodLabel(PaymentMethodType method) {
+        if (method == null) {
+            // Order still pending (no Sale settled yet): keep the pre-existing label.
+            return "Bakong KHQR";
+        }
+
+        return switch (method) {
+            case PAY_LATER -> "Pay Later";
+            case CASH -> "Cash";
+            case DIGITAL -> "Bakong KHQR";
+        };
+    }
+
+    private StorefrontOrderResponse toStorefrontOrderResponse(Order order, Sale sale) {
         Business b = order.getBusiness();
         Customer c = order.getCustomer();
         GlobalCustomer gc = c != null ? c.getGlobalCustomer() : null;
@@ -793,7 +960,7 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
                 gc != null ? gc.getPhoneNumber() : null,
                 order.getStatus(),
                 order.getChannel() != null ? order.getChannel().name() : "WEB",
-                "Bakong KHQR",
+                paymentMethodLabel(sale == null ? null : sale.getPaymentMethod()),
                 order.getSubtotal() != null ? order.getSubtotal() : BigDecimal.ZERO,
                 order.getDiscountAmount() != null ? order.getDiscountAmount() : BigDecimal.ZERO,
                 order.getTotal() != null ? order.getTotal() : BigDecimal.ZERO,

@@ -25,7 +25,6 @@ import kh.edu.istad.ite.shared.enums.ItemType;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
-import org.hibernate.annotations.BatchSize;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
@@ -97,21 +96,20 @@ public class Item extends BasedAuditingEntity {
     @Column(precision = 12, scale = 2)
     private BigDecimal price;
 
-    @Column(name = "compare_at_price", precision = 12, scale = 2)
-    private BigDecimal compareAtPrice;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "item_type", nullable = false, length = 20)
     private ItemType itemType = ItemType.PHYSICAL;
 
-    /**
-     * Batched on purpose: the paged list endpoint maps a whole page of items
-     * and touches this collection on every one of them. Without the batch,
-     * each item on the page costs its own select.
-     */
+    @Column(name = "track_inventory", nullable = false, columnDefinition = "boolean default true")
+    private Boolean trackInventory = true;
+
+    public boolean isStockTracked() {
+        return Boolean.TRUE.equals(trackInventory);
+    }
+
     @OneToMany(mappedBy = "item", cascade = CascadeType.ALL, orphanRemoval = true)
     @OrderBy("position ASC")
-    @BatchSize(size = 20)
     private List<ItemImage> images = new ArrayList<>();
 
     @Column(length = 40)
@@ -138,7 +136,6 @@ public class Item extends BasedAuditingEntity {
 
     @OneToMany(mappedBy = "item", cascade = CascadeType.ALL, orphanRemoval = true)
     @OrderBy("variantName ASC")
-    @BatchSize(size = 20)
     private List<ItemVariant> variants = new ArrayList<>();
 
     /**
@@ -147,7 +144,6 @@ public class Item extends BasedAuditingEntity {
      * {@link ItemUomConversion}.
      */
     @OneToMany(mappedBy = "item", cascade = CascadeType.ALL, orphanRemoval = true)
-    @BatchSize(size = 20)
     private List<ItemUomConversion> uomConversions = new ArrayList<>();
 
     /**
@@ -158,7 +154,6 @@ public class Item extends BasedAuditingEntity {
      * from under every other item using it.
      */
     @OneToMany(mappedBy = "item", cascade = CascadeType.ALL, orphanRemoval = true)
-    @BatchSize(size = 20)
     private List<ItemAddOn> addOns = new ArrayList<>();
 
     @Column(name = "low_stock_default", nullable = false, columnDefinition = "int default 20")

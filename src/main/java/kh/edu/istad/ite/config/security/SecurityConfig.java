@@ -10,8 +10,12 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.authorization.AuthorityAuthorizationManager;
+import org.springframework.security.authorization.AuthorizationManager;
+import org.springframework.security.authorization.AuthorizationManagers;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.web.access.intercept.RequestAuthorizationContext;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.web.SecurityFilterChain;
@@ -26,7 +30,8 @@ import java.util.Map;
 public class SecurityConfig {
         @Bean
         public SecurityFilterChain configureApiSecurity(HttpSecurity http,
-                                                        JwtAuthenticationConverter jwtAuthenticationConverter) throws Exception {
+                                                        JwtAuthenticationConverter jwtAuthenticationConverter,
+                                                        BusinessAccessAuthorizationManager tenant) throws Exception {
 
                 http.oauth2ResourceServer(oauth2 -> oauth2.jwt(jwt -> jwt.jwtAuthenticationConverter(
                         jwtAuthenticationConverter)));
@@ -38,6 +43,10 @@ public class SecurityConfig {
                 http.sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS));
                 http.authorizeHttpRequests(endpoints -> endpoints
                         // Public endpoints
+                        // The container's HEALTHCHECK probes this unauthenticated;
+                        // only /health is exposed, so nothing else is reachable.
+                        .requestMatchers("/api/v1/telegram/webhook/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/actuator/health", "/actuator/health/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/storefronts/*").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/storefronts/*/items").permitAll()
                         .requestMatchers(
@@ -48,8 +57,9 @@ public class SecurityConfig {
                         .requestMatchers("/scalar/**").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/v1/auth/register", "/api/v1/auth/register/**").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/v1/webhooks/telegram/**").permitAll()
-                        .requestMatchers("/api/v1/social/facebook/webhook", "/api/v1/social/facebook/webhook/setup").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/api/v1/social/facebook/oauth/callback").permitAll()
+                        // Verified by initData's own HMAC signature, not a bearer token — that's what this endpoint exists to issue.
+                        .requestMatchers(HttpMethod.POST, "/api/v1/telegram-webapp/auth").permitAll()
+                        .requestMatchers("/api/v1/social/facebook/webhook", "/api/v1/social/facebook/webhook/**", "/api/webhook", "/api/webhook/**", "/api/v1/social/facebook/webhook/setup").permitAll()                        .requestMatchers(HttpMethod.GET, "/api/v1/social/facebook/oauth/callback").permitAll()
                         .requestMatchers(
                                 "/ws/customer-display",
                                 "/ws/customer-display/**",
@@ -65,11 +75,6 @@ public class SecurityConfig {
                                 "/api/v1/business-categories/**")
                         .permitAll()
 
-                        // order
-                        .requestMatchers(HttpMethod.PATCH, "/api/v1/businesses/*/orders/*/pay")
-                        .hasAuthority("SCOPE_order:pay")
-                        .requestMatchers(HttpMethod.PATCH, "/api/v1/businesses/*/orders/*/cancel")
-                        .hasAuthority("SCOPE_order:cancel")
 
                         // Admin Dashboard
                         .requestMatchers(HttpMethod.GET, "/api/v1/admin/dashboard")
@@ -126,104 +131,12 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.DELETE, "/api/v1/user-profiles/me/picture")
                         .hasAuthority("SCOPE_profile:update")
 
-                        // Business
-                        .requestMatchers(HttpMethod.GET, "/api/v1/businesses/me", "/api/v1/businesses")
-                        .hasAuthority("SCOPE_business:read")
-                        .requestMatchers(HttpMethod.GET, "/api/v1/businesses/*")
-                        .hasAuthority("SCOPE_business:read")
-                        .requestMatchers(HttpMethod.POST, "/api/v1/businesses")
-                        .hasAuthority("SCOPE_business:create")
-                        .requestMatchers(HttpMethod.PUT, "/api/v1/businesses/*")
-                        .hasAuthority("SCOPE_business:update")
-                        .requestMatchers(HttpMethod.PATCH, "/api/v1/businesses/*")
-                        .hasAuthority("SCOPE_business:update")
-                        .requestMatchers(HttpMethod.DELETE, "/api/v1/businesses/*")
-                        .hasAuthority("SCOPE_business:delete")
-                        .requestMatchers(HttpMethod.POST, "/api/v1/businesses/*/delete")
-                        .hasAuthority("SCOPE_business:delete")
-
-                        // Items
-                        .requestMatchers(HttpMethod.GET, "/api/v1/businesses/*/items",
-                                "/api/v1/businesses/*/items/*")
-                        .hasAuthority("SCOPE_item:read")
-                        .requestMatchers(HttpMethod.POST, "/api/v1/businesses/*/items")
-                        .hasAuthority("SCOPE_item:create")
-                        .requestMatchers(HttpMethod.PUT, "/api/v1/businesses/*/items/*")
-                        .hasAuthority("SCOPE_item:update")
-                        .requestMatchers(HttpMethod.PATCH, "/api/v1/businesses/*/items/*")
-                        .hasAuthority("SCOPE_item:update")
-                        .requestMatchers(HttpMethod.DELETE, "/api/v1/businesses/*/items/*")
-                        .hasAuthority("SCOPE_item:delete")
-                        .requestMatchers(HttpMethod.POST, "/api/v1/businesses/*/items/*/images")
-                        .hasAuthority("SCOPE_item:update")
-                        .requestMatchers(HttpMethod.DELETE, "/api/v1/businesses/*/items/*/images/*")
-                        .hasAuthority("SCOPE_item:update")
-
-                        // Item Groups
-                        .requestMatchers(HttpMethod.GET, "/api/v1/businesses/*/item-groups",
-                                "/api/v1/businesses/*/item-groups/*")
-                        .hasAuthority("SCOPE_item-group:read")
-                        .requestMatchers(HttpMethod.POST, "/api/v1/businesses/*/item-groups")
-                        .hasAuthority("SCOPE_item-group:create")
-                        .requestMatchers(HttpMethod.PUT, "/api/v1/businesses/*/item-groups/*")
-                        .hasAuthority("SCOPE_item-group:update")
-                        .requestMatchers(HttpMethod.PATCH, "/api/v1/businesses/*/item-groups/*")
-                        .hasAuthority("SCOPE_item-group:update")
-                        .requestMatchers(HttpMethod.DELETE, "/api/v1/businesses/*/item-groups/*")
-                        .hasAuthority("SCOPE_item-group:delete")
-
-                        // Stock
-                        .requestMatchers(HttpMethod.GET, "/api/v1/businesses/*/stock-entries",
-                                "/api/v1/businesses/*/stock-entries/*")
-                        .hasAuthority("SCOPE_stock:read")
-                        .requestMatchers(HttpMethod.GET, "/api/v1/businesses/*/items/*/stock-entries",
-                                "/api/v1/businesses/*/items/*/stock")
-                        .hasAuthority("SCOPE_stock:read")
-                        .requestMatchers(HttpMethod.POST, "/api/v1/businesses/*/stock-entries",
-                                "/api/v1/businesses/*/items/*/stock-entries")
-                        .hasAuthority("SCOPE_stock:write")
-                        .requestMatchers(HttpMethod.PUT, "/api/v1/businesses/*/stock-entries/*",
-                                "/api/v1/businesses/*/items/*/stock-entries/*")
-                        .hasAuthority("SCOPE_stock:write")
-                        .requestMatchers(HttpMethod.PATCH, "/api/v1/businesses/*/stock-entries/*",
-                                "/api/v1/businesses/*/items/*/stock-entries/*")
-                        .hasAuthority("SCOPE_stock:write")
-
-                        // Orders
-                        .requestMatchers(HttpMethod.GET, "/api/v1/businesses/*/orders",
-                                "/api/v1/businesses/*/orders/*")
-                        .hasAuthority("SCOPE_order:read")
-                        .requestMatchers(HttpMethod.GET, "/api/v1/businesses/*/orders/*/payment-status")
-                        .hasAuthority("SCOPE_order:read")
-                        .requestMatchers(HttpMethod.POST, "/api/v1/businesses/*/orders")
-                        .hasAuthority("SCOPE_order:create")
-                        .requestMatchers(HttpMethod.POST, "/api/v1/businesses/*/orders/*/pay")
-                        .hasAuthority("SCOPE_order:pay")
-                        .requestMatchers(HttpMethod.POST, "/api/v1/businesses/*/orders/*/cancel")
-                        .hasAuthority("SCOPE_order:cancel")
-                        .requestMatchers(HttpMethod.POST, "/api/v1/businesses/*/orders/*/khqr")
-                        .hasAuthority("SCOPE_order:generate-khqr")
-
-                        // Currencies
-                        .requestMatchers(HttpMethod.GET, "/api/v1/businesses/*/currencies",
-                                "/api/v1/businesses/*/currencies/*")
-                        .hasAuthority("SCOPE_currency:read")
-                        .requestMatchers(HttpMethod.POST, "/api/v1/businesses/*/currencies")
-                        .hasAuthority("SCOPE_currency:create")
-                        .requestMatchers(HttpMethod.PUT, "/api/v1/businesses/*/currencies/*")
-                        .hasAuthority("SCOPE_currency:update")
-                        .requestMatchers(HttpMethod.PATCH, "/api/v1/businesses/*/currencies/*")
-                        .hasAuthority("SCOPE_currency:update")
-                        .requestMatchers(HttpMethod.DELETE, "/api/v1/businesses/*/currencies/*")
-                        .hasAuthority("SCOPE_currency:delete")
-                        .requestMatchers(HttpMethod.POST, "/api/v1/businesses/*/currencies/*/base")
-                        .hasAuthority("SCOPE_currency:set-base")
-                        .requestMatchers(HttpMethod.PUT, "/api/v1/businesses/*/currencies/*/base")
-                        .hasAuthority("SCOPE_currency:set-base")
-                        .requestMatchers(HttpMethod.POST, "/api/v1/businesses/*/currencies/*/display")
-                        .hasAuthority("SCOPE_currency:set-display")
-                        .requestMatchers(HttpMethod.PUT, "/api/v1/businesses/*/currencies/*/display")
-                        .hasAuthority("SCOPE_currency:set-display")
+                        // --- Business-wide settings, resolved from the caller ---
+                        // These carry no {businessId}: the services behind them
+                        // read the caller's own business. They must be matched
+                        // before the Business block below, whose single-segment
+                        // "/businesses/*" would otherwise swallow
+                        // "/businesses/storefront" and demand business:read.
 
                         // Storefront
                         .requestMatchers(HttpMethod.GET, "/api/v1/businesses/storefront",
@@ -246,12 +159,26 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.PATCH, "/api/v1/businesses/social-settings/telegram-bot",
                                 "/api/v1/businesses/social-settings/telegram-bot/*")
                         .hasAuthority("SCOPE_telegram-setting:update")
+                        .requestMatchers(HttpMethod.DELETE, "/api/v1/businesses/social-settings/telegram-bot")
+                        .hasAuthority("SCOPE_telegram-setting:update")
+
+                        // Facebook Settings. No PermissionCode of its own yet,
+                        // so these borrow the business settings permissions —
+                        // the same pairing the dashboard's Facebook Page screen
+                        // uses. They resolve the business from the caller, so
+                        // there is no id to forge; they are listed here only to
+                        // keep the {businessId} catch-all from claiming them.
+                        .requestMatchers(HttpMethod.GET, "/api/v1/businesses/social-settings/facebook",
+                                "/api/v1/businesses/social-settings/facebook/*")
+                        .hasAuthority("SCOPE_business:read")
+                        .requestMatchers(HttpMethod.DELETE, "/api/v1/businesses/social-settings/facebook")
+                        .hasAuthority("SCOPE_business:update")
 
                         // Bakong Settings
                         .requestMatchers(HttpMethod.GET, "/api/v1/businesses/payment-settings/bakong",
                                 "/api/v1/businesses/payment-settings/bakong/*")
                         .hasAuthority("SCOPE_bakong-setting:read")
-                        .requestMatchers(HttpMethod.POST, "/api/v1/businesses/payment-settings/bakong/preview")
+                        .requestMatchers(HttpMethod.POST, "/api/v1/businesses/payment-settings/bakong/preview-qr")
                         .hasAuthority("SCOPE_bakong-setting:preview")
                         .requestMatchers(HttpMethod.POST, "/api/v1/businesses/payment-settings/bakong",
                                 "/api/v1/businesses/payment-settings/bakong/*")
@@ -263,38 +190,227 @@ public class SecurityConfig {
                                 "/api/v1/businesses/payment-settings/bakong/*")
                         .hasAuthority("SCOPE_bakong-setting:update")
 
-                        // Shared Units
-                        .requestMatchers(HttpMethod.GET, "/api/v1/units", "/api/v1/units/**")
-                        .hasAuthority("SCOPE_unit:read")
+                        // --- The business collection ---
+                        .requestMatchers(HttpMethod.GET, "/api/v1/businesses/me", "/api/v1/businesses")
+                        .hasAuthority("SCOPE_business:read")
+                        .requestMatchers(HttpMethod.POST, "/api/v1/businesses")
+                        .hasAuthority("SCOPE_business:create")
+
+                        // --- Everything below names a {businessId} ---
+                        // `scoped` pairs the permission with membership of that
+                        // business. The permission alone says the caller may read
+                        // items; it does not say whose. Every matcher here must
+                        // spell the variable {businessId}, not "*", or the
+                        // membership check has nothing to read and denies.
+
+                        // Business
+                        .requestMatchers(HttpMethod.GET, "/api/v1/businesses/{businessId}")
+                        .access(scoped(tenant, "business:read"))
+                        .requestMatchers(HttpMethod.PUT, "/api/v1/businesses/{businessId}")
+                        .access(scoped(tenant, "business:update"))
+                        .requestMatchers(HttpMethod.PATCH, "/api/v1/businesses/{businessId}")
+                        .access(scoped(tenant, "business:update"))
+                        .requestMatchers(HttpMethod.DELETE, "/api/v1/businesses/{businessId}/logo",
+                                "/api/v1/businesses/{businessId}/thumbnail")
+                        .access(scoped(tenant, "business:update"))
+                        // Both verbs: the controller maps PUT, and PUT
+                        // "/businesses/{businessId}" above would otherwise claim
+                        // this as a plain update.
+                        .requestMatchers(HttpMethod.PUT, "/api/v1/businesses/{businessId}/delete")
+                        .access(scoped(tenant, "business:delete"))
+                        .requestMatchers(HttpMethod.POST, "/api/v1/businesses/{businessId}/delete")
+                        .access(scoped(tenant, "business:delete"))
+                        .requestMatchers(HttpMethod.DELETE, "/api/v1/businesses/{businessId}")
+                        .access(scoped(tenant, "business:delete"))
+
+                        // Facebook, addressed by id. Same pairing as the
+                        // caller-resolved variants above; without a rule these
+                        // would reach the catch-all, which checks membership but
+                        // not what the member is allowed to do.
+                        .requestMatchers(HttpMethod.GET, "/api/v1/businesses/{businessId}/social/facebook",
+                                "/api/v1/businesses/{businessId}/social/facebook/*")
+                        .access(scoped(tenant, "business:read"))
+                        .requestMatchers(HttpMethod.DELETE, "/api/v1/businesses/{businessId}/social/facebook")
+                        .access(scoped(tenant, "business:update"))
+
+                        // Items
+                        .requestMatchers(HttpMethod.GET, "/api/v1/businesses/{businessId}/items",
+                                "/api/v1/businesses/{businessId}/items/*")
+                        .access(scoped(tenant, "item:read"))
+                        .requestMatchers(HttpMethod.POST, "/api/v1/businesses/{businessId}/items")
+                        .access(scoped(tenant, "item:create"))
+                        .requestMatchers(HttpMethod.PUT, "/api/v1/businesses/{businessId}/items/*")
+                        .access(scoped(tenant, "item:update"))
+                        .requestMatchers(HttpMethod.PATCH, "/api/v1/businesses/{businessId}/items/*")
+                        .access(scoped(tenant, "item:update"))
+                        .requestMatchers(HttpMethod.DELETE, "/api/v1/businesses/{businessId}/items/*")
+                        .access(scoped(tenant, "item:delete"))
+                        .requestMatchers(HttpMethod.POST, "/api/v1/businesses/{businessId}/items/*/images")
+                        .access(scoped(tenant, "item:update"))
+                        .requestMatchers(HttpMethod.DELETE, "/api/v1/businesses/{businessId}/items/*/images/*")
+                        .access(scoped(tenant, "item:update"))
+
+                        // Item Groups
+                        .requestMatchers(HttpMethod.GET, "/api/v1/businesses/{businessId}/item-groups",
+                                "/api/v1/businesses/{businessId}/item-groups/*")
+                        .access(scoped(tenant, "item-group:read"))
+                        .requestMatchers(HttpMethod.POST, "/api/v1/businesses/{businessId}/item-groups")
+                        .access(scoped(tenant, "item-group:create"))
+                        .requestMatchers(HttpMethod.PUT, "/api/v1/businesses/{businessId}/item-groups/*")
+                        .access(scoped(tenant, "item-group:update"))
+                        .requestMatchers(HttpMethod.PATCH, "/api/v1/businesses/{businessId}/item-groups/*")
+                        .access(scoped(tenant, "item-group:update"))
+                        .requestMatchers(HttpMethod.DELETE, "/api/v1/businesses/{businessId}/item-groups/*")
+                        .access(scoped(tenant, "item-group:delete"))
+
+                        // Stock
+                        .requestMatchers(HttpMethod.GET, "/api/v1/businesses/{businessId}/stock-entries",
+                                "/api/v1/businesses/{businessId}/stock-entries/*")
+                        .access(scoped(tenant, "stock:read"))
+                        .requestMatchers(HttpMethod.GET, "/api/v1/businesses/{businessId}/items/*/stock-entries",
+                                "/api/v1/businesses/{businessId}/items/*/stock")
+                        .access(scoped(tenant, "stock:read"))
+                        .requestMatchers(HttpMethod.POST, "/api/v1/businesses/{businessId}/stock-entries",
+                                "/api/v1/businesses/{businessId}/items/*/stock-entries")
+                        .access(scoped(tenant, "stock:write"))
+                        .requestMatchers(HttpMethod.PUT, "/api/v1/businesses/{businessId}/stock-entries/*",
+                                "/api/v1/businesses/{businessId}/items/*/stock-entries/*")
+                        .access(scoped(tenant, "stock:write"))
+                        .requestMatchers(HttpMethod.PATCH, "/api/v1/businesses/{businessId}/stock-entries/*",
+                                "/api/v1/businesses/{businessId}/items/*/stock-entries/*")
+                        .access(scoped(tenant, "stock:write"))
+
+                        // Data migration
+                        //
+                        // Reading an import is reading the catalogue it describes, and
+                        // running one is creating catalogue entries — so both reuse the
+                        // item permissions rather than introducing codes that would have
+                        // to be provisioned as Keycloak roles before anyone could import
+                        // anything.
+                        //
+                        // Note that committing an item import may also post opening
+                        // balances, which `stock:write` would otherwise govern. Requiring
+                        // both here would block a perfectly ordinary items-only import by
+                        // someone who may create items but not adjust stock, so the
+                        // opening balance travels with the item it belongs to.
+                        .requestMatchers(HttpMethod.GET, "/api/v1/businesses/{businessId}/imports",
+                                "/api/v1/businesses/{businessId}/imports/*",
+                                "/api/v1/businesses/{businessId}/imports/*/columns",
+                                "/api/v1/businesses/{businessId}/imports/*/preview",
+                                "/api/v1/businesses/{businessId}/imports/*/rows",
+                                "/api/v1/businesses/{businessId}/imports/*/errors",
+                                "/api/v1/businesses/{businessId}/imports/*/report")
+                        .access(scoped(tenant, "item:read"))
+                        .requestMatchers(HttpMethod.POST, "/api/v1/businesses/{businessId}/imports",
+                                "/api/v1/businesses/{businessId}/imports/*/validate",
+                                "/api/v1/businesses/{businessId}/imports/*/commit")
+                        .access(scoped(tenant, "item:create"))
+                        .requestMatchers(HttpMethod.PUT, "/api/v1/businesses/{businessId}/imports/*/mapping")
+                        .access(scoped(tenant, "item:create"))
+
+                        // Orders
+                        .requestMatchers(HttpMethod.GET, "/api/v1/businesses/{businessId}/orders",
+                                "/api/v1/businesses/{businessId}/orders/*")
+                        .access(scoped(tenant, "order:read"))
+                        .requestMatchers(HttpMethod.GET, "/api/v1/businesses/{businessId}/orders/*/payment-status")
+                        .access(scoped(tenant, "order:read"))
+                        .requestMatchers(HttpMethod.POST, "/api/v1/businesses/{businessId}/orders")
+                        .access(scoped(tenant, "order:create"))
+                        .requestMatchers(HttpMethod.POST, "/api/v1/businesses/{businessId}/orders/*/pay")
+                        .access(scoped(tenant, "order:pay"))
+                        .requestMatchers(HttpMethod.PATCH, "/api/v1/businesses/{businessId}/orders/*/pay")
+                        .access(scoped(tenant, "order:pay"))
+                        .requestMatchers(HttpMethod.PATCH, "/api/v1/businesses/{businessId}/orders/*/pay-later/approve")
+                        .access(scoped(tenant, "order:pay"))
+                        .requestMatchers(HttpMethod.POST, "/api/v1/businesses/{businessId}/orders/*/cancel")
+                        .access(scoped(tenant, "order:cancel"))
+                        .requestMatchers(HttpMethod.PATCH, "/api/v1/businesses/{businessId}/orders/*/cancel")
+                        .access(scoped(tenant, "order:cancel"))
+                        .requestMatchers(HttpMethod.POST, "/api/v1/businesses/{businessId}/orders/*/khqr")
+                        .access(scoped(tenant, "order:generate-khqr"))
+
+                        // Currencies
+                        .requestMatchers(HttpMethod.GET, "/api/v1/businesses/{businessId}/currencies",
+                                "/api/v1/businesses/{businessId}/currencies/*")
+                        .access(scoped(tenant, "currency:read"))
+                        .requestMatchers(HttpMethod.POST, "/api/v1/businesses/{businessId}/currencies")
+                        .access(scoped(tenant, "currency:create"))
+                        .requestMatchers(HttpMethod.PUT, "/api/v1/businesses/{businessId}/currencies/*")
+                        .access(scoped(tenant, "currency:update"))
+                        .requestMatchers(HttpMethod.PATCH, "/api/v1/businesses/{businessId}/currencies/*")
+                        .access(scoped(tenant, "currency:update"))
+                        .requestMatchers(HttpMethod.DELETE, "/api/v1/businesses/{businessId}/currencies/*")
+                        .access(scoped(tenant, "currency:delete"))
+                        .requestMatchers(HttpMethod.POST, "/api/v1/businesses/{businessId}/currencies/*/base")
+                        .access(scoped(tenant, "currency:set-base"))
+                        .requestMatchers(HttpMethod.PUT, "/api/v1/businesses/{businessId}/currencies/*/base")
+                        .access(scoped(tenant, "currency:set-base"))
+                        .requestMatchers(HttpMethod.POST, "/api/v1/businesses/{businessId}/currencies/*/display")
+                        .access(scoped(tenant, "currency:set-display"))
+                        .requestMatchers(HttpMethod.PUT, "/api/v1/businesses/{businessId}/currencies/*/display")
+                        .access(scoped(tenant, "currency:set-display"))
 
                         // Business Role Management
-                        .requestMatchers(HttpMethod.GET, "/api/v1/businesses/*/roles",
-                                "/api/v1/businesses/*/roles/*")
-                        .hasAuthority("SCOPE_role:read")
-                        .requestMatchers(HttpMethod.POST, "/api/v1/businesses/*/roles")
-                        .hasAuthority("SCOPE_role:create")
-                        .requestMatchers(HttpMethod.PUT, "/api/v1/businesses/*/roles/*")
-                        .hasAuthority("SCOPE_role:update")
-                        .requestMatchers(HttpMethod.PATCH, "/api/v1/businesses/*/roles/*")
-                        .hasAuthority("SCOPE_role:update")
-                        .requestMatchers(HttpMethod.DELETE, "/api/v1/businesses/*/roles/*")
-                        .hasAuthority("SCOPE_role:delete")
+                        .requestMatchers(HttpMethod.GET, "/api/v1/businesses/{businessId}/roles",
+                                "/api/v1/businesses/{businessId}/roles/*")
+                        .access(scoped(tenant, "role:read"))
+                        .requestMatchers(HttpMethod.POST, "/api/v1/businesses/{businessId}/roles")
+                        .access(scoped(tenant, "role:create"))
+                        .requestMatchers(HttpMethod.PUT, "/api/v1/businesses/{businessId}/roles/*")
+                        .access(scoped(tenant, "role:update"))
+                        .requestMatchers(HttpMethod.PATCH, "/api/v1/businesses/{businessId}/roles/*")
+                        .access(scoped(tenant, "role:update"))
+                        .requestMatchers(HttpMethod.DELETE, "/api/v1/businesses/{businessId}/roles/*")
+                        .access(scoped(tenant, "role:delete"))
 
-                        .requestMatchers(HttpMethod.GET, "/api/v1/businesses/*/members",
-                                "/api/v1/businesses/*/members/*")
-                        .hasAuthority("SCOPE_member:read")
-                        .requestMatchers(HttpMethod.POST, "/api/v1/businesses/*/members/*/roles")
-                        .hasAuthority("SCOPE_role:assign")
-                        .requestMatchers(HttpMethod.PUT, "/api/v1/businesses/*/members/*/roles")
-                        .hasAuthority("SCOPE_role:assign")
-                        .requestMatchers(HttpMethod.DELETE, "/api/v1/businesses/*/members/*/roles")
-                        .hasAuthority("SCOPE_role:assign")
-                        .requestMatchers("/api/v1/businesses/*/members", "/api/v1/businesses/*/members/**")
-                        .hasAuthority("SCOPE_member:manage")
+                        // Members and staff
+                        .requestMatchers(HttpMethod.GET, "/api/v1/businesses/{businessId}/members",
+                                "/api/v1/businesses/{businessId}/members/*")
+                        .access(scoped(tenant, "member:read"))
+                        .requestMatchers(HttpMethod.POST, "/api/v1/businesses/{businessId}/members/*/roles")
+                        .access(scoped(tenant, "role:assign"))
+                        .requestMatchers(HttpMethod.PUT, "/api/v1/businesses/{businessId}/members/*/roles")
+                        .access(scoped(tenant, "role:assign"))
+                        .requestMatchers(HttpMethod.DELETE, "/api/v1/businesses/{businessId}/members/*/roles")
+                        .access(scoped(tenant, "role:assign"))
+                        .requestMatchers("/api/v1/businesses/{businessId}/members",
+                                "/api/v1/businesses/{businessId}/members/**")
+                        .access(scoped(tenant, "member:manage"))
+                        .requestMatchers(HttpMethod.GET, "/api/v1/businesses/{businessId}/staff",
+                                "/api/v1/businesses/{businessId}/staff/*")
+                        .access(scoped(tenant, "member:read"))
+                        .requestMatchers("/api/v1/businesses/{businessId}/staff",
+                                "/api/v1/businesses/{businessId}/staff/**")
+                        .access(scoped(tenant, "member:manage"))
+
+                        // Anything else under a business. Discounts, coupons,
+                        // customers, membership types, add-ons, assets, sales
+                        // reports and channel pricing have no permission of
+                        // their own yet, so they were reaching
+                        // `anyRequest().authenticated()` — which any signed-in
+                        // stranger satisfies. Until each grows a PermissionCode
+                        // this at least confines them to the business's own
+                        // people. Keep it last: it matches everything the rules
+                        // above did not.
+                        .requestMatchers("/api/v1/businesses/{businessId}/**")
+                        .access(tenant)
 
                         .anyRequest().authenticated());
 
                 return http.build();
+        }
+
+        /**
+         * The permission, and membership of the business in the path. Both must
+         * hold: `item:read` says the caller may read items, `tenant` says whose.
+         */
+        private static AuthorizationManager<RequestAuthorizationContext> scoped(
+                        BusinessAccessAuthorizationManager tenant, String permission) {
+
+                return AuthorizationManagers.allOf(
+                                AuthorityAuthorizationManager
+                                                .<RequestAuthorizationContext>hasAuthority("SCOPE_" + permission),
+                                tenant);
         }
 
         @Bean

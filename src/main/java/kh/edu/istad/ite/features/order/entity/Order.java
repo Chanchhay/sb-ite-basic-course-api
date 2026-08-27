@@ -6,6 +6,7 @@ import kh.edu.istad.ite.features.business.entity.Business;
 import kh.edu.istad.ite.features.customer.entity.Customer;
 import kh.edu.istad.ite.shared.enums.OrderChannel;
 import kh.edu.istad.ite.shared.enums.OrderStatus;
+import kh.edu.istad.ite.shared.enums.TaxInclusionType;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -66,6 +67,27 @@ public class Order extends BasedAuditingEntity {
     @Column(name = "discount_amount", nullable = false, precision = 12, scale = 2)
     private BigDecimal discountAmount = BigDecimal.ZERO;
 
+    @Column(name = "discount_id")
+    private UUID discountId;
+
+    @Column(name = "discount_code", length = 100)
+    private String discountCode;
+
+    @Column(name = "tax_rate", precision = 5, scale = 2)
+    private BigDecimal taxRate = BigDecimal.ZERO;
+
+    @Column(name = "tax_amount", nullable = false, precision = 12, scale = 2)
+    private BigDecimal taxAmount = BigDecimal.ZERO;
+
+    @Enumerated(EnumType.STRING)
+    @Column(
+            name = "tax_inclusion_type",
+            nullable = false,
+            length = 20,
+            columnDefinition = "varchar(20) default 'EXCLUSIVE'"
+    )
+    private TaxInclusionType taxInclusionType = TaxInclusionType.EXCLUSIVE;
+
     @Column(nullable = false, precision = 12, scale = 2)
     private BigDecimal total = BigDecimal.ZERO;
 
@@ -82,6 +104,16 @@ public class Order extends BasedAuditingEntity {
 
     @Column(columnDefinition = "text")
     private String note;
+
+    /**
+     * A storefront order placed with Pay Later sits here as PENDING and
+     * untouched — stock only leaves the shelf once the business owner
+     * approves it from the dashboard, unlike every other channel where
+     * confirming/paying and consuming stock happen in the same step.
+     */
+    @Column(name = "awaiting_pay_later_approval", nullable = false,
+            columnDefinition = "boolean not null default false")
+    private boolean awaitingPayLaterApproval = false;
 
     @OneToMany(mappedBy = "order", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     private List<OrderItem> items = new ArrayList<>();

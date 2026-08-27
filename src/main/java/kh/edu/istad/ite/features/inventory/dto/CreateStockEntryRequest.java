@@ -6,6 +6,8 @@ import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.Map;
 import java.util.UUID;
 
@@ -40,6 +42,32 @@ public record CreateStockEntryRequest(
         BigDecimal enteredQuantity,
 
         UUID unitId,
+
+        /**
+         * The supplier's reference for this delivery, so a recall can be
+         * answered with more than a date.
+         */
+        @Size(max = 80, message = "lotNumber must be at most 80 characters")
+        String lotNumber,
+
+        LocalDate manufacturedAt,
+
+        /**
+         * When this delivery goes off.
+         *
+         * What the consumption queue is ordered by before anything else — a
+         * short-dated delivery leaves before older stock that keeps longer.
+         * Left out, the batch is treated as one that does not expire.
+         */
+        LocalDate expiresAt,
+
+        /**
+         * When the stock actually arrived, if that is not now.
+         *
+         * A delivery recorded two days late still belongs where it happened in
+         * the queue, or stock that arrived after it would be sold first.
+         */
+        LocalDateTime receivedAt,
 
         Map<String, Object> batchData,
 

@@ -63,7 +63,7 @@ public class FacebookPaymentPoller {
 
     @Scheduled(
             initialDelayString = "${app.telegram.payment-poll-initial-delay-ms:10000}",
-            fixedDelayString = "${app.telegram.payment-poll-interval-ms:5000}")
+            fixedDelayString = "${app.telegram.payment-poll-interval-ms:10000}")
     public void pollOutstandingPayments() {
         if (!hasPendingQr.get()) {
             return;

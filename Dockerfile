@@ -1,23 +1,16 @@
-FROM eclipse-temurin:25-jdk-alpine AS build
-
-WORKDIR /app
-
-COPY gradlew settings.gradle build.gradle ./
-COPY gradle ./gradle
-RUN chmod +x ./gradlew
-
-COPY src ./src
-RUN ./gradlew clean build -x check -x test -Pproduction --no-daemon
-RUN cp "$(ls -1 build/libs/*.jar | grep -v plain)" app.jar
-
 FROM eclipse-temurin:25-jre-alpine
 
 WORKDIR /app
 
-ENV SPRING_PROFILES_ACTIVE=dev
+RUN addgroup -S spring \
+    && adduser -S spring -G spring
 
-COPY --from=build /app/app.jar /app/app.jar
+COPY app.jar /app/app.jar
+
+RUN chown spring:spring /app/app.jar
+
+USER spring
 
 EXPOSE 8080
 
-ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar /app/app.jar"]
+ENTRYPOINT ["java", "-jar", "/app/app.jar"]

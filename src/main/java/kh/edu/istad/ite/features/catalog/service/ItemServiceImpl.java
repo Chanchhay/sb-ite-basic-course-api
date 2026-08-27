@@ -24,6 +24,7 @@ import kh.edu.istad.ite.features.channel.repository.ItemChannelRepository;
 import kh.edu.istad.ite.features.channel.entity.ItemChannel;
 import org.springframework.web.multipart.MultipartFile;
 import kh.edu.istad.ite.shared.enums.ItemStatus;
+import kh.edu.istad.ite.shared.enums.ItemType;
 import kh.edu.istad.ite.shared.helper.BusinessHelper;
 import kh.edu.istad.ite.shared.helper.SlugHelper;
 import kh.edu.istad.ite.shared.helper.TextHelper;
@@ -111,6 +112,11 @@ public class ItemServiceImpl implements ItemService {
         item.setBarcode(TextHelper.trimToNull(request.barcode()));
         item.setPrice(normalizePrice(request.price()));
         item.setItemType(request.itemType());
+        if (request.trackInventory() != null) {
+            item.setTrackInventory(request.trackInventory());
+        } else {
+            item.setTrackInventory(request.itemType() == ItemType.PHYSICAL);
+        }
         if (files != null && !files.isEmpty()) {
             for (MultipartFile file : files) {
                 String imageKey = minioService.uploadAsset(file);
@@ -122,7 +128,6 @@ public class ItemServiceImpl implements ItemService {
             }
         }
         item.setBadge(TextHelper.trimToNull(request.badge()));
-        item.setCompareAtPrice(normalizePrice(request.compareAtPrice()));
         item.setDescriptionBlocks(mapDescriptionBlocks(request.descriptionBlocks()));
         item.setAttributes(mapAttributes(request.attributes()));
         item.setColors(mapColors(request.colors()));
@@ -203,6 +208,9 @@ public class ItemServiceImpl implements ItemService {
         if (request.itemType() != null) {
             item.setItemType(request.itemType());
         }
+        if (request.trackInventory() != null) {
+            item.setTrackInventory(request.trackInventory());
+        }
         if (files != null && !files.isEmpty()) {
             for (MultipartFile file : files) {
                 String imageKey = minioService.uploadAsset(file);
@@ -216,18 +224,28 @@ public class ItemServiceImpl implements ItemService {
         if (request.badge() != null) {
             item.setBadge(TextHelper.trimToNull(request.badge()));
         }
-        if (request.compareAtPrice() != null) {
-            item.setCompareAtPrice(normalizePrice(request.compareAtPrice()));
-        }
         if (request.descriptionBlocks() != null) {
             item.setDescriptionBlocks(mapDescriptionBlocks(request.descriptionBlocks()));
         }
         if (request.attributes() != null) {
             item.setAttributes(mapAttributes(request.attributes()));
+        }
+        /*
+         * Colours used to be applied inside the attributes check, so a save
+         * that changed the colours without also sending attributes was
+         * silently ignored. The item form always sends both and never noticed;
+         * anything that does not — a data migration, for one — had its colours
+         * dropped on the floor.
+         */
+        if (request.colors() != null) {
             item.setColors(mapColors(request.colors()));
         }
         if (request.variants() != null) {
             replaceVariants(item, item.getBusiness(), request.variants());
+        }
+        // Either half of the pair changing can leave an option naming a colour
+        // the item no longer comes in.
+        if (request.colors() != null || request.variants() != null) {
             requireDeclaredColors(item);
         }
         if (request.addOnIds() != null) {

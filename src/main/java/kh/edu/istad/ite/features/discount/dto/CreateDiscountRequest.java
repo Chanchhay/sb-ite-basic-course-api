@@ -41,7 +41,7 @@ public record CreateDiscountRequest(
         Integer minQuantity,
 
         @NotNull(message = "value cannot be null")
-        @DecimalMin(value = "0.0", inclusive = false, message = "value must be greater than 0")
+        @DecimalMin(value = "0.0", inclusive = true, message = "value cannot be negative")
         @Digits(integer = 10, fraction = 2)
         BigDecimal value,
 

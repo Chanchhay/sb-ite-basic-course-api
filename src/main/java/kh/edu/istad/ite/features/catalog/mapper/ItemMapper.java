@@ -60,8 +60,10 @@ public class ItemMapper {
                 item.getBadge(),
                 item.getBarcode(),
                 item.getPrice(),
-                item.getCompareAtPrice(),
+                // Only a discount can say what an item used to cost.
+                null,
                 item.getItemType(),
+                item.getTrackInventory(),
                 item.getAttributes() == null ? null : item.getAttributes().stream()
                         .map(this::toAttributeResponse)
                         .toList(),

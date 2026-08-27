@@ -19,6 +19,7 @@ public record OrderItemResponse(
         BigDecimal unitPrice,
         BigDecimal discountAmount,
         BigDecimal lineTotal,
+        Boolean trackInventory,
         /** Extras chosen on this line, priced as they were when rung up. */
         List<OrderItemAddOnResponse> addOns,
         /**
