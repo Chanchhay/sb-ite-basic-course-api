@@ -89,6 +89,7 @@ public class TelegramCheckoutServiceImpl implements TelegramCheckoutService {
     private final TelegramUIHelper uiHelper;
     private final ApplicationEventPublisher eventPublisher;
     private final DiscountService discountService;
+    private final kh.edu.istad.ite.features.business.service.TaxCalculator taxCalculator;
 
     @Override
     @Transactional
@@ -185,11 +186,16 @@ public class TelegramCheckoutServiceImpl implements TelegramCheckoutService {
 
         order.setSubtotal(subtotal.setScale(scale, RoundingMode.HALF_UP));
         order.setDiscountAmount(totalDiscount.setScale(scale, RoundingMode.HALF_UP));
-        BigDecimal finalTotal = subtotal.subtract(totalDiscount);
-        if (finalTotal.compareTo(BigDecimal.ZERO) < 0) {
-            finalTotal = BigDecimal.ZERO;
+        BigDecimal netAmount = subtotal.subtract(totalDiscount);
+        if (netAmount.compareTo(BigDecimal.ZERO) < 0) {
+            netAmount = BigDecimal.ZERO;
         }
-        order.setTotal(finalTotal.setScale(scale, RoundingMode.HALF_UP));
+        kh.edu.istad.ite.features.business.service.TaxCalculator.Result taxResult =
+                taxCalculator.apply(business, netAmount, scale);
+        order.setTaxInclusionType(taxResult.inclusionType());
+        order.setTaxRate(taxResult.taxRate());
+        order.setTaxAmount(taxResult.taxAmount());
+        order.setTotal(taxResult.total());
 
         Order savedOrder = orderRepository.save(order);
 
@@ -412,6 +418,9 @@ public class TelegramCheckoutServiceImpl implements TelegramCheckoutService {
         sale.setChannel(order.getChannel());
         sale.setSubtotal(order.getSubtotal());
         sale.setDiscountAmount(order.getDiscountAmount());
+        sale.setTaxRate(order.getTaxRate());
+        sale.setTaxAmount(order.getTaxAmount());
+        sale.setTaxInclusionType(order.getTaxInclusionType());
         sale.setTotalAmount(order.getTotal());
         sale.setPaidAmount(order.getTotal());
         sale.setChangeAmount(BigDecimal.ZERO.setScale(scale, RoundingMode.HALF_UP));

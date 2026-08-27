@@ -63,7 +63,13 @@ public record CartSummaryResponse(
              * show this one.
              */
             BigDecimal unitPriceWithAddOns,
-            BigDecimal subtotal
+            BigDecimal subtotal,
+            /** What this line's units would cost before the active promotion. Null when none applies. */
+            BigDecimal compareAtPrice,
+            /** Total knocked off this whole line by the promotion — a line total, not per-unit. */
+            BigDecimal discountAmount,
+            /** The promotion's own name, so the cart names the same discount checkout will apply. */
+            String discountLabel
     ) {
     }
 

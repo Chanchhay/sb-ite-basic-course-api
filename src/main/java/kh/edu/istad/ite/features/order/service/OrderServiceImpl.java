@@ -87,6 +87,7 @@ import kh.edu.istad.ite.shared.enums.QrStatus;
 import kh.edu.istad.ite.shared.enums.ReceiptType;
 import kh.edu.istad.ite.shared.enums.SessionStatus;
 import kh.edu.istad.ite.shared.enums.TaxInclusionType;
+import kh.edu.istad.ite.features.business.service.TaxCalculator;
 import kh.edu.istad.ite.shared.helper.AuthHelper;
 import kh.edu.istad.ite.shared.helper.BusinessHelper;
 import kh.edu.istad.ite.shared.helper.CurrencyDisplayHelper;
@@ -130,6 +131,7 @@ public class OrderServiceImpl implements OrderService {
     private final kh.edu.istad.ite.features.register.repository.RegisterSessionRepository registerSessionRepository;
     private final TelegramAlertService telegramAlertService;
     private final kh.edu.istad.ite.features.channel.service.ChannelPriceResolver channelPriceResolver;
+    private final TaxCalculator taxCalculator;
 
     @Override
     @Transactional
@@ -148,8 +150,6 @@ public class OrderServiceImpl implements OrderService {
         order.setStatus(OrderStatus.PENDING);
         order.setNote(request.note());
         order.setCurrency(resolveCurrency(request.currency(), business));
-        TaxInclusionType inclusionType = resolveTaxInclusionType(request.taxInclusionType());
-        order.setTaxInclusionType(inclusionType);
         applyDisplayCurrency(business, order);
         order.setInvoiceNumber(nextInvoiceNumber(business.getId()));
         // Whoever is signed in is the one working the till.
@@ -206,20 +206,15 @@ public class OrderServiceImpl implements OrderService {
 
         int scale = CURRENCY_KHR.equalsIgnoreCase(order.getCurrency()) ? 0 : 2;
 
-        BigDecimal taxRate = request.taxRate() != null ? request.taxRate() : BigDecimal.ZERO;
-        BigDecimal taxAmount = request.taxAmount() != null ? request.taxAmount() : BigDecimal.ZERO;
-        order.setTaxRate(taxRate);
-        order.setTaxAmount(taxAmount);
-
         BigDecimal afterDiscount = subtotal.subtract(discount);
-        BigDecimal total = afterDiscount;
-        if (TaxInclusionType.EXCLUSIVE.equals(inclusionType) && taxAmount.compareTo(BigDecimal.ZERO) > 0) {
-            total = afterDiscount.add(taxAmount);
-        }
+        TaxCalculator.Result taxResult = taxCalculator.apply(business, afterDiscount, scale);
+        order.setTaxInclusionType(taxResult.inclusionType());
+        order.setTaxRate(taxResult.taxRate());
+        order.setTaxAmount(taxResult.taxAmount());
 
         order.setSubtotal(subtotal.setScale(scale, RoundingMode.HALF_UP));
         order.setDiscountAmount(discount.setScale(scale, RoundingMode.HALF_UP));
-        order.setTotal(total.setScale(scale, RoundingMode.HALF_UP));
+        order.setTotal(taxResult.total());
 
         return orderMapper.toResponse(orderRepository.save(order));
     }
@@ -330,17 +325,10 @@ public class OrderServiceImpl implements OrderService {
         }
 
         int scale = scaleFor(order);
-        TaxInclusionType inclusionType = request.taxInclusionType() != null
-                ? request.taxInclusionType()
-                : (order.getTaxInclusionType() != null ? order.getTaxInclusionType() : TaxInclusionType.EXCLUSIVE);
-        BigDecimal taxAmount = request.taxAmount() != null
-                ? request.taxAmount()
-                : (order.getTaxAmount() != null ? order.getTaxAmount() : BigDecimal.ZERO);
-
+        // Tax was already folded into order.getTotal() when the order was
+        // created (or last repriced), so this is simply what is owed — adding
+        // order.getTaxAmount() on top here would charge it twice.
         BigDecimal effectiveTotal = order.getTotal();
-        if (TaxInclusionType.EXCLUSIVE.equals(inclusionType) && taxAmount.compareTo(BigDecimal.ZERO) > 0) {
-            effectiveTotal = order.getTotal().add(taxAmount).setScale(scale, RoundingMode.HALF_UP);
-        }
 
         BigDecimal received;
         if (PaymentMethodType.PAY_LATER.equals(request.paymentMethod())) {
@@ -358,7 +346,7 @@ public class OrderServiceImpl implements OrderService {
             }
         }
 
-        return toSaleResponse(settle(business, order, request, request.paymentMethod(), received, request.note()));
+        return toSaleResponse(settle(business, order, request.paymentMethod(), received, request.note()));
     }
 
     @Override
@@ -411,7 +399,7 @@ public class OrderServiceImpl implements OrderService {
         qrCode.setStatus(QrStatus.PAID);
         qrCode.setPaidAt(paidAt);
 
-        settle(business, order, null, PaymentMethodType.DIGITAL, order.getTotal(), null);
+        settle(business, order, PaymentMethodType.DIGITAL, order.getTotal(), null);
 
         telegramAlertService.sendQrPaymentAlert(order);
 
@@ -424,7 +412,6 @@ public class OrderServiceImpl implements OrderService {
     private Sale settle(
             Business business,
             Order order,
-            PayOrderRequest request,
             PaymentMethodType paymentMethod,
             BigDecimal received,
             String note
@@ -458,26 +445,15 @@ public class OrderServiceImpl implements OrderService {
             itemCount += line.getQuantity();
         }
 
-        TaxInclusionType inclusionType = request != null && request.taxInclusionType() != null
-                ? request.taxInclusionType()
-                : (order.getTaxInclusionType() != null ? order.getTaxInclusionType() : TaxInclusionType.EXCLUSIVE);
+        TaxInclusionType inclusionType = order.getTaxInclusionType() != null
+                ? order.getTaxInclusionType() : TaxInclusionType.EXCLUSIVE;
+        BigDecimal taxRate = order.getTaxRate() != null ? order.getTaxRate() : BigDecimal.ZERO;
+        BigDecimal taxAmount = order.getTaxAmount() != null ? order.getTaxAmount() : BigDecimal.ZERO;
 
-        BigDecimal taxRate = request != null && request.taxRate() != null
-                ? request.taxRate()
-                : (order.getTaxRate() != null ? order.getTaxRate() : BigDecimal.ZERO);
-
-        BigDecimal taxAmount = request != null && request.taxAmount() != null
-                ? request.taxAmount()
-                : (order.getTaxAmount() != null ? order.getTaxAmount() : BigDecimal.ZERO);
-
+        // Already folded into order.getTotal() at creation/repricing time —
+        // this is what is owed, not something to add tax to again.
         BigDecimal effectiveTotal = order.getTotal();
-        if (TaxInclusionType.EXCLUSIVE.equals(inclusionType) && taxAmount.compareTo(BigDecimal.ZERO) > 0) {
-            effectiveTotal = order.getTotal().add(taxAmount).setScale(scale, RoundingMode.HALF_UP);
-        }
 
-        order.setTaxInclusionType(inclusionType);
-        order.setTaxRate(taxRate);
-        order.setTaxAmount(taxAmount);
         order.setStatus(OrderStatus.PAID);
         orderRepository.save(order);
 
@@ -668,10 +644,6 @@ public class OrderServiceImpl implements OrderService {
 
     private int scaleFor(Order order) {
         return CURRENCY_KHR.equalsIgnoreCase(order.getCurrency()) ? 0 : 2;
-    }
-
-    private TaxInclusionType resolveTaxInclusionType(TaxInclusionType inclusionType) {
-        return inclusionType == null ? TaxInclusionType.EXCLUSIVE : inclusionType;
     }
 
     private SaleResponse toSaleResponse(Sale sale) {
@@ -1419,16 +1391,19 @@ public class OrderServiceImpl implements OrderService {
         order.setDiscountAmount(totalDiscount.setScale(scale, RoundingMode.HALF_UP));
 
         BigDecimal netSubtotal = grossSubtotal.subtract(totalDiscount);
-        BigDecimal taxAmount = order.getTaxAmount() != null ? order.getTaxAmount() : BigDecimal.ZERO;
-        BigDecimal total = netSubtotal;
-        if (TaxInclusionType.EXCLUSIVE.equals(order.getTaxInclusionType()) && taxAmount.compareTo(BigDecimal.ZERO) > 0) {
-            total = netSubtotal.add(taxAmount);
+        if (netSubtotal.compareTo(BigDecimal.ZERO) < 0) {
+            netSubtotal = BigDecimal.ZERO;
         }
 
-        if (total.compareTo(BigDecimal.ZERO) < 0) {
-            total = BigDecimal.ZERO;
-        }
-        order.setTotal(total.setScale(scale, RoundingMode.HALF_UP));
+        // The order was first priced (possibly against an empty $0 cart) back
+        // in createOrder; every item/discount edit since has to re-run the
+        // same calculator against the new net amount, or tax stays frozen at
+        // whatever it was on that first, often-empty, cart.
+        TaxCalculator.Result taxResult = taxCalculator.apply(order.getBusiness(), netSubtotal, scale);
+        order.setTaxInclusionType(taxResult.inclusionType());
+        order.setTaxRate(taxResult.taxRate());
+        order.setTaxAmount(taxResult.taxAmount());
+        order.setTotal(taxResult.total());
     }
 
     @Override

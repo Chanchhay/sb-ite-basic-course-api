@@ -80,6 +80,7 @@ public class StorefrontCartService {
     private final ChannelPriceResolver channelPriceResolver;
     private final ItemChannelStockService itemChannelStockService;
     private final StockEntryService stockEntryService;
+    private final kh.edu.istad.ite.features.discount.service.DiscountService discountService;
 
 
     @Transactional(readOnly = true)
@@ -178,6 +179,7 @@ public class StorefrontCartService {
                     .unitFactor(priced.unitFactor())
                     .quantity(request.quantity())
                     .priceSnapshot(priced.unitPrice())
+                    .basePrice(priced.channelPrice())
                     .build();
 
             selections.forEach(line::addSelection);
@@ -186,6 +188,7 @@ public class StorefrontCartService {
         } else {
             line.setQuantity(line.getQuantity() + request.quantity());
             line.setPriceSnapshot(priced.unitPrice());
+            line.setBasePrice(priced.channelPrice());
         }
 
         cartRepository.save(cart);
@@ -498,7 +501,7 @@ public class StorefrontCartService {
      * What this line is: the unit it is sold in, what one of them holds, and
      * what the web charges for it.
      */
-    private record PricedLine(Unit unit, BigDecimal unitFactor, BigDecimal unitPrice) {
+    private record PricedLine(Unit unit, BigDecimal unitFactor, BigDecimal unitPrice, BigDecimal channelPrice) {
     }
 
     /**
@@ -568,7 +571,59 @@ public class StorefrontCartService {
                 // and that exception is stored with no unit at all.
                 unit == null || unit.getId().equals(baseUnitId) ? null : unit.getId());
 
-        return new PricedLine(unit, unitFactor, channelPrice);
+        BigDecimal finalPrice = channelPrice;
+        if (discountService != null) {
+            try {
+                UUID itemGroupId = item.getItemGroup() != null ? item.getItemGroup().getId() : null;
+                List<kh.edu.istad.ite.features.discount.dto.DiscountResponse> discounts = discountService.findApplicableDiscounts(
+                        business.getId(), OrderChannel.WEB, item.getId(), itemGroupId);
+
+                List<kh.edu.istad.ite.features.discount.dto.DiscountResponse> autoDiscounts = discounts.stream()
+                        .filter(d -> !Boolean.TRUE.equals(d.requiresCoupon()))
+                        .toList();
+
+                if (!autoDiscounts.isEmpty()) {
+                    kh.edu.istad.ite.features.discount.dto.DiscountResponse best = autoDiscounts.stream()
+                            .sorted((d1, d2) -> {
+                                int s1 = (d1.scope() == kh.edu.istad.ite.shared.enums.DiscountScope.SPECIFIC_ITEMS || d1.scope() == kh.edu.istad.ite.shared.enums.DiscountScope.ITEM) ? 2
+                                        : (d1.scope() == kh.edu.istad.ite.shared.enums.DiscountScope.SPECIFIC_CATEGORIES || d1.scope() == kh.edu.istad.ite.shared.enums.DiscountScope.CATEGORY) ? 1 : 0;
+                                int s2 = (d2.scope() == kh.edu.istad.ite.shared.enums.DiscountScope.SPECIFIC_ITEMS || d2.scope() == kh.edu.istad.ite.shared.enums.DiscountScope.ITEM) ? 2
+                                        : (d2.scope() == kh.edu.istad.ite.shared.enums.DiscountScope.SPECIFIC_CATEGORIES || d2.scope() == kh.edu.istad.ite.shared.enums.DiscountScope.CATEGORY) ? 1 : 0;
+                                if (s1 != s2) return Integer.compare(s2, s1);
+
+                                int r1 = d1.ruleType() == kh.edu.istad.ite.shared.enums.DiscountRuleType.BUY_X_GET_Y ? 2 : 0;
+                                int r2 = d2.ruleType() == kh.edu.istad.ite.shared.enums.DiscountRuleType.BUY_X_GET_Y ? 2 : 0;
+                                if (r1 != r2) return Integer.compare(r2, r1);
+
+                                BigDecimal v1 = d1.value() != null ? d1.value() : BigDecimal.ZERO;
+                                BigDecimal v2 = d2.value() != null ? d2.value() : BigDecimal.ZERO;
+                                return v2.compareTo(v1);
+                            })
+                            .findFirst()
+                            .orElse(autoDiscounts.get(0));
+
+                    BigDecimal discountAmount = BigDecimal.ZERO;
+                    if (best.type() == kh.edu.istad.ite.shared.enums.DiscountType.PERCENTAGE && best.value() != null) {
+                        discountAmount = channelPrice.multiply(best.value()).divide(new BigDecimal("100"), 2, java.math.RoundingMode.HALF_UP);
+                    } else if (best.type() == kh.edu.istad.ite.shared.enums.DiscountType.FIXED_AMOUNT && best.value() != null) {
+                        discountAmount = best.value();
+                    }
+
+                    if (best.maxDiscountAmount() != null && discountAmount.compareTo(best.maxDiscountAmount()) > 0) {
+                        discountAmount = best.maxDiscountAmount();
+                    }
+
+                    finalPrice = channelPrice.subtract(discountAmount);
+                    if (finalPrice.compareTo(BigDecimal.ZERO) < 0) {
+                        finalPrice = BigDecimal.ZERO;
+                    }
+                }
+            } catch (Exception e) {
+                log.warn("Could not apply discount to cart line: {}", e.getMessage());
+            }
+        }
+
+        return new PricedLine(unit, unitFactor, finalPrice, channelPrice);
     }
 
     /** How a line should be named when something goes wrong with it. */
@@ -692,6 +747,26 @@ public class StorefrontCartService {
         // which is what it is — and what the counter's ticket says too.
         extras.forEach(addOn -> badges.add("+ " + addOn.getAddOnName()));
 
+        // priceSnapshot is what this line is actually billed at; basePrice is
+        // what it would cost without the promotion that priceLine() applied
+        // when the line was added. The gap between them is the discount —
+        // computed here rather than trusted from a stored id, the same way
+        // every other channel re-derives it rather than caching a decision
+        // that could go stale.
+        BigDecimal basePrice = line.getBasePrice();
+        BigDecimal priceSnapshot = line.getPriceSnapshot();
+        int quantity = line.getQuantity() == null ? 0 : line.getQuantity();
+
+        BigDecimal compareAtPrice = null;
+        BigDecimal lineDiscountAmount = null;
+        String discountLabel = null;
+
+        if (basePrice != null && priceSnapshot != null && basePrice.compareTo(priceSnapshot) > 0) {
+            compareAtPrice = basePrice;
+            lineDiscountAmount = basePrice.subtract(priceSnapshot).multiply(BigDecimal.valueOf(quantity));
+            discountLabel = resolveLineDiscountLabel(line.getItem(), basePrice, priceSnapshot);
+        }
+
         return new CartSummaryResponse.Line(
                 line.getId(),
                 line.getItem().getId(),
@@ -718,7 +793,72 @@ public class StorefrontCartService {
                 line.getQuantity(),
                 line.getPriceSnapshot(),
                 line.priceWithAddOns(),
-                line.getSubtotal());
+                line.getSubtotal(),
+                compareAtPrice,
+                lineDiscountAmount,
+                discountLabel);
+    }
+
+    /**
+     * What to call the discount that cut this line's price — the same
+     * promotion {@code priceLine()} picked when the item was added, named the
+     * same way the receipt will name it. Falls back to a plain percentage
+     * when the discount itself has no name, or when it can no longer be
+     * found (e.g. it was deleted after being applied).
+     */
+    private String resolveLineDiscountLabel(Item item, BigDecimal basePrice, BigDecimal priceSnapshot) {
+        if (discountService == null || item.getBusiness() == null) {
+            return null;
+        }
+
+        try {
+            UUID itemGroupId = item.getItemGroup() != null ? item.getItemGroup().getId() : null;
+            List<kh.edu.istad.ite.features.discount.dto.DiscountResponse> discounts = discountService.findApplicableDiscounts(
+                    item.getBusiness().getId(), OrderChannel.WEB, item.getId(), itemGroupId);
+
+            List<kh.edu.istad.ite.features.discount.dto.DiscountResponse> autoDiscounts = discounts.stream()
+                    .filter(d -> !Boolean.TRUE.equals(d.requiresCoupon()))
+                    .toList();
+
+            if (!autoDiscounts.isEmpty()) {
+                kh.edu.istad.ite.features.discount.dto.DiscountResponse best = autoDiscounts.stream()
+                        .sorted((d1, d2) -> {
+                            int s1 = (d1.scope() == kh.edu.istad.ite.shared.enums.DiscountScope.SPECIFIC_ITEMS || d1.scope() == kh.edu.istad.ite.shared.enums.DiscountScope.ITEM) ? 2
+                                    : (d1.scope() == kh.edu.istad.ite.shared.enums.DiscountScope.SPECIFIC_CATEGORIES || d1.scope() == kh.edu.istad.ite.shared.enums.DiscountScope.CATEGORY) ? 1 : 0;
+                            int s2 = (d2.scope() == kh.edu.istad.ite.shared.enums.DiscountScope.SPECIFIC_ITEMS || d2.scope() == kh.edu.istad.ite.shared.enums.DiscountScope.ITEM) ? 2
+                                    : (d2.scope() == kh.edu.istad.ite.shared.enums.DiscountScope.SPECIFIC_CATEGORIES || d2.scope() == kh.edu.istad.ite.shared.enums.DiscountScope.CATEGORY) ? 1 : 0;
+                            if (s1 != s2) return Integer.compare(s2, s1);
+
+                            int r1 = d1.ruleType() == kh.edu.istad.ite.shared.enums.DiscountRuleType.BUY_X_GET_Y ? 2 : 0;
+                            int r2 = d2.ruleType() == kh.edu.istad.ite.shared.enums.DiscountRuleType.BUY_X_GET_Y ? 2 : 0;
+                            if (r1 != r2) return Integer.compare(r2, r1);
+
+                            BigDecimal v1 = d1.value() != null ? d1.value() : BigDecimal.ZERO;
+                            BigDecimal v2 = d2.value() != null ? d2.value() : BigDecimal.ZERO;
+                            return v2.compareTo(v1);
+                        })
+                        .findFirst()
+                        .orElse(autoDiscounts.get(0));
+
+                if (StringUtils.hasText(best.name())) {
+                    return best.name();
+                }
+                if (best.type() == kh.edu.istad.ite.shared.enums.DiscountType.PERCENTAGE && best.value() != null) {
+                    return best.value().stripTrailingZeros().toPlainString() + "% OFF";
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Could not resolve discount label for cart line: {}", e.getMessage());
+        }
+
+        if (basePrice != null && basePrice.compareTo(BigDecimal.ZERO) > 0 && priceSnapshot != null) {
+            BigDecimal pct = basePrice.subtract(priceSnapshot)
+                    .multiply(new BigDecimal("100"))
+                    .divide(basePrice, 0, java.math.RoundingMode.HALF_UP);
+            return pct.toPlainString() + "% OFF";
+        }
+
+        return "Savings";
     }
 
 
