@@ -132,6 +132,10 @@ minio:
   secret-key: ${MINIO_SECRET_KEY}
   bucket:
     assets: fluxibix
+    # Migration uploads are a shop's whole price list. They are read back only
+    # by the import that owns them, never linked to, so they are kept out of
+    # the asset bucket whose objects are served straight to browsers.
+    imports: fluxibiz-imports
 
 logging:
   level:
