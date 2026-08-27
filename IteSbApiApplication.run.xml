@@ -20,7 +20,7 @@
       <env name="MINIO_SECRET_KEY" value="vvJMJMh6FEQEdHnVlWe0OFO+H+E1n1H0ijHZ83gC" />
       <env name="SERVER_URL" value="http://localhost:8080" />
       <env name="TARGET_REALM" value="istad-fluxipos-auth" />
-      <env name="TELEGRAM_WEBHOOK_BASE_URL" value="https://oxford-jailbreak-entrust.ngrok-free.dev " />
+      <env name="TELEGRAM_WEBHOOK_BASE_URL" value="https://oxford-jailbreak-entrust.ngrok-free.dev/api/v1/telegram/webhook" />
     </envs>
     <module name="ite-sb-api.main" />
     <option name="SHORTEN_COMMAND_LINE" value="ARGS_FILE" />
