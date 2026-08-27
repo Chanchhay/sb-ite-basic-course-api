@@ -250,7 +250,6 @@ public class ItemImportValidator implements ImportRowValidator {
 
     private void validatePrices(ItemImportRecord item, List<RowIssue> issues) {
         rejectNegative(item.price(), ImportField.PRICE, issues);
-        rejectNegative(item.compareAtPrice(), ImportField.COMPARE_AT_PRICE, issues);
         rejectNegative(item.costPrice(), ImportField.COST_PRICE, issues);
     }
 

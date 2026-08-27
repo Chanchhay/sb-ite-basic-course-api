@@ -78,7 +78,6 @@ public class CanonicalRecordMapper {
                 reader.text(ImportField.UNIT, 100),
                 itemType,
                 reader.number(ImportField.PRICE),
-                reader.number(ImportField.COMPARE_AT_PRICE),
                 reader.number(ImportField.COST_PRICE),
                 reader.text(ImportField.DESCRIPTION),
                 reader.text(ImportField.BADGE, 40),
@@ -93,7 +92,7 @@ public class CanonicalRecordMapper {
                         reader.text(ImportField.OPTION_2_NAME),
                         reader.text(ImportField.OPTION_2_VALUE, 150)
                 ),
-                reader.text(ImportField.IMAGE_URL, 500)
+                reader.imageUrl(ImportField.IMAGE_URL)
         );
     }
 
