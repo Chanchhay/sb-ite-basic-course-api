@@ -23,6 +23,7 @@ import kh.edu.istad.ite.features.minio.MinioService;
 import kh.edu.istad.ite.features.channel.repository.ItemChannelRepository;
 import kh.edu.istad.ite.features.channel.entity.ItemChannel;
 import org.springframework.web.multipart.MultipartFile;
+import kh.edu.istad.ite.shared.dto.PageResponse;
 import kh.edu.istad.ite.shared.enums.ItemStatus;
 import kh.edu.istad.ite.shared.enums.ItemType;
 import kh.edu.istad.ite.shared.helper.BusinessHelper;
@@ -147,10 +148,10 @@ public class ItemServiceImpl implements ItemService {
 
     @Override
     @Transactional(readOnly = true)
-    public Page<ItemResponse> findAllItems(UUID businessId, Pageable pageable) {
+    public PageResponse<ItemResponse> findAllItems(UUID businessId, Pageable pageable) {
         businessHelper.findOwnedBusiness(businessId);
-        return itemRepository.findAllByBusinessId(businessId, pageable)
-                .map(itemMapper::toResponse);
+        Page<Item> items = itemRepository.findAllByBusinessId(businessId, pageable);
+        return PageResponse.from(items.map(itemMapper::toResponse));
     }
 
     @Override
@@ -364,7 +365,7 @@ public class ItemServiceImpl implements ItemService {
     }
 
     @Override
-    public Page<ItemResponse> filterItems(UUID businessId, RequestDto requestDto, Pageable pageable) {
+    public PageResponse<ItemResponse> filterItems(UUID businessId, RequestDto requestDto, Pageable pageable) {
         businessHelper.findAccessibleBusiness(businessId);
 
         org.springframework.data.jpa.domain.Specification<Item> spec = filterSpecification.getSearchSpecificationDynamic(
@@ -374,7 +375,8 @@ public class ItemServiceImpl implements ItemService {
         org.springframework.data.jpa.domain.Specification<Item> businessSpec = (root, query, cb) ->
                 cb.equal(root.get("business").get("id"), businessId);
 
-        return itemRepository.findAll(businessSpec.and(spec), pageable).map(itemMapper::toResponse);
+        Page<Item> items = itemRepository.findAll(businessSpec.and(spec), pageable);
+        return PageResponse.from(items.map(itemMapper::toResponse));
     }
 
     @Override

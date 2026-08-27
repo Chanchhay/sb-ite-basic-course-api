@@ -9,8 +9,8 @@ import kh.edu.istad.ite.features.catalog.dto.ReorderItemImagesRequest;
 import kh.edu.istad.ite.features.catalog.dto.UpdateItemRequest;
 import kh.edu.istad.ite.features.catalog.dto.UploadItemImagesRequest;
 import kh.edu.istad.ite.features.catalog.service.ItemService;
+import kh.edu.istad.ite.shared.dto.PageResponse;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
@@ -78,10 +78,10 @@ public class ItemController {
     }
 
     @GetMapping
-    public Page<ItemResponse> findAllItems(
+    public PageResponse<ItemResponse> findAllItems(
             @PathVariable UUID businessId,
-            @PageableDefault(size = 20, sort = "name", direction = Sort.Direction.ASC)Pageable pageable
-            ) {
+            @PageableDefault(size = 20, sort = "name", direction = Sort.Direction.ASC) Pageable pageable
+    ) {
         return itemService.findAllItems(businessId, pageable);
     }
 
@@ -200,7 +200,7 @@ public class ItemController {
     }
 
     @PostMapping("/filter")
-    public org.springframework.data.domain.Page<ItemResponse> filterItems(
+    public PageResponse<ItemResponse> filterItems(
             @PathVariable UUID businessId,
             @RequestBody kh.edu.istad.ite.config.filter.RequestDto request,
             org.springframework.data.domain.Pageable pageable
