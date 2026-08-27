@@ -128,7 +128,14 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
         }
 
 
-        Order openOrder = findOpenOrder(shopper).orElse(null);
+        // The "one open order at a time" rule exists for Bakong: two live
+        // QR codes for the same shopper would be confusing and could race
+        // on payment. Pay Later never touches Bakong, so a shopper choosing
+        // it should never be blocked by — or silently merged into — an
+        // order still waiting on the business to approve, whether that
+        // wait is at this shop or another one. Each Pay Later checkout
+        // gets its own order and its own approval.
+        Order openOrder = payLater ? null : findOpenOrder(shopper).orElse(null);
 
         if (openOrder != null && !openOrder.getBusiness().getId().equals(business.getId())) {
             throw new ResponseStatusException(
@@ -140,7 +147,7 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
         // Same store, still pending: settle it the way this request asks for,
         // rather than stacking orders.
         if (openOrder != null) {
-            return payLater ? requestPayLaterApproval(business, openOrder) : issueQrFor(business, openOrder);
+            return issueQrFor(business, openOrder);
         }
 
         Customer customer = customerIdentityService.customerFor(business, shopper);
@@ -183,10 +190,12 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
             }
         }
 
+        OrderChannel channel = resolveOrderChannel(business.getId(), customer.getId());
+
         Order order = new Order();
         order.setBusiness(business);
         order.setCustomer(customer);
-        order.setChannel(resolveOrderChannel(business.getId(), customer.getId()));
+        order.setChannel(channel);
         order.setStatus(OrderStatus.PENDING);
         order.setCurrency(resolveCurrency(business));
         currencyDisplayHelper.snapshot(business, order.getCurrency()).ifPresent(snapshot -> {
@@ -196,7 +205,9 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
         order.setInvoiceNumber(nextInvoiceNumber(business.getId()));
         // The shopper rang this up themselves, so there is no cashier.
         order.setCashierId(null);
-        order.setNote(StringUtils.hasText(request.note()) ? request.note() : "Storefront web order");
+        order.setNote(StringUtils.hasText(request.note())
+                ? request.note()
+                : (channel == OrderChannel.TELEGRAM ? "Telegram Mini App order" : "Storefront web order"));
 
         BigDecimal subtotal = BigDecimal.ZERO;
 
