@@ -40,4 +40,9 @@ public class BusinessTelegramBotController {
     public void disconnect() {
         businessTelegramBotService.disconnect();
     }
+
+    @PatchMapping("/mini-app")
+    public TelegramBotSettingResponse setMiniAppEnabled(@RequestParam boolean enabled) {
+        return businessTelegramBotService.setMiniAppEnabled(enabled);
+    }
 }

@@ -96,6 +96,7 @@ minio:
   secret-key: test
   bucket:
     assets: test-bucket
+    imports: test-imports-bucket
 
 logging:
   level:

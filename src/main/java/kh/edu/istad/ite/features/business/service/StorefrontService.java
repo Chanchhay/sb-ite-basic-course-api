@@ -5,6 +5,7 @@ import kh.edu.istad.ite.features.business.dto.PublicStoreResponse;
 import kh.edu.istad.ite.features.business.dto.SlugAvailabilityResponse;
 import kh.edu.istad.ite.features.business.dto.StorefrontSlugRequest;
 import kh.edu.istad.ite.features.business.dto.StorefrontStatusResponse;
+import kh.edu.istad.ite.features.catalog.dto.ItemGroupResponse;
 import kh.edu.istad.ite.features.catalog.dto.ItemResponse;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -38,6 +39,9 @@ public interface StorefrontService {
     PublicStoreDetailResponse getPublicStoreBySlug(String slug, Double lat, Double lng);
 
     List<ItemResponse> getPublicStoreItems(String slug);
+
+    /** The category (and sub-category) tree for a public menu — same shape the business owner's own inventory screen uses. */
+    List<ItemGroupResponse> getPublicStoreItemGroups(String slug);
 
     Page<PublicStoreResponse> getRecommendedStores(UUID categoryId, Double lat, Double lng, Pageable pageable);
 

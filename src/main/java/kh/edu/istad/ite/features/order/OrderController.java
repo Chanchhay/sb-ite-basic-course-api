@@ -162,4 +162,12 @@ public class OrderController {
     ) {
         return orderService.updateOrderDiscount(businessId, orderId, request);
     }
+
+    @PostMapping("/sync")
+    public SyncOfflineOrdersResponse syncOfflineOrders(
+            @PathVariable UUID businessId,
+            @Valid @RequestBody SyncOfflineOrdersRequest request
+    ) {
+        return orderService.syncOfflineOrders(businessId, request);
+    }
 }

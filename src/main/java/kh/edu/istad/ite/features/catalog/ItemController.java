@@ -10,6 +10,10 @@ import kh.edu.istad.ite.features.catalog.dto.UpdateItemRequest;
 import kh.edu.istad.ite.features.catalog.dto.UploadItemImagesRequest;
 import kh.edu.istad.ite.features.catalog.service.ItemService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
@@ -49,7 +53,6 @@ public class ItemController {
             @RequestParam(required = false) String badge,
             @RequestParam(required = false) String barcode,
             @RequestParam(required = false) BigDecimal price,
-            @RequestParam(required = false) BigDecimal compareAtPrice,
             @RequestParam ItemType itemType,
             @RequestParam(required = false) Boolean trackInventory,
             @RequestPart(required = false) List<ItemAttributeRequest> attributes,
@@ -64,7 +67,7 @@ public class ItemController {
     ) {
         CreateItemRequest request = new CreateItemRequest(
                 itemGroupId, unitId, name, sku, code, description, imageUrl, images,
-                badge, barcode, price, compareAtPrice, itemType, trackInventory, attributes, colors,
+                badge, barcode, price, itemType, trackInventory, attributes, colors,
                 descriptionBlocks, variants, addOnIds, uomConversions, lowStockDefault, status
         );
         java.util.Set<jakarta.validation.ConstraintViolation<CreateItemRequest>> violations = validator.validate(request);
@@ -75,8 +78,11 @@ public class ItemController {
     }
 
     @GetMapping
-    public List<ItemResponse> findAllItems(@PathVariable UUID businessId) {
-        return itemService.findAllItems(businessId);
+    public Page<ItemResponse> findAllItems(
+            @PathVariable UUID businessId,
+            @PageableDefault(size = 20, sort = "name", direction = Sort.Direction.ASC)Pageable pageable
+            ) {
+        return itemService.findAllItems(businessId, pageable);
     }
 
     @GetMapping("/{itemId}")
@@ -102,7 +108,6 @@ public class ItemController {
             @RequestParam(required = false) String badge,
             @RequestParam(required = false) String barcode,
             @RequestParam(required = false) BigDecimal price,
-            @RequestParam(required = false) BigDecimal compareAtPrice,
             @RequestParam(required = false) ItemType itemType,
             @RequestParam(required = false) Boolean trackInventory,
             @RequestPart(required = false) List<ItemAttributeRequest> attributes,
@@ -117,7 +122,7 @@ public class ItemController {
     ) {
         UpdateItemRequest request = new UpdateItemRequest(
                 itemGroupId, unitId, name, sku, code, description, imageUrl, images,
-                badge, barcode, price, compareAtPrice, itemType, trackInventory, attributes, colors,
+                badge, barcode, price, itemType, trackInventory, attributes, colors,
                 descriptionBlocks, variants, addOnIds, uomConversions, lowStockDefault, status
         );
         java.util.Set<jakarta.validation.ConstraintViolation<UpdateItemRequest>> violations = validator.validate(request);

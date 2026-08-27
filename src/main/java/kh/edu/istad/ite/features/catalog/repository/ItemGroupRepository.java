@@ -28,4 +28,13 @@ public interface ItemGroupRepository extends JpaRepository<ItemGroup, UUID> {
     boolean existsByBusinessIdAndNameIgnoreCaseAndIdNot(UUID businessId, String name, UUID id);
 
     boolean existsByBusinessIdAndParentId(UUID businessId, UUID parentId);
+
+    /**
+     * A category by the name a shop calls it, however they capitalised it.
+     *
+     * Used when migrating data in, where a row names its category in whatever
+     * case the old system stored it and the match has to be the same category
+     * the shop already has rather than a second one beside it.
+     */
+    Optional<ItemGroup> findFirstByBusinessIdAndNameIgnoreCase(UUID businessId, String name);
 }
