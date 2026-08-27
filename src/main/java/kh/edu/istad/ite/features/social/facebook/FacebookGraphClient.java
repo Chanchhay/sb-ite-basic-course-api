@@ -269,24 +269,35 @@ public class FacebookGraphClient {
 
             log.info("Configured Messenger 'Get Started' button + Open Shop persistent menu");
         } catch (Exception e) {
-            // Non-fatal: page is still registered/usable, it just won't show the menu button until this succeeds.
             log.error("Failed to configure Messenger profile: {}", e.getMessage());
         }
     }
 
     private String baseDomainOf(String url) {
-        int schemeEnd = url.indexOf("://");
-        int pathStart = url.indexOf('/', schemeEnd + 3);
-        return pathStart < 0 ? url : url.substring(0, pathStart);
+        try {
+            java.net.URI uri = java.net.URI.create(url);
+            String scheme = uri.getScheme() != null ? uri.getScheme() : "https";
+            String host = uri.getHost();
+            return scheme + "://" + (host != null ? host : url);
+        } catch (Exception e) {
+            return url;
+        }
     }
 
     public void whitelistDomain(String pageAccessToken, List<String> domains) {
+        whitelistDomainVerbose(pageAccessToken, domains);
+    }
+
+    /** Same call, but returns exactly what Facebook said instead of swallowing
+     * it — used by the debug endpoint so a failure is visible immediately
+     * instead of requiring a log-file hunt. */
+    public String whitelistDomainVerbose(String pageAccessToken, List<String> domains) {
         try {
             Map<String, Object> body = Map.of(
                     "whitelisted_domains", domains
             );
 
-            restClient.post()
+            String response = restClient.post()
                     .uri(uriBuilder -> uriBuilder
                             .path("/{apiVersion}/me/messenger_profile")
                             .queryParam("access_token", pageAccessToken)
@@ -294,11 +305,13 @@ public class FacebookGraphClient {
                     .contentType(MediaType.APPLICATION_JSON)
                     .body(body)
                     .retrieve()
-                    .toBodilessEntity();
+                    .body(String.class);
 
-            log.info("Whitelisted domains for Messenger: {}", domains);
+            log.info("Whitelisted domains for Messenger: {} -> {}", domains, response);
+            return "OK: " + response;
         } catch (Exception e) {
             log.error("Failed to whitelist domains for Messenger: {}", e.getMessage());
+            return "ERROR: " + e.getMessage();
         }
     }
 
