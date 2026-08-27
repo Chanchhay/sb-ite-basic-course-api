@@ -30,7 +30,6 @@ public record ItemImportRecord(
         String unitName,
         ItemType itemType,
         BigDecimal price,
-        BigDecimal compareAtPrice,
         BigDecimal costPrice,
         String description,
         String badge,
@@ -61,7 +60,6 @@ public record ItemImportRecord(
         values.put("unit", unitName);
         values.put("itemType", itemType == null ? null : itemType.name());
         values.put("price", price);
-        values.put("compareAtPrice", compareAtPrice);
         values.put("costPrice", costPrice);
         values.put("description", description);
         values.put("badge", badge);

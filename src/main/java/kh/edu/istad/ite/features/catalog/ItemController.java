@@ -49,7 +49,6 @@ public class ItemController {
             @RequestParam(required = false) String badge,
             @RequestParam(required = false) String barcode,
             @RequestParam(required = false) BigDecimal price,
-            @RequestParam(required = false) BigDecimal compareAtPrice,
             @RequestParam ItemType itemType,
             @RequestParam(required = false) Boolean trackInventory,
             @RequestPart(required = false) List<ItemAttributeRequest> attributes,
@@ -64,7 +63,7 @@ public class ItemController {
     ) {
         CreateItemRequest request = new CreateItemRequest(
                 itemGroupId, unitId, name, sku, code, description, imageUrl, images,
-                badge, barcode, price, compareAtPrice, itemType, trackInventory, attributes, colors,
+                badge, barcode, price, itemType, trackInventory, attributes, colors,
                 descriptionBlocks, variants, addOnIds, uomConversions, lowStockDefault, status
         );
         java.util.Set<jakarta.validation.ConstraintViolation<CreateItemRequest>> violations = validator.validate(request);
@@ -102,7 +101,6 @@ public class ItemController {
             @RequestParam(required = false) String badge,
             @RequestParam(required = false) String barcode,
             @RequestParam(required = false) BigDecimal price,
-            @RequestParam(required = false) BigDecimal compareAtPrice,
             @RequestParam(required = false) ItemType itemType,
             @RequestParam(required = false) Boolean trackInventory,
             @RequestPart(required = false) List<ItemAttributeRequest> attributes,
@@ -117,7 +115,7 @@ public class ItemController {
     ) {
         UpdateItemRequest request = new UpdateItemRequest(
                 itemGroupId, unitId, name, sku, code, description, imageUrl, images,
-                badge, barcode, price, compareAtPrice, itemType, trackInventory, attributes, colors,
+                badge, barcode, price, itemType, trackInventory, attributes, colors,
                 descriptionBlocks, variants, addOnIds, uomConversions, lowStockDefault, status
         );
         java.util.Set<jakarta.validation.ConstraintViolation<UpdateItemRequest>> violations = validator.validate(request);

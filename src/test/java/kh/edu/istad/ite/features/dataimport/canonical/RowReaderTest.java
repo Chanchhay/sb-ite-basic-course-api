@@ -148,4 +148,31 @@ class RowReaderTest {
         assertThat(reader.text(ImportField.SKU)).isNull();
         assertThat(reader.issues()).isEmpty();
     }
+
+    @Test
+    void keepsAPictureWeAreWillingToPublish() {
+        RowReader reader = readerFor(ImportField.IMAGE_URL, " https://cdn.example.com/mug.jpg ");
+
+        assertThat(reader.imageUrl(ImportField.IMAGE_URL))
+                .isEqualTo("https://cdn.example.com/mug.jpg");
+        assertThat(reader.issues()).isEmpty();
+    }
+
+    /**
+     * The item survives its picture. A shop moving off an old system will have
+     * links that rotted years ago, and losing the row over one would cost them
+     * the name, the price and the stock count as well.
+     */
+    @Test
+    void dropsAPictureWeWillNotPublishWithoutFailingTheRow() {
+        RowReader reader = readerFor(ImportField.IMAGE_URL, "http://192.168.1.10/mug.jpg");
+
+        assertThat(reader.imageUrl(ImportField.IMAGE_URL)).isNull();
+        assertThat(reader.issues()).singleElement()
+                .satisfies(issue -> {
+                    assertThat(issue.isError()).isFalse();
+                    assertThat(issue.field()).isEqualTo(ImportField.IMAGE_URL.name());
+                    assertThat(issue.message()).contains("without a picture");
+                });
+    }
 }

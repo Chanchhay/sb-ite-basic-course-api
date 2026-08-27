@@ -118,14 +118,6 @@ public enum ImportField {
             List.of("price", "sellingprice", "saleprice", "unitprice", "retailprice", "rate", "amount")
     ),
 
-    COMPARE_AT_PRICE(
-            "Compare-at Price",
-            "The price shown struck through beside the selling price.",
-            ImportFieldType.MONEY,
-            Map.of(ImportTargetType.ITEM, OPTIONAL),
-            List.of("compareatprice", "listprice", "rrp", "msrp", "originalprice", "wasprice")
-    ),
-
     COST_PRICE(
             "Cost Price",
             "What one unit cost you. Used to value the stock you start with.",
@@ -201,7 +193,8 @@ public enum ImportField {
 
     IMAGE_URL(
             "Image URL",
-            "A picture of this item, or of this option. Linked to, not copied.",
+            "A picture of this item, or of this option. Linked to, not copied, so it has"
+                    + " to be an https address the public can reach.",
             ImportFieldType.TEXT,
             Map.of(ImportTargetType.ITEM, OPTIONAL),
             List.of("imageurl", "image", "picture", "photo", "imagelink", "thumbnail")

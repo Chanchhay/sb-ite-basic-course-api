@@ -9,6 +9,7 @@ import kh.edu.istad.ite.shared.enums.ItemType;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 
 /**
@@ -56,6 +57,41 @@ public class RowReader {
                     field.name(),
                     "VALUE_TOO_LONG",
                     field.getLabel() + " is longer than " + maxLength + " characters."
+            ));
+            return null;
+        }
+
+        return value;
+    }
+
+    /**
+     * A picture's address, if it is one we are willing to publish.
+     *
+     * Never fatal. A link we will not use costs the item its photograph and
+     * nothing else — the shop keeps its name, its price and its stock, and can
+     * upload a picture afterwards. Refusing the whole row over a stale link
+     * from an old system would be the worse trade by a distance.
+     */
+    public String imageUrl(ImportField field) {
+        String raw = text(field);
+
+        if (raw == null) {
+            return null;
+        }
+
+        String value = raw.trim();
+
+        if (value.isEmpty()) {
+            return null;
+        }
+
+        Optional<ImageUrlPolicy.Rejection> rejection = ImageUrlPolicy.rejectionFor(value);
+
+        if (rejection.isPresent()) {
+            issues.add(RowIssue.warning(
+                    field.name(),
+                    rejection.get().code(),
+                    rejection.get().message() + " The item will be imported without a picture."
             ));
             return null;
         }

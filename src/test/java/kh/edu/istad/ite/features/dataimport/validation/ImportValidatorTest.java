@@ -89,7 +89,7 @@ class ImportValidatorTest {
     private ItemImportRecord anItem(String name, String sku, BigDecimal openingStock) {
         return new ItemImportRecord(
                 name, sku, null, "Drinks", null, ItemType.PHYSICAL,
-                BigDecimal.ONE, null, BigDecimal.ONE, null, null,
+                BigDecimal.ONE, BigDecimal.ONE, null, null,
                 null, null, ItemStatus.ACTIVE, openingStock, null, RowOptions.NONE, null);
     }
 
@@ -204,7 +204,7 @@ class ImportValidatorTest {
     void refusesOpeningStockOnSomethingThatIsNotCounted() {
         ItemImportRecord service = new ItemImportRecord(
                 "Repair", null, null, "Services", null, ItemType.SERVICE,
-                BigDecimal.TEN, null, null, null, null,
+                BigDecimal.TEN, null, null, null,
                 null, null, ItemStatus.ACTIVE, new BigDecimal("5"), null, RowOptions.NONE, null);
 
         RowVerdict verdict = itemValidator.validate(
@@ -219,7 +219,7 @@ class ImportValidatorTest {
     void warnsWhenOpeningStockArrivesWithNoCost() {
         ItemImportRecord noCost = new ItemImportRecord(
                 "Espresso", "ESP-1", null, "Drinks", null, ItemType.PHYSICAL,
-                BigDecimal.ONE, null, null, null, null,
+                BigDecimal.ONE, null, null, null,
                 null, null, ItemStatus.ACTIVE, new BigDecimal("10"), null, RowOptions.NONE, null);
 
         RowVerdict verdict = itemValidator.validate(
@@ -301,7 +301,7 @@ class ImportValidatorTest {
             String name, String groupKey, String sku, String size, String colour) {
         return new ItemImportRecord(
                 name, sku, null, "Apparel", null, ItemType.PHYSICAL,
-                new BigDecimal("19.99"), null, new BigDecimal("5.50"), null, null,
+                new BigDecimal("19.99"), new BigDecimal("5.50"), null, null,
                 null, null, ItemStatus.ACTIVE, new BigDecimal("10"), groupKey,
                 RowOptions.of("Size", size, "Color", colour), null);
     }
@@ -383,7 +383,7 @@ class ImportValidatorTest {
 
         ItemImportRecord onParent = new ItemImportRecord(
                 "Latte", "LAT-1", null, "Beverages", null, ItemType.PHYSICAL,
-                BigDecimal.ONE, null, BigDecimal.ONE, null, null,
+                BigDecimal.ONE, BigDecimal.ONE, null, null,
                 null, null, ItemStatus.ACTIVE, null, null, RowOptions.NONE, null);
 
         RowVerdict verdict = itemValidator.validate(
@@ -402,7 +402,7 @@ class ImportValidatorTest {
 
         ItemImportRecord onLeaf = new ItemImportRecord(
                 "Latte", "LAT-1", null, "Coffee", null, ItemType.PHYSICAL,
-                BigDecimal.ONE, null, BigDecimal.ONE, null, null,
+                BigDecimal.ONE, BigDecimal.ONE, null, null,
                 null, null, ItemStatus.ACTIVE, null, null, RowOptions.NONE, null);
 
         RowVerdict verdict = itemValidator.validate(

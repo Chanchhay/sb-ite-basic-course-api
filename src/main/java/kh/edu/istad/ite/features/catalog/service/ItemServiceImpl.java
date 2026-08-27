@@ -128,7 +128,6 @@ public class ItemServiceImpl implements ItemService {
             }
         }
         item.setBadge(TextHelper.trimToNull(request.badge()));
-        item.setCompareAtPrice(normalizePrice(request.compareAtPrice()));
         item.setDescriptionBlocks(mapDescriptionBlocks(request.descriptionBlocks()));
         item.setAttributes(mapAttributes(request.attributes()));
         item.setColors(mapColors(request.colors()));
@@ -226,9 +225,6 @@ public class ItemServiceImpl implements ItemService {
         }
         if (request.badge() != null) {
             item.setBadge(TextHelper.trimToNull(request.badge()));
-        }
-        if (request.compareAtPrice() != null) {
-            item.setCompareAtPrice(normalizePrice(request.compareAtPrice()));
         }
         if (request.descriptionBlocks() != null) {
             item.setDescriptionBlocks(mapDescriptionBlocks(request.descriptionBlocks()));
