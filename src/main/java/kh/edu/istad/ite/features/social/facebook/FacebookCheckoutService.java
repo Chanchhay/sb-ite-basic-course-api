@@ -1,5 +1,6 @@
 package kh.edu.istad.ite.features.social.facebook;
 
+import kh.edu.istad.ite.config.props.StorefrontProps;
 import kh.edu.istad.ite.config.security.CredentialCipher;
 import kh.edu.istad.ite.features.business.entity.Business;
 import kh.edu.istad.ite.features.business.repository.BusinessRepository;
