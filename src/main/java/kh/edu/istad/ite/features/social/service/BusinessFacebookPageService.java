@@ -1,5 +1,6 @@
 package kh.edu.istad.ite.features.social.service;
 
+import kh.edu.istad.ite.config.props.StorefrontProps;
 import kh.edu.istad.ite.features.business.entity.Business;
 import kh.edu.istad.ite.features.business.repository.BusinessRepository;
 import kh.edu.istad.ite.features.social.entity.BusinessFacebookPage;
@@ -19,6 +20,7 @@ public class BusinessFacebookPageService {
     private final BusinessFacebookPageRepository repository;
     private final BusinessRepository businessRepository;
     private final FacebookGraphClient graphClient;
+    private final StorefrontProps storefrontProps;
 
     @Transactional
     public BusinessFacebookPage registerPage(UUID businessId, String pageId, String pageName, String pageAccessToken) {
@@ -37,7 +39,8 @@ public class BusinessFacebookPageService {
 
         BusinessFacebookPage saved = repository.save(page);
 
-        graphClient.setupMessengerProfile(pageAccessToken);
+        String miniAppUrl = storefrontProps.buildMessengerMiniAppUrl(business.getSlug());
+        graphClient.setupMessengerProfile(pageAccessToken, miniAppUrl);
         graphClient.subscribePageToWebhook(pageId, pageAccessToken);
 
         return saved;

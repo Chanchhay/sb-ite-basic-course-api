@@ -59,6 +59,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/v1/webhooks/telegram/**").permitAll()
                         // Verified by initData's own HMAC signature, not a bearer token — that's what this endpoint exists to issue.
                         .requestMatchers(HttpMethod.POST, "/api/v1/telegram-webapp/auth").permitAll()
+                        // Same story for Messenger's signed_request.
+                        .requestMatchers(HttpMethod.POST, "/api/v1/facebook-webapp/auth").permitAll()
                         .requestMatchers("/api/v1/social/facebook/webhook", "/api/v1/social/facebook/webhook/**", "/api/webhook", "/api/webhook/**", "/api/v1/social/facebook/webhook/setup").permitAll()                        .requestMatchers(HttpMethod.GET, "/api/v1/social/facebook/oauth/callback").permitAll()
                         .requestMatchers(
                                 "/ws/customer-display",

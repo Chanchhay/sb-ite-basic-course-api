@@ -207,7 +207,11 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
         order.setCashierId(null);
         order.setNote(StringUtils.hasText(request.note())
                 ? request.note()
-                : (channel == OrderChannel.TELEGRAM ? "Telegram Mini App order" : "Storefront web order"));
+                : switch (channel) {
+                    case TELEGRAM -> "Telegram Mini App order";
+                    case MESSENGER -> "Messenger Mini App order";
+                    default -> "Storefront web order";
+                });
 
         BigDecimal subtotal = BigDecimal.ZERO;
 
@@ -645,7 +649,8 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
     // checkout the same way a pending web one always did. Hardcoding WEB
     // alone here meant a Telegram customer's pending order was invisible
     // to this check once orders started actually being tagged TELEGRAM.
-    private static final List<OrderChannel> STOREFRONT_CHANNELS = List.of(OrderChannel.WEB, OrderChannel.TELEGRAM);
+    private static final List<OrderChannel> STOREFRONT_CHANNELS =
+            List.of(OrderChannel.WEB, OrderChannel.TELEGRAM, OrderChannel.MESSENGER);
 
     private Optional<Order> findOpenOrder(GlobalCustomer shopper) {
         return orderRepository
@@ -853,20 +858,21 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
         return CURRENCY_KHR.equalsIgnoreCase(currency) ? 0 : 2;
     }
 
-    /**
-     * The storefront checkout is shared by the regular website and the
-     * Telegram Mini App (same endpoint, same auth mechanism) — the only
-     * way to tell them apart afterward is whether this customer has a
-     * linked Telegram identity for this business, which the Mini App auth
-     * flow creates on first sign-in and a plain web visitor never has.
-     */
+
     private OrderChannel resolveOrderChannel(UUID businessId, UUID customerId) {
         boolean isTelegramCustomer = customerChannelIdentityRepository
                 .findByBusiness_IdAndChannelAndCustomer_Id(businessId, ChannelType.TELEGRAM, customerId)
                 .isPresent();
-        log.info("resolveOrderChannel: business={} customer={} telegramLinkFound={}",
-                businessId, customerId, isTelegramCustomer);
-        return isTelegramCustomer ? OrderChannel.TELEGRAM : OrderChannel.WEB;
+        if (isTelegramCustomer) {
+            return OrderChannel.TELEGRAM;
+        }
+
+        boolean isMessengerCustomer = customerChannelIdentityRepository
+                .findByBusiness_IdAndChannelAndCustomer_Id(businessId, ChannelType.MESSENGER, customerId)
+                .isPresent();
+        log.info("resolveOrderChannel: business={} customer={} telegramLinkFound={} messengerLinkFound={}",
+                businessId, customerId, isTelegramCustomer, isMessengerCustomer);
+        return isMessengerCustomer ? OrderChannel.MESSENGER : OrderChannel.WEB;
     }
 
     private String nextInvoiceNumber(UUID businessId) {
