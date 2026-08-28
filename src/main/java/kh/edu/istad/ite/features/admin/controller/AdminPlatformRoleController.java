@@ -6,7 +6,10 @@ import kh.edu.istad.ite.features.admin.dto.PlatformRolePatchRequest;
 import kh.edu.istad.ite.features.admin.dto.PlatformRoleRequest;
 import kh.edu.istad.ite.features.admin.dto.PlatformRoleResponse;
 import kh.edu.istad.ite.features.business.service.KeycloakRoleAdapter;
+import kh.edu.istad.ite.shared.dto.PageResponse;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 
@@ -21,9 +24,11 @@ public class AdminPlatformRoleController {
     private final KeycloakRoleAdapter roleAdapter;
 
     @GetMapping
-    public List<PlatformRoleResponse> getRoles() {
+    public PageResponse<PlatformRoleResponse> getRoles(
+            @PageableDefault(size = 20) Pageable pageable
+    ) {
         securityValidator.validateSuperAdmin();
-        return roleAdapter.getPlatformRoles();
+        return roleAdapter.getPlatformRoles(pageable);
     }
 
     @PostMapping
