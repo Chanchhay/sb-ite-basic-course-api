@@ -17,6 +17,9 @@ import kh.edu.istad.ite.features.catalog.mapper.ItemMapper;
 import kh.edu.istad.ite.features.catalog.repository.AddOnRepository;
 import kh.edu.istad.ite.features.catalog.repository.ItemGroupRepository;
 import kh.edu.istad.ite.features.catalog.repository.ItemRepository;
+import kh.edu.istad.ite.features.inventory.repository.StockEntryRepository;
+import kh.edu.istad.ite.features.inventory.repository.StockConsumptionRepository;
+import kh.edu.istad.ite.features.inventory.repository.StockLayerRepository;
 import kh.edu.istad.ite.features.catalog.repository.UnitRepository;
 import kh.edu.istad.ite.features.catalog.entity.ItemImage;
 import kh.edu.istad.ite.features.minio.MinioService;
@@ -90,6 +93,9 @@ public class ItemServiceImpl implements ItemService {
     private final ItemMapper itemMapper;
     private final MinioService minioService;
     private final ItemChannelRepository itemChannelRepository;
+    private final StockEntryRepository stockEntryRepository;
+    private final StockLayerRepository stockLayerRepository;
+    private final StockConsumptionRepository stockConsumptionRepository;
 
     @Override
     @Transactional
@@ -296,6 +302,33 @@ public class ItemServiceImpl implements ItemService {
         for (ItemImage image : item.getImages()) {
             minioService.deleteAsset(image.getImageKey());
         }
+
+        /*
+         * The stock ledger goes with the item it counts. Nothing cascades from
+         * Item to StockEntry, so an item that was ever counted — including one
+         * that only ever received an opening balance from an import — could not
+         * be deleted at all, and reported that it "has been ordered" when
+         * nothing had been ordered at all.
+         *
+         * A genuinely sold item is still refused: the order lines point at it
+         * too, and that constraint is untouched. Removing the ledger first only
+         * means the refusal, when it comes, is about the sales it is actually
+         * about. Both happen in one transaction, so a refusal takes the ledger
+         * deletion down with it.
+         */
+        /*
+         * In dependency order, because each points at the one before it: what
+         * drew stock down, then the batches it drew from, then the entries that
+         * made those batches. Clearing only the entries left the FIFO layers
+         * pointing at rows that were about to go, so the item's own delete
+         * failed on a constraint nobody could see — and reported itself as
+         * "has been ordered" when nothing had been.
+         */
+        stockConsumptionRepository.deleteByItemId(itemId);
+        stockLayerRepository.deleteByItemId(itemId);
+        stockEntryRepository.deleteAll(
+                stockEntryRepository.findAllByBusiness_IdAndItem_IdOrderByCreatedDateDescIdDesc(
+                        businessId, itemId));
 
         try {
             itemRepository.delete(item);

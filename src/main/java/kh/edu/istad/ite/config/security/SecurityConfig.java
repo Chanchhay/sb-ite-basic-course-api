@@ -59,8 +59,9 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/v1/webhooks/telegram/**").permitAll()
                         // Verified by initData's own HMAC signature, not a bearer token — that's what this endpoint exists to issue.
                         .requestMatchers(HttpMethod.POST, "/api/v1/telegram-webapp/auth").permitAll()
-                        // Same story for Messenger's signed_request.
-                        .requestMatchers(HttpMethod.POST, "/api/v1/facebook-webapp/auth").permitAll()
+                        // Same story for Messenger's signed_request, and for the device-registration
+                        // fallback that replaced it — neither has a bearer token to check yet.
+                        .requestMatchers(HttpMethod.POST, "/api/v1/facebook-webapp/auth", "/api/v1/facebook-webapp/device-auth").permitAll()
                         .requestMatchers("/api/v1/social/facebook/webhook", "/api/v1/social/facebook/webhook/**", "/api/webhook", "/api/webhook/**", "/api/v1/social/facebook/webhook/setup").permitAll()                        .requestMatchers(HttpMethod.GET, "/api/v1/social/facebook/oauth/callback").permitAll()
                         .requestMatchers(
                                 "/ws/customer-display",
@@ -173,6 +174,9 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/v1/businesses/social-settings/facebook",
                                 "/api/v1/businesses/social-settings/facebook/*")
                         .hasAuthority("SCOPE_business:read")
+                        .requestMatchers(HttpMethod.PATCH, "/api/v1/businesses/social-settings/facebook",
+                                "/api/v1/businesses/social-settings/facebook/*")
+                        .hasAuthority("SCOPE_business:update")
                         .requestMatchers(HttpMethod.DELETE, "/api/v1/businesses/social-settings/facebook")
                         .hasAuthority("SCOPE_business:update")
 
@@ -307,6 +311,10 @@ public class SecurityConfig {
                                 "/api/v1/businesses/{businessId}/imports/*/validate",
                                 "/api/v1/businesses/{businessId}/imports/*/commit")
                         .access(scoped(tenant, "item:create"))
+                        // Undoing an import deletes items, so it asks for the
+                        // permission that deleting an item asks for.
+                        .requestMatchers(HttpMethod.POST, "/api/v1/businesses/{businessId}/imports/*/revert")
+                        .access(scoped(tenant, "item:delete"))
                         .requestMatchers(HttpMethod.PUT, "/api/v1/businesses/{businessId}/imports/*/mapping")
                         .access(scoped(tenant, "item:create"))
 

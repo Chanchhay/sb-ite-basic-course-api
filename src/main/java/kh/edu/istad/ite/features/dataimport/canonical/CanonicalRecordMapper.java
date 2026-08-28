@@ -70,11 +70,21 @@ public class CanonicalRecordMapper {
 
         ItemStatus status = reader.status(ImportField.STATUS);
 
+        /*
+         * A file may describe the category in either of two shapes, and one
+         * file sometimes carries both. A column matched to Parent Category
+         * was pointed there deliberately, so it wins; a path inside the
+         * category cell is what is left when nobody said otherwise.
+         */
+        CategoryPath category = reader.categoryPath(ImportField.ITEM_GROUP, 150);
+        String namedParent = reader.text(ImportField.PARENT_GROUP, 150);
+
         return new ItemImportRecord(
                 reader.text(ImportField.NAME, 200),
                 reader.text(ImportField.SKU, 100),
                 reader.text(ImportField.BARCODE, 100),
-                reader.text(ImportField.ITEM_GROUP, 150),
+                category.name(),
+                namedParent != null ? namedParent : category.parent(),
                 reader.text(ImportField.UNIT, 100),
                 itemType,
                 reader.number(ImportField.PRICE),

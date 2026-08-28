@@ -29,6 +29,11 @@ public record RowIssue(
         return new RowIssue(field, code, message, ImportIssueSeverity.WARNING);
     }
 
+    /** Something the import will do, said out loud. Never a reason to stop. */
+    public static RowIssue info(String field, String code, String message) {
+        return new RowIssue(field, code, message, ImportIssueSeverity.INFO);
+    }
+
     /**
      * Whether this stops the row being imported.
      *

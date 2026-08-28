@@ -231,29 +231,46 @@ public class FacebookGraphClient {
 
 
     /**
-     * The Messenger equivalent of Telegram's persistent menu button — a
-     * single web_url entry that opens the storefront webview, exactly like
-     * the Mini App button. {@code messenger_extensions: true} is what makes
-     * Facebook append a verifiable {@code signed_request} to the URL, which
-     * {@code FacebookWebAppAuthService} needs to sign the visitor in.
+     * The persistent menu reflects whichever of the two independent modes
+     * (text/button bot flow, Mini App webview) this business currently has
+     * on — same relationship as Telegram's isActive/isMiniAppEnabled pair.
+     * {@code messenger_extensions: true} on the Mini App button is what makes
+     * Facebook let the webview call {@code getContext()} for a verifiable
+     * signed_request, which {@code FacebookWebAppAuthService} needs to sign
+     * the visitor in.
      */
-    public void setupMessengerProfile(String pageAccessToken, String miniAppUrl) {
+    public void setupMessengerProfile(String pageAccessToken, String miniAppUrl, boolean textFlowEnabled, boolean miniAppEnabled) {
         try {
-            Map<String, Object> shopButton = new java.util.HashMap<>();
-            shopButton.put("type", "web_url");
-            shopButton.put("title", "🛍 បើកហាង");
-            shopButton.put("url", miniAppUrl);
-            shopButton.put("webview_height_ratio", "tall");
-            shopButton.put("messenger_extensions", true);
+            List<Map<String, Object>> actions = new java.util.ArrayList<>();
 
-            Map<String, Object> body = Map.of(
-                    "get_started", Map.of("payload", "GET_STARTED"),
-                    "persistent_menu", List.of(Map.of(
-                            "locale", "default",
-                            "composer_input_disabled", true,
-                            "call_to_actions", List.of(shopButton)
-                    ))
-            );
+            if (miniAppEnabled) {
+                Map<String, Object> shopButton = new java.util.HashMap<>();
+                shopButton.put("type", "web_url");
+                shopButton.put("title", "🛍 បើកហាង");
+                shopButton.put("url", miniAppUrl);
+                shopButton.put("webview_height_ratio", "tall");
+                shopButton.put("messenger_extensions", true);
+                actions.add(shopButton);
+
+                whitelistDomain(pageAccessToken, List.of(baseDomainOf(miniAppUrl)));
+            }
+
+            if (textFlowEnabled) {
+                actions.add(Map.of("type", "postback", "title", "🗂️ មើលផលិតផល", "payload", "CATALOG"));
+                actions.add(Map.of("type", "postback", "title", "🛒 មើលកន្ត្រក", "payload", "CART_VIEW"));
+                actions.add(Map.of("type", "postback", "title", "💳 គិតលុយ", "payload", "CART_CHECKOUT"));
+                actions.add(Map.of("type", "postback", "title", "📝 ប្រវត្តិបញ្ជាទិញ", "payload", "ORDER_HISTORY"));
+            }
+
+            Map<String, Object> body = actions.isEmpty()
+                    ? Map.of("get_started", Map.of("payload", "GET_STARTED"))
+                    : Map.of(
+                            "get_started", Map.of("payload", "GET_STARTED"),
+                            "persistent_menu", List.of(Map.of(
+                                    "locale", "default",
+                                    "composer_input_disabled", miniAppEnabled && !textFlowEnabled,
+                                    "call_to_actions", actions
+                            )));
 
             restClient.post()
                     .uri(uriBuilder -> uriBuilder
@@ -265,28 +282,46 @@ public class FacebookGraphClient {
                     .retrieve()
                     .toBodilessEntity();
 
-            whitelistDomain(pageAccessToken, List.of(baseDomainOf(miniAppUrl)));
-
-            log.info("Configured Messenger 'Get Started' button + Open Shop persistent menu");
+            log.info("Configured Messenger profile: textFlow={} miniApp={}", textFlowEnabled, miniAppEnabled);
         } catch (Exception e) {
-            // Non-fatal: page is still registered/usable, it just won't show the menu button until this succeeds.
             log.error("Failed to configure Messenger profile: {}", e.getMessage());
         }
     }
 
     private String baseDomainOf(String url) {
-        int schemeEnd = url.indexOf("://");
-        int pathStart = url.indexOf('/', schemeEnd + 3);
-        return pathStart < 0 ? url : url.substring(0, pathStart);
+        try {
+            java.net.URI uri = java.net.URI.create(url);
+            String scheme = uri.getScheme() != null ? uri.getScheme() : "https";
+            String host = uri.getHost();
+            return scheme + "://" + (host != null ? host : url);
+        } catch (Exception e) {
+            return url;
+        }
     }
 
     public void whitelistDomain(String pageAccessToken, List<String> domains) {
+        whitelistDomainVerbose(pageAccessToken, domains);
+    }
+
+    /**
+     * Same call, but returns exactly what Facebook said instead of swallowing
+     * it. Reads the response as a {@code Map} rather than {@code String}/
+     * {@code byte[]} — the custom Jackson converter registered on this client
+     * (needed elsewhere for Facebook's occasional {@code text/javascript}
+     * responses) claims that media type for every target type ahead of the
+     * plain string/byte-array converters, but can only actually deserialize
+     * the JSON *object* Facebook sends back into a real object type, not a
+     * raw string or byte array — attempting either previously crashed here on
+     * every call, masking whatever Facebook actually said.
+     */
+    @SuppressWarnings("unchecked")
+    public String whitelistDomainVerbose(String pageAccessToken, List<String> domains) {
         try {
             Map<String, Object> body = Map.of(
                     "whitelisted_domains", domains
             );
 
-            restClient.post()
+            Map<String, Object> response = restClient.post()
                     .uri(uriBuilder -> uriBuilder
                             .path("/{apiVersion}/me/messenger_profile")
                             .queryParam("access_token", pageAccessToken)
@@ -294,11 +329,13 @@ public class FacebookGraphClient {
                     .contentType(MediaType.APPLICATION_JSON)
                     .body(body)
                     .retrieve()
-                    .toBodilessEntity();
+                    .body(Map.class);
 
-            log.info("Whitelisted domains for Messenger: {}", domains);
+            log.info("Whitelisted domains for Messenger: {} -> {}", domains, response);
+            return "OK: " + response;
         } catch (Exception e) {
             log.error("Failed to whitelist domains for Messenger: {}", e.getMessage());
+            return "ERROR: " + e.getMessage();
         }
     }
 

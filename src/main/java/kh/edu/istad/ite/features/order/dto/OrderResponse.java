@@ -22,6 +22,8 @@ public class OrderResponse {
     private UUID id;
     private UUID businessId;
     private UUID customerId;
+    /** From {@code GlobalCustomer}, not the order itself — the business's way to reach whoever placed this order. */
+    private String customerPhone;
     private String invoiceNumber;
     private OrderChannel channel;
     private OrderStatus status;

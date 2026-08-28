@@ -23,26 +23,10 @@ public interface RegisterSessionRepository
     @EntityGraph(attributePaths = "register")
     Page<RegisterSession> findByBusinessId(java.util.UUID businessId, Pageable pageable);
 
-    /**
-     * How many drawers are open right now.
-     *
-     * Deliberately unfiltered by anything the screen is searching for: "two
-     * tills are open" is a fact about the shop this minute, and narrowing it
-     * to whatever the reader typed into a search box would make it a different,
-     * much less useful number.
-     */
+
     long countByBusinessIdAndStatus(java.util.UUID businessId, SessionStatus status);
 
-    /**
-     * The cash the filtered shifts took, summed across all of them.
-     *
-     * Native because it spans two tables whose timestamps are not the same
-     * kind: a session's {@code opened_at} is an instant, a sale's
-     * {@code sold_at} is wall-clock with no zone. The zone to read the instant
-     * in is passed in rather than taken from the database session, so the
-     * boundary lands where the application says it does and not wherever the
-     * connection happened to be configured.
-     */
+
     @Query(value = """
             select coalesce(sum(sa.total_amount), 0)
             from register_sessions rs

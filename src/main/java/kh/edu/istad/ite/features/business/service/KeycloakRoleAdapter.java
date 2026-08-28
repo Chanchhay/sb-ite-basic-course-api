@@ -25,6 +25,7 @@ import kh.edu.istad.ite.features.business.dto.BusinessRoleRequest;
 import kh.edu.istad.ite.features.business.dto.BusinessRoleResponse;
 import kh.edu.istad.ite.features.business.mapper.RoleMapper;
 import kh.edu.istad.ite.features.business.repository.BusinessRepository;
+import kh.edu.istad.ite.shared.dto.PageResponse;
 import kh.edu.istad.ite.shared.enums.PermissionCode;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -136,12 +137,12 @@ public class KeycloakRoleAdapter {
 
     // --- Business Roles ---
 
-    public Page<BusinessRoleResponse> getBusinessRoles(UUID businessId, Pageable pageable) {
+    public PageResponse<BusinessRoleResponse> getBusinessRoles(UUID businessId, Pageable pageable) {
         String prefix = getPrefix(businessId);
         RolesResource rolesResource = keycloak.realm(props.getTargetRealm()).roles();
 
-        //Keycloak has no server-side paging for a giltered-by-prefix role
-        //list. so we fetch the (small. per-business) filtered set and slice
+        //Keycloak has no server-side paging for a filtered-by-prefix role
+        //list, so we fetch the (small, per-business) filtered set and slice
         // it in memory to match the requested page.
 
         List<BusinessRoleResponse> allRoles = rolesResource.list().stream()
@@ -154,11 +155,10 @@ public class KeycloakRoleAdapter {
                 .toList();
         int start = (int) pageable.getOffset();
         if (start >= allRoles.size()) {
-            return new PageImpl<>(List.of(), pageable, allRoles.size());
+            return PageResponse.from(new PageImpl<>(List.of(), pageable, allRoles.size()));
         }
         int end = Math.min(start + pageable.getPageSize(), allRoles.size());
-        return new PageImpl<>(allRoles.subList(start, end), pageable, allRoles.size());
-
+        return PageResponse.from(new PageImpl<>(allRoles.subList(start, end), pageable, allRoles.size()));
     }
 
     public void createBusinessRole(UUID businessId, BusinessRoleRequest request) {
@@ -197,11 +197,11 @@ public class KeycloakRoleAdapter {
 
     // --- Platform Roles ---
 
-    public List<PlatformRoleResponse> getPlatformRoles() {
+    public PageResponse<PlatformRoleResponse> getPlatformRoles(Pageable pageable) {
         String prefix = "platform_";
         RolesResource rolesResource = keycloak.realm(props.getTargetRealm()).roles();
 
-        return rolesResource.list().stream()
+        List<PlatformRoleResponse> allRoles = rolesResource.list().stream()
                 .filter(r -> r.getName().startsWith(prefix))
                 .map(r -> {
                     RoleResource roleResource = rolesResource.get(r.getName());
@@ -209,6 +209,12 @@ public class KeycloakRoleAdapter {
                     return roleMapper.toPlatformRoleResponse(r, perms);
                 })
                 .toList();
+        int start = (int) pageable.getOffset();
+        if (start >= allRoles.size()) {
+            return PageResponse.from(new PageImpl<>(List.of(), pageable, allRoles.size()));
+        }
+        int end = Math.min(start + pageable.getPageSize(), allRoles.size());
+        return PageResponse.from(new PageImpl<>(allRoles.subList(start, end), pageable, allRoles.size()));
     }
 
     public void createPlatformRole(PlatformRoleRequest request) {

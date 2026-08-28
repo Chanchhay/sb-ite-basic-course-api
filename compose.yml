@@ -41,6 +41,7 @@ services:
       SPRING_PROFILES_ACTIVE: prod
       PGHOST: db
       PGPORT: 5432
+      TZ: Asia/Phnom_Penh
 
     networks:
       - internal

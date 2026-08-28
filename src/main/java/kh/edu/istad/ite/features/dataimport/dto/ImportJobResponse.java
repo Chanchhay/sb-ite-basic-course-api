@@ -45,8 +45,16 @@ public record ImportJobResponse(
         LocalDateTime validationCompletedAt,
         LocalDateTime commitStartedAt,
         LocalDateTime commitCompletedAt,
+        LocalDateTime revertedAt,
         String failureMessage,
         /** Whether the shop is allowed to press Import right now. */
-        boolean committable
+        boolean committable,
+
+        /**
+         * Whether this import can still be taken back out. False once it
+         * has been, and false for one that never finished — there is
+         * nothing in the catalogue to undo.
+         */
+        boolean revertable
 ) {
 }

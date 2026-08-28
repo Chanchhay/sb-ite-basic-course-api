@@ -1,5 +1,6 @@
 package kh.edu.istad.ite.features.dataimport.entity;
 
+import kh.edu.istad.ite.features.dataimport.canonical.DeclaredUnit;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -210,6 +211,21 @@ public class ImportJob extends BasedAuditingEntity {
 
     @Column(name = "commit_started_at")
     private LocalDateTime commitStartedAt;
+
+    /**
+     * The units the uploaded workbook declared on its Units sheet.
+     *
+     * Read once when the file is staged and kept here, so checking and the
+     * commit judge the same declarations — re-reading the file at commit would
+     * let a workbook swapped underneath us mean two different things.
+     */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "declared_units", columnDefinition = "jsonb")
+    private List<DeclaredUnit> declaredUnits = new ArrayList<>();
+
+    /** When this import was taken back out, if it was. */
+    @Column(name = "reverted_at")
+    private LocalDateTime revertedAt;
 
     @Column(name = "commit_completed_at")
     private LocalDateTime commitCompletedAt;

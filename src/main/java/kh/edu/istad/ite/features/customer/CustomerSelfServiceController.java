@@ -16,6 +16,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -38,6 +39,26 @@ public class CustomerSelfServiceController {
     private final GlobalCustomerRepository globalCustomerRepository;
     private final CustomerIdentityService customerIdentityService;
     private final CustomerRepository customerRepository;
+
+    /**
+     * Lets a checkout screen (web, Telegram, or Messenger) check whether this
+     * customer already has a phone number on file before deciding whether to
+     * prompt for one — {@code phoneNumber} lives on {@link GlobalCustomer},
+     * not per-business, so no {@code businessId} is needed here the way the
+     * PUT below needs one for {@code address}.
+     */
+    @GetMapping
+    public CustomerSelfProfileResponse getMyProfile() {
+        var keycloakUserId = AuthHelper.currentUserId();
+        if (keycloakUserId == null) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Sign in required");
+        }
+
+        return globalCustomerRepository.findByKeycloakUserId(keycloakUserId)
+                .map(gc -> new CustomerSelfProfileResponse(
+                        gc.getFullName(), gc.getEmail(), gc.getGender(), gc.getPhoneNumber(), null, false))
+                .orElseGet(() -> new CustomerSelfProfileResponse(null, null, null, null, null, false));
+    }
 
     @PutMapping
     @Transactional
@@ -79,11 +100,17 @@ public class CustomerSelfServiceController {
                 ? String.join(" ", firstName != null ? firstName : "", lastName != null ? lastName : "").trim()
                 : globalCustomer.getFullName();
         globalCustomer.setFullName(fullName);
-        globalCustomer.setGender(TextHelper.trimToNull(request.gender()));
+        String normalizedGender = TextHelper.trimToNull(request.gender());
+        if (normalizedGender != null) {
+            globalCustomer.setGender(normalizedGender);
+        }
         globalCustomerRepository.save(globalCustomer);
 
         Customer customer = customerIdentityService.customerFor(business, globalCustomer);
-        customer.setAddress(TextHelper.trimToNull(request.address()));
+        String normalizedAddress = TextHelper.trimToNull(request.address());
+        if (normalizedAddress != null) {
+            customer.setAddress(normalizedAddress);
+        }
         customerRepository.save(customer);
 
         boolean profileComplete = StringUtils.hasText(globalCustomer.getEmail())

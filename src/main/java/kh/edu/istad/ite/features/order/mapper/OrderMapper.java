@@ -34,10 +34,15 @@ public class OrderMapper {
                 .map(this::toItemResponse)
                 .toList();
 
+        kh.edu.istad.ite.features.customer.entity.Customer orderCustomer = order.getCustomer();
+        kh.edu.istad.ite.features.customer.entity.GlobalCustomer orderGlobalCustomer =
+                orderCustomer == null ? null : orderCustomer.getGlobalCustomer();
+
         return new OrderResponse(
                 order.getId(),
                 order.getBusiness().getId(),
-                order.getCustomer() == null ? null : order.getCustomer().getId(),
+                orderCustomer == null ? null : orderCustomer.getId(),
+                orderGlobalCustomer == null ? null : orderGlobalCustomer.getPhoneNumber(),
                 order.getInvoiceNumber(),
                 order.getChannel(),
                 order.getStatus(),

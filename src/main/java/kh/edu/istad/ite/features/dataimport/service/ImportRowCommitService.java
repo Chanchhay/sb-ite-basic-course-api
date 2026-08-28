@@ -50,7 +50,7 @@ public class ImportRowCommitService {
 
         if (rows.stream().allMatch(ImportRow::isCommitted)) {
             // Already in. A resumed commit passes over them rather than through.
-            return GroupCommitOutcome.of(head.getStatus(), head.getCommittedEntityId(), false, Map.of());
+            return GroupCommitOutcome.of(head.getStatus(), head.getCommittedEntityId(), List.of(), Map.of());
         }
 
         GroupCommitOutcome outcome = attempt(job, rows, plan);

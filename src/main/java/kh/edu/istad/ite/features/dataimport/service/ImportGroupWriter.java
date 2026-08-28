@@ -104,6 +104,17 @@ public class ImportGroupWriter {
                 row.setCommittedEntityId(outcome.entityId());
             }
 
+            /*
+             * Written onto the first row of the group only. Several rows can
+             * describe one item, but the categories were created once, and
+             * recording them against every row would have an undo try to
+             * delete the same category five times.
+             */
+            if (!outcome.createdItemGroupIds().isEmpty()
+                    && row.getRowNumber().equals(firstRowNumber(rows))) {
+                row.setCreatedItemGroupIds(List.copyOf(outcome.createdItemGroupIds()));
+            }
+
             if (outcome.failureMessage() != null) {
                 row.setIssues(withFailure(row, outcome.failureMessage()));
             }
@@ -132,6 +143,13 @@ public class ImportGroupWriter {
         }
 
         return optionRows.isEmpty() ? null : optionRows;
+    }
+
+    private Integer firstRowNumber(List<ImportRow> rows) {
+        return rows.stream()
+                .map(ImportRow::getRowNumber)
+                .min(Integer::compareTo)
+                .orElse(null);
     }
 
     /**

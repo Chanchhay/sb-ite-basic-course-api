@@ -204,44 +204,21 @@ public class RegisterSessionServiceImpl implements RegisterSessionService {
         return getSessionSummary(session.getId());
     }
 
-    /**
-     * A page of the sessions the business has opened, newest first.
-     *
-     * Paged because a shop that has been trading a year has opened a drawer
-     * every day of it, and the summary of a session is not cheap enough to
-     * build for all of them at once.
-     *
-     * Within the page the sessions are summarised from the rows already
-     * loaded rather than re-read one at a time: the cash movement totals come
-     * back in a single grouped query, and cashier names are looked up once
-     * per person rather than once per session, since one cashier tends to
-     * open a great many drawers.
-     */
+
     @Override
     @Transactional(readOnly = true)
-    public Page<RegisterSessionResponse> listSessions(String userId, Pageable pageable) {
+    public PageResponse<RegisterSessionResponse> listSessions(String userId, Pageable pageable) {
         Business business = resolveBusiness(userId);
         if (business == null) {
-            return Page.empty(pageable);
+            return PageResponse.from(Page.empty(pageable));
         }
 
-        return summarizePage(
+        Page<RegisterSessionResponse> page = summarizePage(
                 sessionRepository.findByBusinessId(business.getId(), pageable), pageable);
+        return PageResponse.from(page);
     }
 
-    /**
-     * A filtered page of sessions, with the totals for everything it matched.
-     *
-     * Filtering happens here rather than in the browser because the list is
-     * paged: a screen that filters the page it was given would answer "no
-     * sessions match" while the matches sat on page three, which reads as a
-     * bug and is one.
-     *
-     * The structured filters — status, a date range — go through
-     * {@link FilterSpecification} like everywhere else. The free-text search is
-     * its own specification because it is an OR across several columns, and the
-     * shared one applies a single operator to every clause it is given.
-     */
+
     @Override
     @Transactional(readOnly = true)
     public RegisterSessionSearchResponse searchSessions(
@@ -283,18 +260,7 @@ public class RegisterSessionServiceImpl implements RegisterSessionService {
                 metricsFor(businessId, spec));
     }
 
-    /**
-     * The search box, across the columns a session is recognisable by.
-     *
-     * Cashier name is not one of them here — it lives in Keycloak, not in this
-     * database — so the name is resolved to the user ids that match it first
-     * and those are searched instead. One extra call per search, which is the
-     * price of the search box finding what a reader will actually type into it.
-     *
-     * Reconciliation status is not stored either; it is read back off the
-     * difference, so the words "over", "short" and "matched" are translated
-     * into what they mean about that number.
-     */
+
     private Specification<RegisterSession> freeTextSpec(String search) {
         String like = "%" + search.toLowerCase() + "%";
         List<String> cashierIds = cashierIdsMatching(search);
@@ -344,13 +310,7 @@ public class RegisterSessionServiceImpl implements RegisterSessionService {
         }
     }
 
-    /**
-     * The totals above the table, over everything the filter matched.
-     *
-     * The matching ids are read first and the sums taken against them, so the
-     * filter is expressed once — in the specification the rows themselves came
-     * from — rather than written a second time in SQL and left to drift.
-     */
+
     private RegisterSessionMetrics metricsFor(
             UUID businessId, Specification<RegisterSession> spec) {
 
@@ -387,14 +347,7 @@ public class RegisterSessionServiceImpl implements RegisterSessionService {
         return value == null ? BigDecimal.ZERO : value;
     }
 
-    /**
-     * Turns a page of sessions into a page of responses.
-     *
-     * Built from the rows already loaded rather than re-reading each one: the
-     * cash movement totals come back in a single grouped query, and cashier
-     * names are looked up once per person rather than once per session, since
-     * one cashier tends to open a great many drawers.
-     */
+
     private Page<RegisterSessionResponse> summarizePage(
             Page<RegisterSession> page, Pageable pageable) {
 
@@ -527,13 +480,7 @@ public class RegisterSessionServiceImpl implements RegisterSessionService {
                 .collect(Collectors.toList());
     }
 
-    /**
-     * A session's response, given movement totals the caller has already read.
-     *
-     * The cash takings still cost a query each, because the range they cover
-     * is the session's own opening and closing time and no two sessions share
-     * one.
-     */
+
     private RegisterSessionResponse summarize(
             RegisterSession session,
             BigDecimal totalPaidIn,

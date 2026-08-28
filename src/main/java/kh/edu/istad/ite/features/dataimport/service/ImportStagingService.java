@@ -10,6 +10,7 @@ import kh.edu.istad.ite.features.catalog.repository.UnitRepository;
 import kh.edu.istad.ite.features.dataimport.canonical.CanonicalRecordMapper;
 import kh.edu.istad.ite.features.dataimport.canonical.ImportRecord;
 import kh.edu.istad.ite.features.dataimport.canonical.ItemImportRecord;
+import kh.edu.istad.ite.features.dataimport.canonical.DeclaredUnit;
 import kh.edu.istad.ite.features.dataimport.canonical.MappingPlan;
 import kh.edu.istad.ite.features.dataimport.entity.ImportJob;
 import kh.edu.istad.ite.features.dataimport.entity.ImportRow;
@@ -84,7 +85,8 @@ public class ImportStagingService {
         ImportJob attached = importJobRepository.findById(jobId).orElseThrow();
 
         MappingPlan plan = MappingPlan.from(attached);
-        ValidationContext context = loadContext(attached.getBusiness().getId());
+        ValidationContext context =
+                loadContext(attached.getBusiness().getId(), attached.getDeclaredUnits());
 
         ImportTotals totals = stageAndJudge(attached, plan, context, maxRows);
         totals.entities = context.distinctGroups();
@@ -211,7 +213,7 @@ public class ImportStagingService {
      * file into tens of thousands of queries, and is the difference between an
      * import that takes seconds and one that takes an afternoon.
      */
-    private ValidationContext loadContext(UUID businessId) {
+    private ValidationContext loadContext(UUID businessId, List<DeclaredUnit> declaredUnits) {
         List<ItemGroup> allGroups =
                 new ArrayList<>(itemGroupRepository.findByBusinessIdAndParentIsNullOrderByNameAsc(businessId));
         allGroups.addAll(itemGroupRepository.findByBusinessIdAndParentIsNotNullOrderByNameAsc(businessId));
@@ -221,7 +223,8 @@ public class ImportStagingService {
         Set<UUID> withStock = stockEntryRepository.findItemIdsWithStockHistory(businessId);
         Set<UUID> withVariants = itemVariantRepository.findItemIdsWithVariants(businessId);
 
-        return new ValidationContext(businessId, allGroups, units, items, withStock, withVariants);
+        return new ValidationContext(
+                businessId, allGroups, units, items, withStock, withVariants, declaredUnits);
     }
 
     private String trimExternalId(String value) {
