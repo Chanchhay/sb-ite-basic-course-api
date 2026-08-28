@@ -79,11 +79,17 @@ public class CustomerSelfServiceController {
                 ? String.join(" ", firstName != null ? firstName : "", lastName != null ? lastName : "").trim()
                 : globalCustomer.getFullName();
         globalCustomer.setFullName(fullName);
-        globalCustomer.setGender(TextHelper.trimToNull(request.gender()));
+        String normalizedGender = TextHelper.trimToNull(request.gender());
+        if (normalizedGender != null) {
+            globalCustomer.setGender(normalizedGender);
+        }
         globalCustomerRepository.save(globalCustomer);
 
         Customer customer = customerIdentityService.customerFor(business, globalCustomer);
-        customer.setAddress(TextHelper.trimToNull(request.address()));
+        String normalizedAddress = TextHelper.trimToNull(request.address());
+        if (normalizedAddress != null) {
+            customer.setAddress(normalizedAddress);
+        }
         customerRepository.save(customer);
 
         boolean profileComplete = StringUtils.hasText(globalCustomer.getEmail())
