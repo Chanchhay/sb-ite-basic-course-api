@@ -35,6 +35,12 @@ public record ImportPreviewResponse(
         int itemGroupsToCreate,
         /** Items that will be given a starting quantity. */
         int openingStockToRecord,
+
+        /**
+         * What this import will do about the units its rows name, so the shop
+         * sees it before agreeing rather than in the report afterwards.
+         */
+        ImportUnitSummary units,
         boolean committable
 ) {
 }

@@ -5,6 +5,7 @@ import kh.edu.istad.ite.features.dataimport.repository.ImportJobRepository;
 import kh.edu.istad.ite.shared.enums.ImportStatus;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
@@ -135,6 +136,29 @@ public class ImportJobStateService {
         job.setCreatedStockEntries(totals.stockEntries());
         job.setCommitCompletedAt(LocalDateTime.now());
         job.setStatus(failure == null ? ImportStatus.COMMITTED : ImportStatus.FAILED);
+        job.setFailureMessage(failure);
+
+        importJobRepository.save(job);
+    }
+
+    /**
+     * Writes down what an undo managed to remove.
+     *
+     * The counts are rewritten rather than zeroed: an import whose items are
+     * gone but whose updates stand did not create nothing, and a report saying
+     * so would be a lie about what happened. What changes is how many of its
+     * creations survive.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void finishRevert(UUID jobId, ImportRevertService.RevertTotals totals, String failure) {
+        ImportJob job = importJobRepository.findById(jobId).orElseThrow();
+
+        job.setCreatedRows(totals.itemsKept());
+        int groupsBefore = job.getCreatedItemGroups() == null ? 0 : job.getCreatedItemGroups();
+        job.setCreatedItemGroups(Math.max(0, groupsBefore - totals.itemGroupsRemoved()));
+        job.setCreatedStockEntries(0);
+        job.setRevertedAt(LocalDateTime.now());
+        job.setStatus(failure == null ? ImportStatus.REVERTED : ImportStatus.COMMITTED);
         job.setFailureMessage(failure);
 
         importJobRepository.save(job);

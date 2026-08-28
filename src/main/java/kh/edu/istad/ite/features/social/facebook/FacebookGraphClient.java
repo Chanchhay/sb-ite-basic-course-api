@@ -288,16 +288,25 @@ public class FacebookGraphClient {
         whitelistDomainVerbose(pageAccessToken, domains);
     }
 
-    /** Same call, but returns exactly what Facebook said instead of swallowing
-     * it — used by the debug endpoint so a failure is visible immediately
-     * instead of requiring a log-file hunt. */
+    /**
+     * Same call, but returns exactly what Facebook said instead of swallowing
+     * it. Reads the response as a {@code Map} rather than {@code String}/
+     * {@code byte[]} — the custom Jackson converter registered on this client
+     * (needed elsewhere for Facebook's occasional {@code text/javascript}
+     * responses) claims that media type for every target type ahead of the
+     * plain string/byte-array converters, but can only actually deserialize
+     * the JSON *object* Facebook sends back into a real object type, not a
+     * raw string or byte array — attempting either previously crashed here on
+     * every call, masking whatever Facebook actually said.
+     */
+    @SuppressWarnings("unchecked")
     public String whitelistDomainVerbose(String pageAccessToken, List<String> domains) {
         try {
             Map<String, Object> body = Map.of(
                     "whitelisted_domains", domains
             );
 
-            String response = restClient.post()
+            Map<String, Object> response = restClient.post()
                     .uri(uriBuilder -> uriBuilder
                             .path("/{apiVersion}/me/messenger_profile")
                             .queryParam("access_token", pageAccessToken)
@@ -305,7 +314,7 @@ public class FacebookGraphClient {
                     .contentType(MediaType.APPLICATION_JSON)
                     .body(body)
                     .retrieve()
-                    .body(String.class);
+                    .body(Map.class);
 
             log.info("Whitelisted domains for Messenger: {} -> {}", domains, response);
             return "OK: " + response;

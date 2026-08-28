@@ -10,8 +10,15 @@ import kh.edu.istad.ite.features.dataimport.dto.ImportReportResponse;
 import kh.edu.istad.ite.features.dataimport.dto.ImportRowResponse;
 import kh.edu.istad.ite.features.dataimport.entity.ImportJob;
 import kh.edu.istad.ite.features.dataimport.entity.ImportRow;
-import kh.edu.istad.ite.features.dataimport.field.ImportField;
 import kh.edu.istad.ite.features.dataimport.field.ImportFieldRequirement;
+import kh.edu.istad.ite.features.dataimport.field.ImportField;
+import kh.edu.istad.ite.features.dataimport.dto.ImportSampleResponse;
+import kh.edu.istad.ite.features.dataimport.field.ImportSample;
+import kh.edu.istad.ite.features.dataimport.canonical.DeclaredUnit;
+import kh.edu.istad.ite.features.dataimport.canonical.UnitSheetReader;
+import kh.edu.istad.ite.features.dataimport.dto.ImportUnitSummary;
+import kh.edu.istad.ite.features.catalog.entity.Unit;
+import kh.edu.istad.ite.features.catalog.repository.UnitRepository;
 import kh.edu.istad.ite.features.dataimport.field.ImportTemplate;
 import kh.edu.istad.ite.features.dataimport.parser.SourceFileParser;
 import kh.edu.istad.ite.features.dataimport.parser.SourceFileParserRegistry;
@@ -46,6 +53,7 @@ import java.io.InputStream;
 import java.util.Comparator;
 import java.util.EnumSet;
 import java.util.LinkedHashMap;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -77,6 +85,9 @@ public class ImportJobServiceImpl implements ImportJobService {
     private final SourceFileParserRegistry parserRegistry;
     private final ImportProcessingService processingService;
     private final ImportJobStateService jobStateService;
+    private final ImportRevertService revertService;
+    private final UnitSheetReader unitSheetReader;
+    private final UnitRepository unitRepository;
     private final ImportJobMapper mapper;
     private final MinioService minioService;
 
@@ -91,6 +102,36 @@ public class ImportJobServiceImpl implements ImportJobService {
         businessHelper.findAccessibleBusiness(businessId);
 
         return ImportTemplate.csvFor(targetType);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public byte[] buildSample(UUID businessId, ImportSample sample) {
+        businessHelper.findAccessibleBusiness(businessId);
+
+        return ImportTemplate.xlsxFor(sample);
+    }
+
+    /**
+     * The starting files worth offering for one kind of import.
+     *
+     * Served rather than written into the screen so the words describing a
+     * sample and the columns inside it cannot drift apart.
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public List<ImportSampleResponse> findSamples(UUID businessId, ImportTargetType targetType) {
+        businessHelper.findAccessibleBusiness(businessId);
+
+        return ImportSample.forTarget(targetType).stream()
+                .map(sample -> new ImportSampleResponse(
+                        sample.name(),
+                        sample.getLabel(),
+                        sample.getDescription(),
+                        sample.getFileName(),
+                        sample.getColumns().stream().map(ImportField::getLabel).toList()
+                ))
+                .toList();
     }
 
     // --- upload --------------------------------------------------------------------
@@ -116,6 +157,14 @@ public class ImportJobServiceImpl implements ImportJobService {
         job.setSampleRows(header.sample().stream().map(SourceRow::values).toList());
 
         /*
+         * Read now, while the file is in hand. A workbook that declares its own
+         * units lets one file describe everything it needs — and reading it
+         * here rather than at commit means checking and the commit judge the
+         * same declarations.
+         */
+        job.setDeclaredUnits(readDeclaredUnits(parser, file));
+
+        /*
          * The file is stored only once its headings have been read. An upload
          * we cannot make sense of is refused before anything is kept, rather
          * than leaving an object nobody will ever ask for again.
@@ -123,6 +172,51 @@ public class ImportJobServiceImpl implements ImportJobService {
         job.setStorageObjectKey(minioService.uploadImportFile(file, businessId));
 
         return mapper.toResponse(importJobRepository.save(job));
+    }
+
+    private List<DeclaredUnit> readDeclaredUnits(SourceFileParser parser, MultipartFile file) {
+        try (InputStream input = file.getInputStream()) {
+            return unitSheetReader.read(parser, input);
+        } catch (IOException e) {
+            // A file whose headings read perfectly well but whose Units sheet
+            // does not is a file with no declared units, not a failed upload.
+            return List.of();
+        }
+    }
+
+    /**
+     * What the import will do about units, worked out from the same
+     * declarations checking used.
+     *
+     * Counted against the catalogue rather than against the rows: a workbook
+     * declaring Bag once is one unit to create however many items name it.
+     */
+    private ImportUnitSummary summariseUnits(ImportJob job) {
+        List<DeclaredUnit> declared = job.getDeclaredUnits();
+
+        if (declared == null || declared.isEmpty()) {
+            return new ImportUnitSummary(0, 0, 0, List.of(), List.of());
+        }
+
+        UUID businessId = job.getBusiness().getId();
+        List<String> toReuse = new ArrayList<>();
+        List<String> toCreate = new ArrayList<>();
+        int conflicts = 0;
+
+        for (DeclaredUnit unit : declared) {
+            List<Unit> existing = unitRepository.findSelectableUnitsNamed(businessId, unit.name());
+
+            if (existing.isEmpty()) {
+                toCreate.add(unit.label());
+            } else if (existing.stream().anyMatch(u -> u.getCategory() == unit.category())) {
+                toReuse.add(unit.label());
+            } else {
+                conflicts++;
+            }
+        }
+
+        return new ImportUnitSummary(
+                toReuse.size(), toCreate.size(), conflicts, List.copyOf(toReuse), List.copyOf(toCreate));
     }
 
     private void validateUpload(MultipartFile file) {
@@ -399,6 +493,7 @@ public class ImportJobServiceImpl implements ImportJobService {
                 orZero(job.getInvalidRows()),
                 countItemGroupsToCreate(job),
                 orZero(job.getOpeningStockRows()),
+                summariseUnits(job),
                 mapper.isCommittable(job)
         );
     }
@@ -507,6 +602,46 @@ public class ImportJobServiceImpl implements ImportJobService {
         );
 
         job.setStatus(ImportStatus.COMMITTING);
+
+        return mapper.toResponse(job);
+    }
+
+    // --- undoing -------------------------------------------------------------------
+
+    /**
+     * Takes a committed import back out, in the background.
+     *
+     * Only an import that finished can be undone, and only once: the claim is
+     * the same race-proof update the commit uses, so two clicks or two tabs
+     * cannot both start deleting the same items.
+     */
+    @Override
+    @Transactional
+    public ImportJobResponse startRevert(UUID businessId, UUID importId) {
+        ImportJob job = findOwnedJob(businessId, importId);
+
+        if (!mapper.isRevertable(job)) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "Only an import that has been brought in, and still has something it created,"
+                            + " can be undone."
+            );
+        }
+
+        claim(job, businessId, ImportStatus.REVERTING,
+                EnumSet.of(ImportStatus.COMMITTED, ImportStatus.REVERTED),
+                "This import is already being undone.");
+
+        runAfterCommit(
+                () -> revertService.revert(importId),
+                () -> jobStateService.finishRevert(
+                        importId,
+                        new ImportRevertService.RevertTotals(),
+                        "The undo could not be started. Nothing was removed. Please try again."
+                )
+        );
+
+        job.setStatus(ImportStatus.REVERTING);
 
         return mapper.toResponse(job);
     }

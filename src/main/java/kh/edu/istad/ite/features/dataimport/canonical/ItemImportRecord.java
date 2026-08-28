@@ -27,6 +27,12 @@ public record ItemImportRecord(
         String sku,
         String barcode,
         String itemGroupName,
+
+        /**
+         * The category the item's own category sits under, when the file
+         * names both. Null on a flat file, which is most of them.
+         */
+        String parentGroupName,
         String unitName,
         ItemType itemType,
         BigDecimal price,
@@ -57,6 +63,7 @@ public record ItemImportRecord(
         values.put("sku", sku);
         values.put("barcode", barcode);
         values.put("itemGroup", itemGroupName);
+        values.put("parentGroup", parentGroupName);
         values.put("unit", unitName);
         values.put("itemType", itemType == null ? null : itemType.name());
         values.put("price", price);

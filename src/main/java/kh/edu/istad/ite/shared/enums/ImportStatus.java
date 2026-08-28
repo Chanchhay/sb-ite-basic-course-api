@@ -23,5 +23,14 @@ public enum ImportStatus {
     VALIDATION_FAILED,
     COMMITTING,
     COMMITTED,
+
+    /** Being taken back out again, row by row. */
+    REVERTING,
+
+    /**
+     * Taken back out. Not necessarily to nothing: an item sold since the
+     * import has to stay, so the rows say what actually went.
+     */
+    REVERTED,
     FAILED
 }
