@@ -6,6 +6,8 @@ import java.util.List;
 import java.util.Map;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 import kh.edu.istad.ite.shared.enums.ImportTargetType;
 
@@ -55,7 +57,50 @@ class ImportFieldTest {
                 .containsExactly(ImportField.NAME, ImportField.PARENT_GROUP, ImportField.NOTE);
 
         assertThat(ImportField.forTarget(ImportTargetType.ITEM)).contains(ImportField.PRICE);
-        assertThat(ImportField.forTarget(ImportTargetType.ITEM)).doesNotContain(ImportField.PARENT_GROUP);
+        assertThat(ImportField.forTarget(ImportTargetType.OPENING_STOCK))
+                .doesNotContain(ImportField.PARENT_GROUP);
+    }
+
+    /**
+     * A file of items may describe both halves of a category.
+     *
+     * Without this an item can only ever be filed on a top-level category, so a
+     * shop whose catalogue has sub-categories has nowhere to put anything: the
+     * catalogue refuses items on a parent, and the file cannot name the child.
+     */
+    @Test
+    void letsAFileOfItemsNameACategoryAndItsParent() {
+        assertThat(ImportField.forTarget(ImportTargetType.ITEM))
+                .contains(ImportField.ITEM_GROUP, ImportField.PARENT_GROUP);
+    }
+
+    /**
+     * The narrower column wins the filing, whichever pair the file uses —
+     * main and sub, category and sub, or parent and sub are all the same shape.
+     */
+    @ParameterizedTest
+    @CsvSource({
+            "Category, Sub-category",
+            "Main Category, Sub Category",
+            "Parent Category, Subcategory",
+            "Main Group, Sub Group"
+    })
+    void readsACategoryPairTheRightWayRound(String top, String sub) {
+        Map<String, ImportField> suggestions =
+                ImportField.suggestAll(List.of("Item Name", top, sub), ImportTargetType.ITEM);
+
+        assertThat(suggestions).containsEntry(sub, ImportField.ITEM_GROUP);
+        assertThat(suggestions).containsEntry(top, ImportField.PARENT_GROUP);
+    }
+
+    /** One category column on its own is what it says it is. */
+    @Test
+    void leavesALoneCategoryColumnAsTheCategory() {
+        Map<String, ImportField> suggestions =
+                ImportField.suggestAll(List.of("Item Name", "Category"), ImportTargetType.ITEM);
+
+        assertThat(suggestions).containsEntry("Category", ImportField.ITEM_GROUP);
+        assertThat(suggestions).doesNotContainValue(ImportField.PARENT_GROUP);
     }
 
     @Test

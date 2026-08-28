@@ -50,8 +50,10 @@ public class ImportJobMapper {
                 job.getValidationCompletedAt(),
                 job.getCommitStartedAt(),
                 job.getCommitCompletedAt(),
+                job.getRevertedAt(),
                 job.getFailureMessage(),
-                isCommittable(job)
+                isCommittable(job),
+                isRevertable(job)
         );
     }
 
@@ -79,6 +81,28 @@ public class ImportJobMapper {
      * something worth importing — offering to import a file in which every row
      * failed would be an empty promise.
      */
+    /**
+     * Only a finished import, and only while it still has creations standing.
+     *
+     * An import that created nothing has nothing to take away — every row of it
+     * either updated an item that existed before or was skipped, and undoing
+     * those is not something this can offer.
+     */
+    public boolean isRevertable(ImportJob job) {
+        /*
+         * An undone import can be undone again, because an undo does not always
+         * finish the job: items that could not be deleted the first time are
+         * left standing and go on counting as created. Once whatever held them
+         * is dealt with, running it again clears the rest — and the rows it
+         * already reverted no longer say they were created, so it picks up
+         * exactly where the last one stopped.
+         */
+        boolean finished = job.getStatus() == ImportStatus.COMMITTED
+                || job.getStatus() == ImportStatus.REVERTED;
+
+        return finished && orZero(job.getCreatedRows()) > 0;
+    }
+
     public boolean isCommittable(ImportJob job) {
         boolean hasSomethingToDo = orZero(job.getValidRows()) > 0 || orZero(job.getDuplicateRows()) > 0;
 

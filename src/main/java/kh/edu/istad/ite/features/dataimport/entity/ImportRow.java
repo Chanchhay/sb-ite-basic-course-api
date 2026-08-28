@@ -128,6 +128,17 @@ public class ImportRow {
     @Column(name = "committed_stock_entry_id")
     private UUID committedStockEntryId;
 
+    /**
+     * The categories this row's commit had to invent, if any.
+     *
+     * Undoing an import has to take away what it brought, and a category the
+     * shop already had is not that. Nothing else distinguishes the two after
+     * the fact, so the commit records it here at the moment it knows.
+     */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "created_item_group_ids", columnDefinition = "jsonb")
+    private List<UUID> createdItemGroupIds = new ArrayList<>();
+
     public boolean isCommitted() {
         return status == ImportRowStatus.CREATED || status == ImportRowStatus.UPDATED;
     }

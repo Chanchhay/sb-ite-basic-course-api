@@ -42,6 +42,15 @@ public class StuckImportSweeper {
             "Checking this file was interrupted. Please try again.";
     private static final String COMMIT_MESSAGE =
             "This import was interrupted before it finished. The report shows what was brought in.";
+    /*
+     * An interrupted undo goes back to being a committed import, because that
+     * is what it now is: some of its items have gone and the rest are still
+     * there. Undoing it again picks up exactly where this one stopped, since
+     * the rows it managed to revert no longer say they were created.
+     */
+    private static final String REVERT_MESSAGE =
+            "Undoing this import was interrupted. Anything already removed has gone;"
+                    + " run the undo again to finish.";
 
     private final ImportJobStateService jobStateService;
 
@@ -75,9 +84,13 @@ public class StuckImportSweeper {
             int committing = jobStateService.releaseInterrupted(
                     ImportStatus.COMMITTING, ImportStatus.FAILED, COMMIT_MESSAGE, olderThan);
 
-            if (checking + committing > 0) {
-                log.info("Released {} interrupted import checks and {} interrupted imports",
-                        checking, committing);
+            int reverting = jobStateService.releaseInterrupted(
+                    ImportStatus.REVERTING, ImportStatus.COMMITTED, REVERT_MESSAGE, olderThan);
+
+            if (checking + committing + reverting > 0) {
+                log.info("Released {} interrupted import checks, {} interrupted imports"
+                                + " and {} interrupted undos",
+                        checking, committing, reverting);
             }
         } catch (RuntimeException e) {
             log.warn("Could not sweep interrupted imports; will try again on the next run", e);

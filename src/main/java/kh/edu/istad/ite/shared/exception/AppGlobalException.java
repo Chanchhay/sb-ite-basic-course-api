@@ -120,6 +120,24 @@ public class AppGlobalException {
                 .build();
     }
 
+    /**
+     * The last resort for a constraint the database refused.
+     *
+     * Deliberately says nothing about what the constraint was. This handler
+     * catches every integrity violation in the application — a duplicate SKU, a
+     * category still holding items, an unknown status — and for a long time it
+     * answered all of them with one sentence about a customer's phone number,
+     * because that was the case it happened to be written for. An import undo
+     * refused by a check constraint reported itself as a duplicate customer,
+     * which sent whoever read it looking in entirely the wrong place.
+     *
+     * A message that names the wrong cause is worse than one that names none:
+     * the honest version at least leaves the log as the place to look, and the
+     * log is where the detail actually is. Anywhere a specific explanation is
+     * possible, it belongs in the service that knows which constraint it was
+     * about to break — as the catalogue already does for a sold item or a
+     * category that still holds stock.
+     */
     @ResponseStatus(HttpStatus.CONFLICT)
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ErrorResponse handleDataIntegrityViolation(DataIntegrityViolationException e) {
@@ -127,7 +145,8 @@ public class AppGlobalException {
         return ErrorResponse.builder()
                 .status(HttpStatus.CONFLICT.getReasonPhrase())
                 .code(HttpStatus.CONFLICT.value())
-                .message("This phone number or email is already registered to another customer.")
+                .message("That change conflicts with something already saved. Please check the"
+                        + " details and try again.")
                 .timestamp(Instant.now())
                 .build();
     }

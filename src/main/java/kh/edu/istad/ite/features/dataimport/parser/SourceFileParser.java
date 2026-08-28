@@ -40,6 +40,18 @@ public interface SourceFileParser {
     void readRows(InputStream input, int rowLimit, Consumer<SourceRow> handler);
 
     /**
+     * The rows of a sheet kept beside the main one, if the format has sheets
+     * and this file carries that one.
+     *
+     * Empty for a CSV, which has no sheets to keep anything beside — and that
+     * is an answer rather than a failure: a shop importing a CSV declares no
+     * units in it, and is told so where it matters.
+     */
+    default List<SourceRow> readNamedSheet(InputStream input, String sheetName, int rowLimit) {
+        return List.of();
+    }
+
+    /**
      * What a file announced about itself before any of it was interpreted.
      *
      * @param columns headings in the order they appear

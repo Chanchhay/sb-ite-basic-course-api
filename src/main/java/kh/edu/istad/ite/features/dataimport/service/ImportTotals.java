@@ -44,6 +44,17 @@ public final class ImportTotals {
         return entities;
     }
 
+    /** Units the file declared and this import had to create. */
+    private int unitsCreated;
+
+    public void addUnitsCreated(int count) {
+        unitsCreated += count;
+    }
+
+    public int unitsCreated() {
+        return unitsCreated;
+    }
+
     public int created() {
         return created;
     }

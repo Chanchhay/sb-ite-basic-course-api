@@ -307,6 +307,10 @@ public class SecurityConfig {
                                 "/api/v1/businesses/{businessId}/imports/*/validate",
                                 "/api/v1/businesses/{businessId}/imports/*/commit")
                         .access(scoped(tenant, "item:create"))
+                        // Undoing an import deletes items, so it asks for the
+                        // permission that deleting an item asks for.
+                        .requestMatchers(HttpMethod.POST, "/api/v1/businesses/{businessId}/imports/*/revert")
+                        .access(scoped(tenant, "item:delete"))
                         .requestMatchers(HttpMethod.PUT, "/api/v1/businesses/{businessId}/imports/*/mapping")
                         .access(scoped(tenant, "item:create"))
 

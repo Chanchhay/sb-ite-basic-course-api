@@ -57,6 +57,22 @@ public class ItemGroupServiceImpl implements ItemGroupService {
                         "Item groups support only 2 levels"
                 );
             }
+
+            /*
+             * A category holding sub-categories holds no items of its own —
+             * that is the rule the item form already follows, offering such a
+             * category as a heading rather than a choice. Nothing enforced it
+             * here, so giving a category its first sub-category left every item
+             * already in it pointing at a category no screen can offer: not
+             * lost, but not editable or re-filable either, and nobody told.
+             */
+            if (itemRepository.existsByBusinessIdAndItemGroupId(businessId, parent.getId())) {
+                throw new ResponseStatusException(
+                        HttpStatus.CONFLICT,
+                        "\"" + parent.getName() + "\" already holds items, so it cannot take"
+                                + " sub-categories. Move its items into a sub-category first."
+                );
+            }
         }
 
         ItemGroup itemGroup = new ItemGroup();
@@ -150,7 +166,19 @@ public class ItemGroupServiceImpl implements ItemGroupService {
                         "Item group with sub groups cannot become a sub group"
                 );
             }
-            itemGroup.setParent(findMainItemGroup(request.parentId(), businessId));
+            ItemGroup parent = findMainItemGroup(request.parentId(), businessId);
+
+            // Same rule as creating one: a category that holds items cannot
+            // gain sub-categories, whichever door the sub-category arrives by.
+            if (itemRepository.existsByBusinessIdAndItemGroupId(businessId, parent.getId())) {
+                throw new ResponseStatusException(
+                        HttpStatus.CONFLICT,
+                        "\"" + parent.getName() + "\" already holds items, so it cannot take"
+                                + " sub-categories. Move its items into a sub-category first."
+                );
+            }
+
+            itemGroup.setParent(parent);
         }
 
         try {

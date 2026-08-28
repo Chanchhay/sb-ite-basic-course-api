@@ -72,18 +72,26 @@ public enum ImportField {
 
     ITEM_GROUP(
             "Category",
-            "The category the item is filed under. Categories that do not exist yet are created.",
+            "The category the item is filed under. Categories that do not exist yet are created."
+                    + " A whole path — \"Drinks > Coffee\" — is read as a category and its parent.",
             ImportFieldType.TEXT,
             Map.of(ImportTargetType.ITEM, REQUIRED),
-            List.of("category", "itemgroup", "group", "categoryname", "department", "productcategory", "type1")
+            List.of("category", "itemgroup", "group", "categoryname", "department", "productcategory",
+                    "type1", "subcategory", "subgroup", "subdepartment", "childcategory",
+                    "breadcrumbs", "breadcrumb", "categorypath", "categorytree")
     ),
 
     PARENT_GROUP(
             "Parent Category",
-            "The category this one sits under, if any.",
+            "The category this one sits under, if any. A category holding sub-categories cannot"
+                    + " hold items itself, so this is how a file names both halves at once.",
             ImportFieldType.TEXT,
-            Map.of(ImportTargetType.ITEM_GROUP, OPTIONAL),
-            List.of("parent", "parentcategory", "parentgroup", "maincategory")
+            Map.of(
+                    ImportTargetType.ITEM_GROUP, OPTIONAL,
+                    ImportTargetType.ITEM, OPTIONAL
+            ),
+            List.of("parent", "parentcategory", "parentgroup", "maincategory", "topcategory",
+                    "maingroup", "maindepartment")
     ),
 
     NOTE(
@@ -155,8 +163,9 @@ public enum ImportField {
             "Ties option rows together. Rows sharing this value become one item sold in options.",
             ImportFieldType.TEXT,
             Map.of(ImportTargetType.ITEM, OPTIONAL),
-            List.of("itemgroupid", "parentsku", "parentid", "parentcode", "styleid", "stylecode",
-                    "handle", "groupid", "productid", "parent", "variantgroup", "modelcode")
+            List.of("groupsby", "groupby", "itemgroupid", "parentsku", "parentid", "parentcode",
+                    "styleid", "stylecode", "handle", "groupid", "productid", "parent",
+                    "variantgroup", "modelcode")
     ),
 
     OPTION_1_NAME(
@@ -319,6 +328,57 @@ public enum ImportField {
                 .findFirst();
     }
 
+    /** Headings naming the narrower half of a category pair. */
+    private static final Set<String> SUB_CATEGORY_HEADINGS =
+            Set.of("subcategory", "subgroup", "subdepartment", "childcategory", "sub");
+
+    /** Headings naming the wider half — main, category or parent, as shops write it. */
+    private static final Set<String> TOP_CATEGORY_HEADINGS =
+            Set.of("category", "categoryname", "productcategory", "department", "maincategory",
+                    "maingroup", "maindepartment", "main", "parentcategory", "parent",
+                    "parentgroup", "topcategory", "itemgroup", "group");
+
+    /**
+     * Reads a pair of category columns the way the shop means it.
+     *
+     * A file names the two halves as main and sub, category and sub, or parent
+     * and sub — all the same shape. Left to the ordinary matching the wider
+     * column would claim the field an item is filed under, and the narrower one,
+     * arriving second with that field already taken, would be left unmatched.
+     * Every item would then land on the parent, which is the one place the
+     * catalogue refuses to keep one.
+     *
+     * So when both halves are present they are assigned together and the
+     * narrower one wins the filing. A file carrying only one of the two never
+     * reaches this and is matched normally.
+     */
+    private static void pairCategoryColumns(
+            List<String> headings,
+            ImportTargetType targetType,
+            Map<String, ImportField> suggestions
+    ) {
+        if (!ITEM_GROUP.appliesTo(targetType) || !PARENT_GROUP.appliesTo(targetType)) {
+            return;
+        }
+
+        String sub = firstHeadingIn(headings, SUB_CATEGORY_HEADINGS);
+        String top = firstHeadingIn(headings, TOP_CATEGORY_HEADINGS);
+
+        if (sub == null || top == null) {
+            return;
+        }
+
+        suggestions.put(sub, ITEM_GROUP);
+        suggestions.put(top, PARENT_GROUP);
+    }
+
+    private static String firstHeadingIn(List<String> headings, Set<String> wanted) {
+        return headings.stream()
+                .filter(heading -> wanted.contains(normalize(heading)))
+                .findFirst()
+                .orElse(null);
+    }
+
     /**
      * Every heading's suggestion, with each field claimed at most once.
      *
@@ -328,6 +388,8 @@ public enum ImportField {
      */
     public static Map<String, ImportField> suggestAll(List<String> headings, ImportTargetType targetType) {
         Map<String, ImportField> suggestions = new LinkedHashMap<>();
+
+        pairCategoryColumns(headings, targetType, suggestions);
 
         for (String heading : headings) {
             suggestFor(heading, targetType)

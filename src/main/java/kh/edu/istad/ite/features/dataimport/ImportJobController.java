@@ -7,6 +7,8 @@ import kh.edu.istad.ite.features.dataimport.dto.ImportMappingRequest;
 import kh.edu.istad.ite.features.dataimport.dto.ImportPreviewResponse;
 import kh.edu.istad.ite.features.dataimport.dto.ImportReportResponse;
 import kh.edu.istad.ite.features.dataimport.dto.ImportRowResponse;
+import kh.edu.istad.ite.features.dataimport.field.ImportSample;
+import kh.edu.istad.ite.features.dataimport.dto.ImportSampleResponse;
 import kh.edu.istad.ite.features.dataimport.field.ImportTemplate;
 import kh.edu.istad.ite.features.dataimport.service.ImportJobService;
 import kh.edu.istad.ite.shared.dto.PageResponse;
@@ -18,6 +20,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -33,6 +36,7 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -61,19 +65,46 @@ public class ImportJobController {
      * with it.
      */
     @GetMapping("/template")
-    public ResponseEntity<String> downloadTemplate(
+    public ResponseEntity<byte[]> downloadTemplate(
             @PathVariable UUID businessId,
-            @RequestParam ImportTargetType targetType
+            @RequestParam(required = false) ImportTargetType targetType,
+            @RequestParam(required = false) ImportSample sample
     ) {
-        String csv = importJobService.buildTemplate(businessId, targetType);
+        /*
+         * Either says which file is wanted. A shop choosing from the list sends
+         * the sample; a link kept from before sends only the kind of import,
+         * and gets that kind's first sample.
+         */
+        ImportSample wanted = sample != null
+                ? sample
+                : ImportSample.defaultFor(requireTargetType(targetType));
 
         return ResponseEntity.ok()
                 .header(
                         HttpHeaders.CONTENT_DISPOSITION,
-                        "attachment; filename=\"" + ImportTemplate.fileNameFor(targetType) + "\""
+                        "attachment; filename=\"" + ImportTemplate.fileNameFor(wanted) + "\""
                 )
-                .contentType(new MediaType("text", "csv", java.nio.charset.StandardCharsets.UTF_8))
-                .body(csv);
+                .contentType(MediaType.parseMediaType(
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+                .body(importJobService.buildSample(businessId, wanted));
+    }
+
+    /** The starting files on offer for one kind of import. */
+    @GetMapping("/samples")
+    public List<ImportSampleResponse> findSamples(
+            @PathVariable UUID businessId,
+            @RequestParam ImportTargetType targetType
+    ) {
+        return importJobService.findSamples(businessId, targetType);
+    }
+
+    private ImportTargetType requireTargetType(ImportTargetType targetType) {
+        if (targetType == null) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST, "Say which sample file you want.");
+        }
+
+        return targetType;
     }
 
     /**
@@ -187,6 +218,21 @@ public class ImportJobController {
             @PathVariable UUID importId
     ) {
         return importJobService.startCommit(businessId, importId);
+    }
+
+    /**
+     * Undoes a committed import.
+     *
+     * A deletion, so it sits behind item:delete rather than the permission that
+     * brought the import in — bringing a price list in and taking a shelf of
+     * items back out are not the same trust.
+     */
+    @PostMapping("/{importId}/revert")
+    public ImportJobResponse startRevert(
+            @PathVariable UUID businessId,
+            @PathVariable UUID importId
+    ) {
+        return importJobService.startRevert(businessId, importId);
     }
 
     @GetMapping("/{importId}/report")

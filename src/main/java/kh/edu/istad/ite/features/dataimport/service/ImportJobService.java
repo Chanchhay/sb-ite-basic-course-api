@@ -1,6 +1,8 @@
 package kh.edu.istad.ite.features.dataimport.service;
 
 import kh.edu.istad.ite.features.dataimport.dto.ImportColumnsResponse;
+import kh.edu.istad.ite.features.dataimport.dto.ImportSampleResponse;
+import kh.edu.istad.ite.features.dataimport.field.ImportSample;
 import kh.edu.istad.ite.features.dataimport.dto.ImportJobResponse;
 import kh.edu.istad.ite.features.dataimport.dto.ImportMappingRequest;
 import kh.edu.istad.ite.features.dataimport.dto.ImportPreviewResponse;
@@ -34,6 +36,10 @@ public interface ImportJobService {
      * what we expected.
      */
     String buildTemplate(UUID businessId, ImportTargetType targetType);
+
+    byte[] buildSample(UUID businessId, ImportSample sample);
+
+    List<ImportSampleResponse> findSamples(UUID businessId, ImportTargetType targetType);
 
     /**
      * Takes the file, stores it, and reads its headings.
@@ -71,6 +77,8 @@ public interface ImportJobService {
      * a second time however fast the second request arrives.
      */
     ImportJobResponse startCommit(UUID businessId, UUID importId);
+
+    ImportJobResponse startRevert(UUID businessId, UUID importId);
 
     ImportReportResponse findReport(UUID businessId, UUID importId);
 
