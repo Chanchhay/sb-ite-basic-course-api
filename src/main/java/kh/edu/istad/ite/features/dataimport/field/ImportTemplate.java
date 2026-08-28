@@ -42,6 +42,7 @@ public final class ImportTemplate {
                     ImportField.SKU,
                     ImportField.BARCODE,
                     ImportField.ITEM_GROUP,
+                    ImportField.PARENT_GROUP,
                     ImportField.UNIT,
                     ImportField.ITEM_TYPE,
                     ImportField.PRICE,
@@ -78,9 +79,11 @@ public final class ImportTemplate {
                     List.of("Coffee", "Beverages", "")
             );
             case ITEM -> List.of(
-                    List.of("Espresso", "ESP-001", "8850001001", "Coffee", "Piece",
+                    // Filed in Coffee, which sits under Beverages — the shape a
+                    // shop with sub-categories needs and a flat file cannot say.
+                    List.of("Espresso", "ESP-001", "8850001001", "Coffee", "Beverages", "Piece",
                             "Physical", "2.50", "0.60", "250", "50", "Active"),
-                    List.of("Iced Latte", "LAT-002", "8850001002", "Coffee", "Piece",
+                    List.of("Iced Latte", "LAT-002", "8850001002", "Coffee", "Beverages", "Piece",
                             "Physical", "3.75", "0.90", "185", "30", "Active")
             );
             case OPENING_STOCK -> List.of(

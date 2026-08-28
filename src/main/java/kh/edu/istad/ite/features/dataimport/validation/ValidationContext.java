@@ -4,6 +4,7 @@ import kh.edu.istad.ite.features.catalog.entity.Item;
 import kh.edu.istad.ite.features.catalog.entity.ItemGroup;
 import kh.edu.istad.ite.features.catalog.entity.Unit;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -49,6 +50,18 @@ public class ValidationContext {
      * shop has already agreed to the import.
      */
     private final Set<String> parentGroupNames = new HashSet<>();
+
+    /**
+     * Each parent's sub-categories, spelled as the shop spells them.
+     *
+     * Used to finish the sentence when a row is refused for being filed on a
+     * parent. "Beverages has sub-categories" sends the shop off to look them
+     * up; naming them lets the file be fixed in one pass.
+     */
+    private final Map<String, List<String>> subGroupsByParent = new LinkedHashMap<>();
+
+    /** Which category each sub-category sits under, both as the shop spelled them. */
+    private final Map<String, String> parentNameByGroup = new HashMap<>();
     private final Map<String, UUID> unitIdsByName = new HashMap<>();
     private final Map<String, ExistingItem> itemsBySku = new HashMap<>();
     private final Map<String, ExistingItem> itemsByBarcode = new HashMap<>();
@@ -74,6 +87,17 @@ public class ValidationContext {
 
     /** Categories this file will create, so a second row naming one is not a clash. */
     private final Set<String> plannedGroupNames = new HashSet<>();
+
+    /**
+     * Categories this file will give a sub-category to.
+     *
+     * A file filing one item under "Beverages > Coffee" has made Beverages a
+     * parent, whether or not it was one when checking started. A later row
+     * putting an item straight onto Beverages has to be refused for the same
+     * reason an existing parent would refuse it, or the first import of a
+     * hierarchy would half-succeed and strand items on a shelf no screen shows.
+     */
+    private final Set<String> plannedParentNames = new HashSet<>();
 
     /** Items this file will create, so an opening-stock row can find them. */
     private final Set<String> plannedItemKeys = new HashSet<>();
@@ -108,6 +132,10 @@ public class ValidationContext {
 
             if (parentName != null) {
                 parentGroupNames.add(key(parentName));
+                parentNameByGroup.put(key(group.getName()), parentName);
+                subGroupsByParent
+                        .computeIfAbsent(key(parentName), ignored -> new ArrayList<>())
+                        .add(group.getName());
             }
         }
 
@@ -164,7 +192,20 @@ public class ValidationContext {
 
     /** Whether this category holds sub-categories, and so holds no items. */
     public boolean hasSubGroups(String name) {
-        return name != null && parentGroupNames.contains(key(name));
+        return name != null
+                && (parentGroupNames.contains(key(name)) || plannedParentNames.contains(key(name)));
+    }
+
+    /** This category's sub-categories, named as the shop spelled them. */
+    public List<String> subGroupsOf(String parentName) {
+        return parentName == null
+                ? List.of()
+                : List.copyOf(subGroupsByParent.getOrDefault(key(parentName), List.of()));
+    }
+
+    /** The category this one sits under, or null if it is top level or unknown. */
+    public String parentOf(String name) {
+        return name == null ? null : parentNameByGroup.get(key(name));
     }
 
     public UUID findUnitId(String name) {
@@ -247,6 +288,27 @@ public class ValidationContext {
         if (name != null) {
             plannedGroupNames.add(key(name));
         }
+    }
+
+    /**
+     * Notes a category this file will create underneath another.
+     *
+     * Both halves are recorded: the child so later rows naming it are answered
+     * as though it existed, and the parent so later rows are told it can no
+     * longer hold items directly.
+     */
+    public void planSubGroup(String name, String parentName) {
+        planItemGroup(name);
+
+        if (name == null || parentName == null) {
+            return;
+        }
+
+        plannedParentNames.add(key(parentName));
+        parentNameByGroup.putIfAbsent(key(name), parentName);
+        subGroupsByParent
+                .computeIfAbsent(key(parentName), ignored -> new ArrayList<>())
+                .add(name);
     }
 
     public boolean isItemGroupPlanned(String name) {

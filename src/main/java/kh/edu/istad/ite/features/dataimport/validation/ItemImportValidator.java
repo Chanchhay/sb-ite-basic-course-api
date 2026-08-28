@@ -196,21 +196,130 @@ public class ItemImportValidator implements ImportRowValidator {
             issues.add(RowIssue.error(
                     ImportField.ITEM_GROUP.name(),
                     "CATEGORY_HAS_SUBCATEGORIES",
-                    "\"" + item.itemGroupName() + "\" has sub-categories, so items cannot be filed"
-                            + " directly under it. Use one of its sub-categories instead."
+                    "\"" + item.itemGroupName() + "\" has sub-categories"
+                            + listOf(context.subGroupsOf(item.itemGroupName()))
+                            + ", so items cannot be filed directly under it. File this item under"
+                            + " one of them instead."
             ));
             return;
         }
 
-        if (!context.hasItemGroup(item.itemGroupName())
-                && !context.isItemGroupPlanned(item.itemGroupName())) {
+        if (!requireParentGroup(item, context, issues)) {
+            return;
+        }
+
+        if (context.hasItemGroup(item.itemGroupName())
+                || context.isItemGroupPlanned(item.itemGroupName())) {
+            return;
+        }
+
+        if (item.parentGroupName() == null) {
             context.planItemGroup(item.itemGroupName());
             issues.add(RowIssue.warning(
                     ImportField.ITEM_GROUP.name(),
                     "ITEM_GROUP_WILL_BE_CREATED",
                     "The category \"" + item.itemGroupName() + "\" will be created."
             ));
+            return;
         }
+
+        context.planSubGroup(item.itemGroupName(), item.parentGroupName());
+        issues.add(RowIssue.warning(
+                ImportField.ITEM_GROUP.name(),
+                "ITEM_GROUP_WILL_BE_CREATED",
+                "The category \"" + item.itemGroupName() + "\" will be created under \""
+                        + item.parentGroupName() + "\"."
+        ));
+    }
+
+    /**
+     * Checks the parent half of a category pair, and whether it can be believed.
+     *
+     * A file naming a parent describes a shape the catalogue may already
+     * disagree with, and the disagreements deserve different answers. Being told
+     * a category's parent is the one it already has is nothing to report; being
+     * told a different one is a claim this import will not act on, because
+     * moving a category takes every item already in it along.
+     *
+     * @return whether checking of the category should continue
+     */
+    private boolean requireParentGroup(
+            ItemImportRecord item,
+            ValidationContext context,
+            List<RowIssue> issues
+    ) {
+        String parent = item.parentGroupName();
+
+        if (parent == null) {
+            return true;
+        }
+
+        if (parent.equalsIgnoreCase(item.itemGroupName())) {
+            issues.add(RowIssue.error(
+                    ImportField.PARENT_GROUP.name(),
+                    "CATEGORY_IS_ITS_OWN_PARENT",
+                    "\"" + parent + "\" cannot sit under itself."
+            ));
+            return false;
+        }
+
+        if (context.isSubGroup(parent)) {
+            issues.add(RowIssue.error(
+                    ImportField.PARENT_GROUP.name(),
+                    "PARENT_IS_A_SUBCATEGORY",
+                    "\"" + parent + "\" is already a sub-category of \"" + context.parentOf(parent)
+                            + "\". Categories go two levels deep, so nothing can be filed under it."
+            ));
+            return false;
+        }
+
+        String existingParent = context.parentOf(item.itemGroupName());
+
+        if (existingParent != null && !existingParent.equalsIgnoreCase(parent)) {
+            issues.add(RowIssue.warning(
+                    ImportField.PARENT_GROUP.name(),
+                    "CATEGORY_ALREADY_HAS_A_PARENT",
+                    "\"" + item.itemGroupName() + "\" is already under \"" + existingParent
+                            + "\", not \"" + parent + "\". It will be left where it is —"
+                            + " moving it would take every item in it along."
+            ));
+            return true;
+        }
+
+        /*
+         * A parent is only ever created alongside a category that needs one. If
+         * the item's own category already exists it keeps the parent it has, so
+         * promising to create this one would be a promise the commit never
+         * keeps — and a report naming a category the shop will never find.
+         */
+        boolean categoryIsNew = !context.hasItemGroup(item.itemGroupName())
+                && !context.isItemGroupPlanned(item.itemGroupName());
+
+        if (categoryIsNew
+                && !context.hasItemGroup(parent)
+                && !context.isItemGroupPlanned(parent)) {
+            context.planItemGroup(parent);
+            issues.add(RowIssue.warning(
+                    ImportField.PARENT_GROUP.name(),
+                    "PARENT_GROUP_WILL_BE_CREATED",
+                    "The category \"" + parent + "\" will be created."
+            ));
+        }
+
+        return true;
+    }
+
+    /** " (Coffee, Tea and Juice)", or nothing when there is nothing to name. */
+    private String listOf(List<String> names) {
+        if (names.isEmpty()) {
+            return "";
+        }
+        if (names.size() == 1) {
+            return " (" + names.getFirst() + ")";
+        }
+
+        return " (" + String.join(", ", names.subList(0, names.size() - 1))
+                + " and " + names.getLast() + ")";
     }
 
     /**

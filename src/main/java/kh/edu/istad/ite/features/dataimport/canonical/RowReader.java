@@ -100,6 +100,43 @@ public class RowReader {
     }
 
     /**
+     * The category a row names, however much of the aisle it wrote out.
+     *
+     * Read whole and split afterwards rather than capped on the way in: a path
+     * is longer than any one category name, so the ordinary length check would
+     * refuse a perfectly good "Clothing > Men > Polos" for being over 150
+     * characters. Each level is measured once it stands on its own.
+     */
+    public CategoryPath categoryPath(ImportField field, int maxLength) {
+        String raw = text(field);
+
+        if (raw == null || raw.isBlank()) {
+            return CategoryPath.EMPTY;
+        }
+
+        CategoryPath path = CategoryPath.of(raw);
+
+        if (tooLong(path.name(), field, maxLength) || tooLong(path.parent(), field, maxLength)) {
+            return CategoryPath.EMPTY;
+        }
+
+        return path;
+    }
+
+    private boolean tooLong(String value, ImportField field, int maxLength) {
+        if (value == null || value.length() <= maxLength) {
+            return false;
+        }
+
+        issues.add(RowIssue.error(
+                field.name(),
+                "VALUE_TOO_LONG",
+                field.getLabel() + " is longer than " + maxLength + " characters."
+        ));
+        return true;
+    }
+
+    /**
      * A number, however the old system happened to write it.
      *
      * Currency symbols and spaces are dropped. Where both a dot and a comma

@@ -222,15 +222,47 @@ public class ItemImportCommitter implements ImportCommitter {
                 .findFirstByBusinessIdAndNameIgnoreCase(businessId, item.itemGroupName())
                 .orElse(null);
 
+        /*
+         * A category that already exists is used exactly as it stands, parent
+         * and all. Checking has already warned when the file disagrees about
+         * where it sits: re-filing it here would move every item the shop had
+         * in it, which is not what importing a price list means.
+         */
         if (existing != null) {
             return new ResolvedGroup(existing.getId(), false);
         }
 
         UUID createdId = itemGroupService
-                .createItemGroup(businessId, new CreateItemGroupRequest(item.itemGroupName(), null, null))
+                .createItemGroup(
+                        businessId,
+                        new CreateItemGroupRequest(
+                                item.itemGroupName(),
+                                null,
+                                resolveParentGroupId(businessId, item.parentGroupName())))
                 .id();
 
         return new ResolvedGroup(createdId, true);
+    }
+
+    /**
+     * The parent a new category goes under, created in turn if the file named
+     * one the shop has not got.
+     *
+     * Null when the file named no parent, which is the flat case and most of
+     * them. The two-level limit is the catalogue's to enforce, and checking has
+     * already refused a row naming a parent that is itself a sub-category.
+     */
+    private UUID resolveParentGroupId(UUID businessId, String parentName) {
+        if (parentName == null) {
+            return null;
+        }
+
+        return itemGroupRepository
+                .findFirstByBusinessIdAndNameIgnoreCase(businessId, parentName)
+                .map(ItemGroup::getId)
+                .orElseGet(() -> itemGroupService
+                        .createItemGroup(businessId, new CreateItemGroupRequest(parentName, null, null))
+                        .id());
     }
 
     /**
