@@ -1,5 +1,7 @@
 package kh.edu.istad.ite.features.discount.service.Impl;
 
+import kh.edu.istad.ite.config.props.KeycloakAdminClientProps;
+import kh.edu.istad.ite.config.security.SecurityUtils;
 import kh.edu.istad.ite.features.business.entity.Business;
 import kh.edu.istad.ite.features.catalog.entity.Item;
 import kh.edu.istad.ite.features.catalog.entity.ItemGroup;
@@ -16,11 +18,18 @@ import kh.edu.istad.ite.features.discount.repository.DiscountRepository;
 import kh.edu.istad.ite.features.customer.repository.MembershipTypeRepository;
 import kh.edu.istad.ite.features.discount.repository.DiscountTargetRepository;
 import kh.edu.istad.ite.features.discount.service.DiscountService;
+import kh.edu.istad.ite.features.notification.dto.CreateNotificationRequest;
+import kh.edu.istad.ite.features.notification.entity.NotificationType;
+import kh.edu.istad.ite.features.notification.service.NotificationCommandService;
+import kh.edu.istad.ite.features.user.entity.UserProfile;
+import kh.edu.istad.ite.features.user.repository.UserProfileRepository;
 import kh.edu.istad.ite.shared.enums.*;
 import kh.edu.istad.ite.shared.helper.BusinessHelper;
 import kh.edu.istad.ite.shared.helper.TextHelper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.keycloak.admin.client.Keycloak;
+import org.keycloak.representations.idm.UserRepresentation;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -35,7 +44,9 @@ import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 @Slf4j
@@ -51,6 +62,10 @@ public class DiscountServiceImpl implements DiscountService {
     private final DiscountTargetRepository discountTargetRepository;
     private final ItemRepository itemRepository;
     private final ItemGroupRepository itemGroupRepository;
+    private final UserProfileRepository userProfileRepository;
+    private final NotificationCommandService notificationCommandService;
+    private final Keycloak keycloak;
+    private final KeycloakAdminClientProps props;
 
     @Override
     @Transactional
@@ -102,7 +117,9 @@ public class DiscountServiceImpl implements DiscountService {
             Discount savedDiscount = discountRepository.saveAndFlush(discount);
             List<DiscountTarget> targets = replaceTargets(savedDiscount, businessId, request.targetItemIds(), request.targetItemGroupIds());
             handleStorewidePauseIfRequested(businessId, savedDiscount, request.pauseOtherDiscounts());
-            return discountMapper.toResponse(savedDiscount, targets);
+            DiscountResponse response = discountMapper.toResponse(savedDiscount, targets);
+            notifyShopUsersAboutDiscount(business, savedDiscount);
+            return response;
         } catch (DataIntegrityViolationException e) {
             String rootCause = e.getMostSpecificCause() != null ? e.getMostSpecificCause().getMessage() : e.getMessage();
             log.error("Failed to save discount rule for business {}: {}", businessId, rootCause, e);
@@ -580,6 +597,80 @@ public class DiscountServiceImpl implements DiscountService {
             discount.setPausedDiscountIds(null);
             discountRepository.save(discount);
             discountRepository.flush();
+        }
+    }
+
+    private void notifyShopUsersAboutDiscount(Business business, Discount discount) {
+        try {
+            UUID businessId = business.getId();
+            Set<String> recipientIds = new LinkedHashSet<>();
+            if (business.getKeycloakUserId() != null) {
+                recipientIds.add(business.getKeycloakUserId().toString());
+            }
+
+            List<UserProfile> staffList = userProfileRepository.findByBusinessIdOrderByJoinedAtDesc(businessId);
+            if (staffList != null) {
+                for (UserProfile staff : staffList) {
+                    if (staff.getStaffStatus() == RecordStatus.ACTIVE && staff.getUserId() != null) {
+                        recipientIds.add(staff.getUserId().toString());
+                    }
+                }
+            }
+
+            if (recipientIds.isEmpty()) {
+                return;
+            }
+
+            String creatorUserId = SecurityUtils.extractUserId();
+            String creatorName = "Store Admin";
+            if (creatorUserId != null && !creatorUserId.isBlank()) {
+                try {
+                    UserRepresentation user = keycloak.realm(props.getTargetRealm()).users().get(creatorUserId).toRepresentation();
+                    if (user != null) {
+                        String first = user.getFirstName();
+                        String last = user.getLastName();
+                        if ((first != null && !first.isBlank()) || (last != null && !last.isBlank())) {
+                            creatorName = ((first != null ? first : "") + " " + (last != null ? last : "")).trim();
+                        } else if (user.getUsername() != null && !user.getUsername().isBlank()) {
+                            creatorName = user.getUsername();
+                        }
+                    }
+                } catch (Exception ignored) {
+                }
+            }
+
+            String valueDesc = "";
+            if (discount.getType() == DiscountType.PERCENTAGE) {
+                valueDesc = discount.getValue() + "% off";
+            } else if (discount.getType() == DiscountType.FIXED_AMOUNT) {
+                valueDesc = "$" + discount.getValue() + " off";
+            } else if (discount.getType() == DiscountType.BUY_X_GET_Y) {
+                valueDesc = "Buy " + discount.getBuyQuantity() + " Get " + discount.getGetQuantity();
+            }
+
+            String storeName = business.getDisplayName() != null && !business.getDisplayName().isBlank()
+                    ? business.getDisplayName()
+                    : (business.getBusinessName() != null && !business.getBusinessName().isBlank() ? business.getBusinessName() : "your store");
+
+            String content = String.format("A new discount \"%s\"%s has been created for %s.",
+                    discount.getName(),
+                    valueDesc.isBlank() ? "" : " (" + valueDesc + ")",
+                    storeName);
+
+            CreateNotificationRequest notificationRequest = new CreateNotificationRequest(
+                    creatorUserId != null && !creatorUserId.isBlank() ? creatorUserId : (business.getKeycloakUserId() != null ? business.getKeycloakUserId().toString() : "system"),
+                    creatorName,
+                    new ArrayList<>(recipientIds),
+                    NotificationType.PROMOTION,
+                    "New Discount: " + discount.getName(),
+                    content,
+                    "/sales/discounts"
+            );
+
+            UUID senderTenantId = business.getKeycloakUserId() != null ? business.getKeycloakUserId() : business.getId();
+            notificationCommandService.send(senderTenantId, notificationRequest);
+        } catch (Exception e) {
+            log.error("Failed to notify shop users about new discount {}: {}", discount.getName(), e.getMessage(), e);
         }
     }
 }
