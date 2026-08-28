@@ -290,20 +290,23 @@ public class FacebookGraphClient {
 
     /**
      * Same call, but returns exactly what Facebook said instead of swallowing
-     * it. Reads the raw bytes rather than asking for {@code String.class} —
-     * the custom Jackson converter registered on this client (needed
-     * elsewhere for Facebook's occasional {@code text/javascript} responses)
-     * claims that media type too and can't produce a plain String from it,
-     * which previously surfaced as a spurious "failed to whitelist" every
-     * time, masking whatever Facebook actually said.
+     * it. Reads the response as a {@code Map} rather than {@code String}/
+     * {@code byte[]} — the custom Jackson converter registered on this client
+     * (needed elsewhere for Facebook's occasional {@code text/javascript}
+     * responses) claims that media type for every target type ahead of the
+     * plain string/byte-array converters, but can only actually deserialize
+     * the JSON *object* Facebook sends back into a real object type, not a
+     * raw string or byte array — attempting either previously crashed here on
+     * every call, masking whatever Facebook actually said.
      */
+    @SuppressWarnings("unchecked")
     public String whitelistDomainVerbose(String pageAccessToken, List<String> domains) {
         try {
             Map<String, Object> body = Map.of(
                     "whitelisted_domains", domains
             );
 
-            byte[] response = restClient.post()
+            Map<String, Object> response = restClient.post()
                     .uri(uriBuilder -> uriBuilder
                             .path("/{apiVersion}/me/messenger_profile")
                             .queryParam("access_token", pageAccessToken)
@@ -311,11 +314,10 @@ public class FacebookGraphClient {
                     .contentType(MediaType.APPLICATION_JSON)
                     .body(body)
                     .retrieve()
-                    .body(byte[].class);
+                    .body(Map.class);
 
-            String responseText = response == null ? "" : new String(response, java.nio.charset.StandardCharsets.UTF_8);
-            log.info("Whitelisted domains for Messenger: {} -> {}", domains, responseText);
-            return "OK: " + responseText;
+            log.info("Whitelisted domains for Messenger: {} -> {}", domains, response);
+            return "OK: " + response;
         } catch (Exception e) {
             log.error("Failed to whitelist domains for Messenger: {}", e.getMessage());
             return "ERROR: " + e.getMessage();
