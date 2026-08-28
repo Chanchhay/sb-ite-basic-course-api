@@ -10,6 +10,7 @@ import kh.edu.istad.ite.features.customer.entity.GlobalCustomer;
 import kh.edu.istad.ite.features.customer.repository.CustomerChannelIdentityRepository;
 import kh.edu.istad.ite.features.customer.service.CustomerIdentityService;
 import kh.edu.istad.ite.features.minio.MinioService;
+import kh.edu.istad.ite.features.social.dto.FacebookDeviceAuthRequest;
 import kh.edu.istad.ite.features.social.dto.FacebookWebAppAuthRequest;
 import kh.edu.istad.ite.features.social.dto.FacebookWebAppAuthResponse;
 import kh.edu.istad.ite.features.social.entity.BusinessFacebookPage;
@@ -130,15 +131,87 @@ public class FacebookWebAppAuthServiceImpl implements FacebookWebAppAuthService 
         );
     }
 
-    private void linkChannelIdentity(Business business, Customer customer, String psid) {
+    @Override
+    @Transactional
+    public FacebookWebAppAuthResponse authenticateDevice(FacebookDeviceAuthRequest request) {
+        UUID businessId = parseBusinessId(request.businessId());
+        Business business = businessRepository.findById(businessId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Store has not been found"));
+
+        BusinessFacebookPage page = facebookPageRepository.findByBusinessId(businessId)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND, "This store has no Facebook Page connected"));
+
+        if (!Boolean.TRUE.equals(page.getIsMiniAppEnabled())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Messenger ordering is not enabled for this store");
+        }
+
+        String deviceId = request.deviceId().trim();
+        String fullName = request.fullName().trim();
+        String phoneNumber = request.phoneNumber().trim();
+
+        int spaceIndex = fullName.indexOf(' ');
+        String firstName = spaceIndex == -1 ? fullName : fullName.substring(0, spaceIndex);
+        String lastName = spaceIndex == -1 ? "" : fullName.substring(spaceIndex + 1).trim();
+
+        String onceOffPassword = generateOnceOffPassword();
+
+        KeycloakBotAuthService.KeycloakUserInfo userInfo =
+                keycloakBotAuthService.findOrCreateMessengerDeviceKeycloakUser(deviceId, firstName, lastName, phoneNumber);
+
+        boolean passwordSet = keycloakBotAuthService.setPassword(userInfo.id(), onceOffPassword);
+        if (!passwordSet) {
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Could not sign you in right now");
+        }
+
+        KeycloakBotAuthService.TokenResponse tokens =
+                keycloakBotAuthService.passwordGrantTokens(userInfo.username(), onceOffPassword);
+        if (tokens == null) {
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Could not sign you in right now");
+        }
+
+        GlobalCustomer globalCustomer = customerIdentityService.resolve(
+                CustomerIdentityService.parseKeycloakId(userInfo.id()),
+                null,
+                phoneNumber,
+                fullName);
+
+        Customer customer = customerIdentityService.customerFor(business, globalCustomer);
+        linkChannelIdentity(business, customer, deviceId);
+
+        boolean profileComplete = StringUtils.hasText(globalCustomer.getEmail())
+                && StringUtils.hasText(globalCustomer.getGender())
+                && StringUtils.hasText(globalCustomer.getPhoneNumber())
+                && StringUtils.hasText(customer.getAddress());
+
+        return new FacebookWebAppAuthResponse(
+                tokens.accessToken(),
+                tokens.refreshToken(),
+                business.getId(),
+                business.getDisplayName(),
+                business.getSlug(),
+                toPublicUrl(business.getLogo()),
+                customer.getId(),
+                globalCustomer.getId(),
+                deviceId,
+                globalCustomer.getFullName(),
+                globalCustomer.getPhoneNumber(),
+                globalCustomer.getEmail(),
+                globalCustomer.getGender(),
+                customer.getAddress(),
+                profileComplete
+        );
+    }
+
+    private void linkChannelIdentity(Business business, Customer customer, String externalId) {
         customerChannelIdentityRepository
-                .findByBusiness_IdAndChannelAndExternalId(business.getId(), ChannelType.MESSENGER, psid)
+                .findByBusiness_IdAndChannelAndExternalId(business.getId(), ChannelType.MESSENGER, externalId)
                 .orElseGet(() -> {
                     CustomerChannelIdentity identity = new CustomerChannelIdentity();
                     identity.setBusiness(business);
                     identity.setCustomer(customer);
                     identity.setChannel(ChannelType.MESSENGER);
-                    identity.setExternalId(psid);
+                    identity.setExternalId(externalId);
                     return customerChannelIdentityRepository.save(identity);
                 });
     }

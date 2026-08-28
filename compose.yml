@@ -41,13 +41,6 @@ services:
       SPRING_PROFILES_ACTIVE: prod
       PGHOST: db
       PGPORT: 5432
-      # Every timestamp in the app (Order.createdDate, etc.) is a
-      # LocalDateTime from LocalDateTime.now() — with no timezone set, that
-      # captures the container's own clock (UTC by default), while the
-      # frontend's `new Date(...)` reads the resulting bare string as
-      # already being the browser's local time. Pinning TZ here makes
-      # LocalDateTime.now() itself return Cambodia wall-clock time, which
-      # is what the frontend's naive parsing already assumes.
       TZ: Asia/Phnom_Penh
 
     networks:

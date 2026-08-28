@@ -1,5 +1,6 @@
 package kh.edu.istad.ite.features.social.service;
 
+import kh.edu.istad.ite.features.social.dto.FacebookDeviceAuthRequest;
 import kh.edu.istad.ite.features.social.dto.FacebookWebAppAuthRequest;
 import kh.edu.istad.ite.features.social.dto.FacebookWebAppAuthResponse;
 
@@ -15,4 +16,12 @@ public interface FacebookWebAppAuthService {
      * {@link TelegramWebAppAuthService}.
      */
     FacebookWebAppAuthResponse authenticate(FacebookWebAppAuthRequest request);
+
+    /**
+     * Registers (or re-recognizes) a Messenger Mini App visitor from a
+     * customer-entered name and phone plus a device id generated client-side
+     * — the fallback identity path now that {@code signed_request} auth is
+     * no longer used at all for this Mini App.
+     */
+    FacebookWebAppAuthResponse authenticateDevice(FacebookDeviceAuthRequest request);
 }
