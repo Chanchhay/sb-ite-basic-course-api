@@ -2,6 +2,7 @@ package kh.edu.istad.ite.features.business.service;
 
 import kh.edu.istad.ite.config.props.StorefrontProps;
 import kh.edu.istad.ite.config.security.SecurityUtils;
+import kh.edu.istad.ite.features.business.dto.PublicFacebookPageResponse;
 import kh.edu.istad.ite.features.business.dto.PublicStoreDetailResponse;
 import kh.edu.istad.ite.features.business.dto.PublicStoreResponse;
 import kh.edu.istad.ite.features.business.dto.SlugAvailabilityResponse;
@@ -54,6 +55,7 @@ import kh.edu.istad.ite.features.channel.service.ChannelPriceResolver;
 import kh.edu.istad.ite.features.channel.service.ItemChannelStockService;
 import kh.edu.istad.ite.features.inventory.dto.StockSummaryResponse;
 import kh.edu.istad.ite.features.inventory.service.StockEntryService;
+import kh.edu.istad.ite.features.social.repository.BusinessFacebookPageRepository;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.Map;
@@ -80,6 +82,7 @@ public class StorefrontServiceImpl implements StorefrontService {
     private final ItemChannelStockService itemChannelStockService;
     private final StockEntryService stockEntryService;
     private final ItemGroupService itemGroupService;
+    private final BusinessFacebookPageRepository businessFacebookPageRepository;
 
     @Override
     @Transactional(readOnly = true)
@@ -376,6 +379,18 @@ public class StorefrontServiceImpl implements StorefrontService {
 
         return businessRepository.findOne(spec)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Store has not been found"));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public PublicFacebookPageResponse getPublicFacebookSocialSettings(String slugOrId) {
+        Business business = resolvePublicBusiness(slugOrId);
+
+        return businessFacebookPageRepository.findByBusinessId(business.getId())
+                .map(page -> new PublicFacebookPageResponse(
+                        page.getPageName(),
+                        "https://www.facebook.com/" + page.getPageId()))
+                .orElse(new PublicFacebookPageResponse(null, null));
     }
 
     @Override
