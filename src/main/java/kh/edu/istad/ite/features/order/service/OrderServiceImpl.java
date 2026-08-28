@@ -1061,6 +1061,12 @@ public class OrderServiceImpl implements OrderService {
             BigDecimal manualDiscountAmount,
             boolean applyMembershipDiscount
     ) {
+        // Clear attribution left by a previously-applied catalog discount
+        // before recomputing anything — manual (cashier-typed) per-item
+        // amounts never carry a label and are never touched here, so this
+        // can't clobber them.
+        clearCatalogAttributedItemDiscounts(order);
+
         BigDecimal discountableSubtotal = grossSubtotal(order).subtract(itemDiscountTotal(order));
         if (discountableSubtotal.compareTo(BigDecimal.ZERO) <= 0) {
             clearOrderDiscountSource(order);
@@ -1078,7 +1084,9 @@ public class OrderServiceImpl implements OrderService {
             validateDiscountForOrder(discount, order, customer, true);
             order.setDiscountId(discount.getId());
             order.setDiscountCode(coupon.getCode());
-            return calculateDiscountAmount(discount, order, discountableSubtotal);
+            BigDecimal amount = calculateDiscountAmount(discount, order, discountableSubtotal);
+            distributeItemLevelDiscount(discount, order, amount);
+            return amount;
         }
 
         if (requestedDiscountId != null) {
@@ -1087,6 +1095,7 @@ public class OrderServiceImpl implements OrderService {
             order.setDiscountId(discount.getId());
             order.setDiscountCode(null);
             BigDecimal calculated = calculateDiscountAmount(discount, order, discountableSubtotal);
+            distributeItemLevelDiscount(discount, order, calculated);
             if (calculated.compareTo(BigDecimal.ZERO) > 0) {
                 return calculated;
             }
@@ -1105,11 +1114,67 @@ public class OrderServiceImpl implements OrderService {
             validateDiscountForOrder(discount, order, customer, false);
             order.setDiscountId(discount.getId());
             order.setDiscountCode(null);
-            return calculateDiscountAmount(discount, order, discountableSubtotal);
+            BigDecimal amount = calculateDiscountAmount(discount, order, discountableSubtotal);
+            distributeItemLevelDiscount(discount, order, amount);
+            return amount;
         }
 
         clearOrderDiscountSource(order);
         return manualDiscountAmount == null ? BigDecimal.ZERO : manualDiscountAmount;
+    }
+
+    /** Removes any per-item discount amount/label left by a catalog discount
+     *  that no longer applies (e.g. the cashier switched to a different
+     *  promo). A manual, cashier-typed per-item discount never carries a
+     *  label, so this can't touch one. */
+    private void clearCatalogAttributedItemDiscounts(Order order) {
+        for (OrderItem item : order.getItems()) {
+            if (item.getDiscountLabel() != null) {
+                item.setDiscountAmount(BigDecimal.ZERO);
+                item.setDiscountLabel(null);
+            }
+        }
+    }
+
+    /**
+     * Records which line(s) an item/category-scoped discount actually
+     * applied to, so receipts can name the promo per item instead of only
+     * showing one lump discount on the whole order. Order-wide discounts
+     * (ALL_ITEMS/ORDER/SPECIFIC_MEMBERSHIP) aren't attributed to specific
+     * lines — the order-level discountLabel already names those.
+     */
+    private void distributeItemLevelDiscount(Discount discount, Order order, BigDecimal calculatedAmount) {
+        DiscountScope scope = normalizeScope(discount.getScope());
+        if (scope != DiscountScope.SPECIFIC_ITEMS && scope != DiscountScope.SPECIFIC_CATEGORIES) {
+            return;
+        }
+        if (calculatedAmount == null || calculatedAmount.compareTo(BigDecimal.ZERO) <= 0) {
+            return;
+        }
+
+        List<OrderItem> eligible = eligibleItems(discount, order);
+        BigDecimal eligibleTotal = eligible.stream().map(this::grossLineTotal).reduce(BigDecimal.ZERO, BigDecimal::add);
+        if (eligibleTotal.compareTo(BigDecimal.ZERO) <= 0) {
+            return;
+        }
+
+        BigDecimal remaining = calculatedAmount;
+        for (int i = 0; i < eligible.size(); i++) {
+            OrderItem item = eligible.get(i);
+            BigDecimal share;
+            if (i == eligible.size() - 1) {
+                // Last line absorbs the rounding remainder so the parts sum
+                // exactly to calculatedAmount.
+                share = remaining;
+            } else {
+                BigDecimal lineTotal = grossLineTotal(item);
+                share = calculatedAmount.multiply(lineTotal)
+                        .divide(eligibleTotal, 2, RoundingMode.HALF_UP);
+                remaining = remaining.subtract(share);
+            }
+            item.setDiscountAmount(share.max(BigDecimal.ZERO));
+            item.setDiscountLabel(discount.getName());
+        }
     }
 
     private Coupon findUsableCoupon(UUID businessId, String code, BigDecimal subtotal, Customer customer) {
@@ -1277,10 +1342,12 @@ public class OrderServiceImpl implements OrderService {
                     .map(target -> target.getItem().getId())
                     .collect(java.util.stream.Collectors.toSet());
             if (itemIds.isEmpty()) return order.getItems();
-            List<OrderItem> matching = order.getItems().stream()
+            // No fallback to "all items" when none of the target items are
+            // in this cart: a discount scoped to items that aren't here
+            // means it applies to nothing, not to everything.
+            return order.getItems().stream()
                     .filter(item -> item.getItem() != null && itemIds.contains(item.getItem().getId()))
                     .toList();
-            return matching.isEmpty() ? order.getItems() : matching;
         }
         if (DiscountScope.SPECIFIC_CATEGORIES.equals(scope)) {
             Set<UUID> itemGroupIds = targets.stream()
@@ -1288,12 +1355,11 @@ public class OrderServiceImpl implements OrderService {
                     .map(target -> target.getItemGroup().getId())
                     .collect(java.util.stream.Collectors.toSet());
             if (itemGroupIds.isEmpty()) return order.getItems();
-            List<OrderItem> matching = order.getItems().stream()
+            return order.getItems().stream()
                     .filter(item -> item.getItem() != null
                             && item.getItem().getItemGroup() != null
                             && itemGroupIds.contains(item.getItem().getItemGroup().getId()))
                     .toList();
-            return matching.isEmpty() ? order.getItems() : matching;
         }
 
         return order.getItems();

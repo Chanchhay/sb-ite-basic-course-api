@@ -291,6 +291,10 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
                     if (lineDiscount.compareTo(rawLineSubtotal) > 0) {
                         lineDiscount = rawLineSubtotal;
                     }
+
+                    if (lineDiscount.compareTo(BigDecimal.ZERO) > 0) {
+                        orderItem.setDiscountLabel(discount.name());
+                    }
                 }
             }
 
@@ -1081,6 +1085,7 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
                         item.getQuantity() != null ? item.getQuantity() : 1,
                         item.getUnitPrice() != null ? item.getUnitPrice() : BigDecimal.ZERO,
                         item.getDiscountAmount() != null ? item.getDiscountAmount() : BigDecimal.ZERO,
+                        item.getDiscountLabel(),
                         item.getLineTotal() != null ? item.getLineTotal() : BigDecimal.ZERO,
                         // The extras read alongside the options: without them
                         // the line total is higher than the item's price with

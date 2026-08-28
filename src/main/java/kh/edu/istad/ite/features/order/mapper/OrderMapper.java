@@ -105,6 +105,7 @@ public class OrderMapper {
                 item.getQuantity(),
                 item.getUnitPrice(),
                 item.getDiscountAmount(),
+                item.getDiscountLabel(),
                 item.getLineTotal(),
                 item.getItem() == null ? Boolean.TRUE : item.getItem().getTrackInventory(),
                 item.getAddOns() == null ? List.of() : item.getAddOns().stream()

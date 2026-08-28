@@ -16,7 +16,7 @@ public record UpdateDiscountRequest(
         @Size(max = 2000, message = "description must be at most 2000 characters")
         String description,
 
-        @Pattern(regexp = "PERCENTAGE|FIXED_AMOUNT", message = "type must be one of: PERCENTAGE, FIXED_AMOUNT")
+        @Pattern(regexp = "PERCENTAGE|FIXED_AMOUNT|BUY_X_GET_Y", message = "type must be one of: PERCENTAGE, FIXED_AMOUNT, BUY_X_GET_Y")
         String type,
 
         @Pattern(regexp = "NO_CONDITION|MIN_QUANTITY|MIN_ORDER_AMOUNT|BUY_X_GET_Y", message = "ruleType must be one of: NO_CONDITION, MIN_QUANTITY, MIN_ORDER_AMOUNT, BUY_X_GET_Y")
@@ -72,6 +72,9 @@ public record UpdateDiscountRequest(
         //Null = don't touch category targets. pass an empty list to clear
         // all category targets (only meaningful while scope = CATEGORY ).
         @Size(max = 200, message = "targetItemGroupIds cannot contain more than 200 entries")
-        List<UUID> targetItemGroupIds
+        List<UUID> targetItemGroupIds,
+
+        // Optional: when activating or updating scope = ALL_ITEMS / ORDER, if true, pauses other active discounts
+        Boolean pauseOtherDiscounts
 ) {
 }

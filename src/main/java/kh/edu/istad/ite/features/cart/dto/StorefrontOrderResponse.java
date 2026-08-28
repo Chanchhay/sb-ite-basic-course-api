@@ -45,6 +45,8 @@ public record StorefrontOrderResponse(
             int quantity,
             BigDecimal unitPrice,
             BigDecimal discountAmount,
+            /** Name of the discount that produced discountAmount for this line, if any. */
+            String discountLabel,
             BigDecimal lineTotal,
             /**
              * The options this line was ordered with — "Sugar Level: 50%".

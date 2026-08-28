@@ -63,7 +63,9 @@ public class DiscountServiceImpl implements DiscountService {
         }
 
         DiscountType type = request.type() != null ? request.type() : DiscountType.PERCENTAGE;
-        DiscountRuleType ruleType = request.ruleType() != null ? request.ruleType() : DiscountRuleType.NO_CONDITION;
+        DiscountRuleType ruleType = type == DiscountType.BUY_X_GET_Y
+                ? DiscountRuleType.BUY_X_GET_Y
+                : (request.ruleType() != null ? request.ruleType() : DiscountRuleType.NO_CONDITION);
         DiscountScope scope = normalizeScope(request.scope());
 
         validateRule(ruleType, request.buyQuantity(), request.getQuantity(), request.minQuantity());
@@ -81,7 +83,7 @@ public class DiscountServiceImpl implements DiscountService {
         discount.setBuyQuantity(request.buyQuantity());
         discount.setGetQuantity(request.getQuantity());
         discount.setMinQuantity(request.minQuantity());
-        discount.setValue(request.value() != null ? request.value() : BigDecimal.ZERO);
+        discount.setValue(type == DiscountType.BUY_X_GET_Y ? BigDecimal.ZERO : (request.value() != null ? request.value() : BigDecimal.ZERO));
         discount.setScope(scope);
         discount.setMinOrderAmount(request.minOrderAmount());
         discount.setMaxDiscountAmount(request.maxDiscountAmount());
@@ -92,9 +94,14 @@ public class DiscountServiceImpl implements DiscountService {
         discount.setApplicableChannels(normalizeChannels(request.applicableChannels()));
         discount.setStatus(RecordStatus.ACTIVE);
 
+        if (scope == DiscountScope.SPECIFIC_ITEMS && request.targetItemIds() != null && !request.targetItemIds().isEmpty()) {
+            validateNoConflictingItemTargets(businessId, request.targetItemIds(), null);
+        }
+
         try {
             Discount savedDiscount = discountRepository.saveAndFlush(discount);
             List<DiscountTarget> targets = replaceTargets(savedDiscount, businessId, request.targetItemIds(), request.targetItemGroupIds());
+            handleStorewidePauseIfRequested(businessId, savedDiscount, request.pauseOtherDiscounts());
             return discountMapper.toResponse(savedDiscount, targets);
         } catch (DataIntegrityViolationException e) {
             String rootCause = e.getMostSpecificCause() != null ? e.getMostSpecificCause().getMessage() : e.getMessage();
@@ -147,7 +154,9 @@ public class DiscountServiceImpl implements DiscountService {
         }
 
         DiscountType type = request.type() != null ? DiscountType.valueOf(request.type()) : discount.getType();
-        DiscountRuleType ruleType = request.ruleType() != null ? DiscountRuleType.valueOf(request.ruleType()) : discount.getRuleType();
+        DiscountRuleType ruleType = type == DiscountType.BUY_X_GET_Y
+                ? DiscountRuleType.BUY_X_GET_Y
+                : (request.ruleType() != null ? DiscountRuleType.valueOf(request.ruleType()) : discount.getRuleType());
         DiscountScope scope = request.scope() != null ? request.scope() : discount.getScope();
 
         Integer buyQuantity = request.buyQuantity() != null ? request.buyQuantity() : discount.getBuyQuantity();
@@ -155,9 +164,18 @@ public class DiscountServiceImpl implements DiscountService {
         Integer minQuantity = request.minQuantity() != null ? request.minQuantity() : discount.getMinQuantity();
         validateRule(ruleType, buyQuantity, getQuantity, minQuantity);
 
-        BigDecimal value = request.value() != null ? request.value() : discount.getValue();
+        BigDecimal value = type == DiscountType.BUY_X_GET_Y
+                ? BigDecimal.ZERO
+                : (request.value() != null ? request.value() : discount.getValue());
         validateValue(type, value);
         validateTargetsMatchScope(scope, request.targetItemIds(), request.targetItemGroupIds());
+
+        RecordStatus newStatus = request.status() != null ? RecordStatus.valueOf(request.status()) : discount.getStatus();
+        RecordStatus oldStatus = discount.getStatus();
+
+        if (newStatus == RecordStatus.ACTIVE && scope == DiscountScope.SPECIFIC_ITEMS && request.targetItemIds() != null && !request.targetItemIds().isEmpty()) {
+            validateNoConflictingItemTargets(businessId, request.targetItemIds(), discountId);
+        }
 
         discount.setType(type);
         discount.setRuleType(ruleType);
@@ -166,6 +184,7 @@ public class DiscountServiceImpl implements DiscountService {
         discount.setGetQuantity(getQuantity);
         discount.setMinQuantity(minQuantity);
         discount.setValue(value);
+        discount.setStatus(newStatus);
 
         if (request.minOrderAmount() != null) {
             discount.setMinOrderAmount(request.minOrderAmount());
@@ -188,13 +207,17 @@ public class DiscountServiceImpl implements DiscountService {
         if (request.applicableChannels() != null) {
             discount.setApplicableChannels(normalizeChannels(request.applicableChannels()));
         }
-        if (request.status() != null) {
-            discount.setStatus(RecordStatus.valueOf(request.status()));
-        }
 
         try {
             Discount savedDiscount = discountRepository.saveAndFlush(discount);
             List<DiscountTarget> targets = replaceTargets(savedDiscount, businessId, request.targetItemIds(), request.targetItemGroupIds());
+
+            if (oldStatus == RecordStatus.ACTIVE && newStatus == RecordStatus.INACTIVE) {
+                handleStorewideRestoreIfApplicable(businessId, savedDiscount);
+            } else if (newStatus == RecordStatus.ACTIVE && Boolean.TRUE.equals(request.pauseOtherDiscounts())) {
+                handleStorewidePauseIfRequested(businessId, savedDiscount, true);
+            }
+
             return discountMapper.toResponse(savedDiscount, targets);
         } catch (DataIntegrityViolationException e) {
             String rootCause = e.getMostSpecificCause() != null ? e.getMostSpecificCause().getMessage() : e.getMessage();
@@ -209,6 +232,17 @@ public class DiscountServiceImpl implements DiscountService {
         businessHelper.findOwnedBusiness(businessId);
         Discount discount = findDiscount(discountId, businessId);
 
+        if (discount.getScope() == DiscountScope.SPECIFIC_ITEMS) {
+            List<UUID> targetItemIds = discountTargetRepository.findAllByDiscountId(discountId)
+                    .stream()
+                    .filter(t -> t.getTargetType() == DiscountTargetType.ITEM && t.getItem() != null)
+                    .map(t -> t.getItem().getId())
+                    .toList();
+            if (!targetItemIds.isEmpty()) {
+                validateNoConflictingItemTargets(businessId, targetItemIds, discountId);
+            }
+        }
+
         discount.setStatus(RecordStatus.ACTIVE);
         Discount saved = discountRepository.saveAndFlush(discount);
         List<DiscountTarget> targets = discountTargetRepository.findAllByDiscountId(saved.getId());
@@ -222,6 +256,8 @@ public class DiscountServiceImpl implements DiscountService {
         Discount discount = findDiscount(discountId, businessId);
 
         discount.setStatus(RecordStatus.INACTIVE);
+        handleStorewideRestoreIfApplicable(businessId, discount);
+
         Discount saved = discountRepository.saveAndFlush(discount);
         List<DiscountTarget> targets = discountTargetRepository.findAllByDiscountId(saved.getId());
         return discountMapper.toResponse(saved, targets);
@@ -471,12 +507,79 @@ public class DiscountServiceImpl implements DiscountService {
     }
 
     private void validateValue(DiscountType type, BigDecimal value) {
-        if (value == null) return;
+        if (value == null || type == DiscountType.BUY_X_GET_Y) return;
         if (value.compareTo(BigDecimal.ZERO) < 0) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "value cannot be negative");
         }
         if (type == DiscountType.PERCENTAGE && value.compareTo(BigDecimal.valueOf(100)) > 0) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Percentage value cannot exceed 100");
+        }
+    }
+
+    private void validateNoConflictingItemTargets(UUID businessId, List<UUID> targetItemIds, UUID currentDiscountId) {
+        if (targetItemIds == null || targetItemIds.isEmpty()) {
+            return;
+        }
+        List<DiscountTarget> conflicts = discountTargetRepository.findActiveItemTargetsByBusinessIdAndItemIds(
+                businessId,
+                targetItemIds,
+                currentDiscountId
+        );
+        if (!conflicts.isEmpty()) {
+            DiscountTarget firstConflict = conflicts.get(0);
+            String itemName = firstConflict.getItem() != null ? firstConflict.getItem().getName() : "Selected item";
+            String discountName = firstConflict.getDiscount() != null ? firstConflict.getDiscount().getName() : "another active discount";
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "Item '" + itemName + "' already has an active discount ('" + discountName + "'). An item cannot be assigned to multiple active discounts."
+            );
+        }
+    }
+
+    private void handleStorewidePauseIfRequested(UUID businessId, Discount discount, Boolean pauseOthers) {
+        DiscountScope scope = normalizeScope(discount.getScope());
+        if (Boolean.TRUE.equals(pauseOthers) && (scope == DiscountScope.ALL_ITEMS || scope == DiscountScope.ORDER)) {
+            List<Discount> activeOthers = discountRepository.findAllByBusinessIdAndStatusAndIdNot(
+                    businessId,
+                    RecordStatus.ACTIVE,
+                    discount.getId()
+            );
+            if (!activeOthers.isEmpty()) {
+                // Merge with any already-tracked paused ids rather than overwriting, so a
+                // second "pause others" call (e.g. re-saving this discount after new
+                // discounts were created) doesn't orphan discounts paused by an earlier call.
+                java.util.LinkedHashSet<UUID> pausedIds = new java.util.LinkedHashSet<>();
+                if (discount.getPausedDiscountIds() != null) {
+                    pausedIds.addAll(discount.getPausedDiscountIds());
+                }
+                activeOthers.forEach(other -> pausedIds.add(other.getId()));
+                discount.setPausedDiscountIds(new ArrayList<>(pausedIds));
+                for (Discount other : activeOthers) {
+                    other.setStatus(RecordStatus.INACTIVE);
+                    discountRepository.save(other);
+                }
+                discountRepository.save(discount);
+                discountRepository.flush();
+            }
+        }
+    }
+
+    private void handleStorewideRestoreIfApplicable(UUID businessId, Discount discount) {
+        if (discount.getPausedDiscountIds() != null && !discount.getPausedDiscountIds().isEmpty()) {
+            LocalDateTime now = LocalDateTime.now();
+            for (UUID pausedId : discount.getPausedDiscountIds()) {
+                discountRepository.findByIdAndBusinessId(pausedId, businessId).ifPresent(other -> {
+                    // Don't resurrect a discount that expired while it was paused.
+                    if (other.getEndsAt() != null && other.getEndsAt().isBefore(now)) {
+                        return;
+                    }
+                    other.setStatus(RecordStatus.ACTIVE);
+                    discountRepository.save(other);
+                });
+            }
+            discount.setPausedDiscountIds(null);
+            discountRepository.save(discount);
+            discountRepository.flush();
         }
     }
 }

@@ -38,4 +38,8 @@ public interface DiscountRepository extends JpaRepository<Discount, UUID> {
     boolean existsByBusinessIdAndNameIgnoreCase(UUID businessId, String name);
 
     boolean existsByBusinessIdAndNameIgnoreCaseAndIdNot(UUID businessId, String name, UUID id);
+
+    List<Discount> findAllByBusinessIdAndStatus(UUID businessId, RecordStatus status);
+
+    List<Discount> findAllByBusinessIdAndStatusAndIdNot(UUID businessId, RecordStatus status, UUID id);
 }
