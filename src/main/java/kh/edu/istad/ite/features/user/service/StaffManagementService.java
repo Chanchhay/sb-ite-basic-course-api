@@ -14,6 +14,7 @@ import kh.edu.istad.ite.features.user.dto.UpdateStaffRequest;
 import kh.edu.istad.ite.features.user.entity.UserProfile;
 import kh.edu.istad.ite.features.user.mapper.UserProfileMapper;
 import kh.edu.istad.ite.features.user.repository.UserProfileRepository;
+import kh.edu.istad.ite.shared.dto.PageResponse;
 import kh.edu.istad.ite.shared.enums.RecordStatus;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -181,9 +182,10 @@ public class StaffManagementService {
         }
     }
 
-    public Page<StaffResponse> getBusinessStaffList(UUID businessId, Pageable pageable) {
-        return userProfileRepository.findByBusinessId(businessId, pageable)
+    public PageResponse<StaffResponse> getBusinessStaffList(UUID businessId, Pageable pageable) {
+        Page<StaffResponse> staffPage = userProfileRepository.findByBusinessId(businessId, pageable)
                 .map(this::mapToStaffResponse);
+        return PageResponse.from(staffPage);
     }
 
     public List<StaffResponse> getPlatformStaffList() {

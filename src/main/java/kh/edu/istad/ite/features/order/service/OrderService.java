@@ -2,12 +2,16 @@ package kh.edu.istad.ite.features.order.service;
 
 import kh.edu.istad.ite.features.order.dto.*;
 import kh.edu.istad.ite.features.payment.dto.KhqrResponse;
+import kh.edu.istad.ite.shared.dto.PageResponse;
+import org.springframework.data.domain.Pageable;
 
 import java.util.UUID;
 
 public interface OrderService {
 
     OrderResponse createOrder(UUID businessId, CreateOrderRequest request);
+
+    PageResponse<OrderResponse> findAllOrders(UUID businessId, Pageable pageable);
 
     OrderResponse findOrderById(UUID businessId, UUID orderId);
 
@@ -28,7 +32,7 @@ public interface OrderService {
     OrderResponse updateOrderNote(UUID businessId, UUID orderId, UpdateOrderNoteRequest request);
     OrderResponse updateOrderDiscount(UUID businessId, UUID orderId, UpdateOrderDiscountRequest request);
     
-    kh.edu.istad.ite.shared.dto.PageResponse<OrderResponse> filterOrders(UUID businessId, kh.edu.istad.ite.config.filter.RequestDto requestDto, org.springframework.data.domain.Pageable pageable);
+    PageResponse<OrderResponse> filterOrders(UUID businessId, kh.edu.istad.ite.config.filter.RequestDto requestDto, Pageable pageable);
 
     SyncOfflineOrdersResponse syncOfflineOrders(UUID businessId, SyncOfflineOrdersRequest request);
 }

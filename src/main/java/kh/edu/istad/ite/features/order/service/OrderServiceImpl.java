@@ -925,6 +925,30 @@ public class OrderServiceImpl implements OrderService {
 
     @Override
     @Transactional(readOnly = true)
+    public PageResponse<OrderResponse> findAllOrders(UUID businessId, Pageable pageable) {
+        businessHelper.findAccessibleBusiness(businessId);
+        Page<Order> orders = orderRepository.findAllByBusinessId(businessId, pageable);
+
+        List<UUID> paidOrderIds = orders.getContent().stream()
+                .filter(order -> OrderStatus.PAID.equals(order.getStatus()))
+                .map(Order::getId)
+                .toList();
+
+        java.util.Map<UUID, PaymentMethodType> paymentMethodByOrderId = paidOrderIds.isEmpty()
+                ? java.util.Map.of()
+                : saleRepository.findByOrder_IdIn(paidOrderIds).stream()
+                        .collect(java.util.stream.Collectors.toMap(
+                                sale -> sale.getOrder().getId(), Sale::getPaymentMethod));
+
+        return PageResponse.from(orders.map(order -> {
+            OrderResponse response = orderMapper.toResponse(order);
+            response.setPaymentMethod(paymentMethodByOrderId.get(order.getId()));
+            return response;
+        }));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public PageResponse<OrderResponse> filterOrders(UUID businessId, RequestDto requestDto, Pageable pageable) {
         businessHelper.findAccessibleBusiness(businessId);
 

@@ -1,6 +1,7 @@
 package kh.edu.istad.ite.features.order;
 
 import jakarta.validation.Valid;
+import kh.edu.istad.ite.config.filter.RequestDto;
 import kh.edu.istad.ite.features.cart.service.StorefrontCheckoutService;
 import kh.edu.istad.ite.features.order.dto.*;
 import kh.edu.istad.ite.features.order.service.OrderService;
@@ -8,7 +9,11 @@ import kh.edu.istad.ite.features.payment.dto.KhqrResponse;
 import kh.edu.istad.ite.features.payment.dto.MarkReceiptPrintedRequest;
 import kh.edu.istad.ite.features.payment.dto.ReceiptResponse;
 import kh.edu.istad.ite.features.payment.service.ReceiptService;
+import kh.edu.istad.ite.shared.dto.PageResponse;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 
@@ -22,6 +27,14 @@ public class OrderController {
     private final OrderService orderService;
     private final ReceiptService receiptService;
     private final StorefrontCheckoutService storefrontCheckoutService;
+
+    @GetMapping
+    public PageResponse<OrderResponse> findAllOrders(
+            @PathVariable UUID businessId,
+            @PageableDefault(size = 20, sort = "createdDate", direction = Sort.Direction.DESC) Pageable pageable
+    ) {
+        return orderService.findAllOrders(businessId, pageable);
+    }
 
     @ResponseStatus(HttpStatus.CREATED)
     @PostMapping
@@ -108,10 +121,10 @@ public class OrderController {
     }
 
     @PostMapping("/filter")
-    public kh.edu.istad.ite.shared.dto.PageResponse<OrderResponse> filterOrders(
+    public PageResponse<OrderResponse> filterOrders(
             @PathVariable UUID businessId,
-            @RequestBody kh.edu.istad.ite.config.filter.RequestDto request,
-            org.springframework.data.domain.Pageable pageable
+            @RequestBody RequestDto request,
+            @PageableDefault(size = 20, sort = "createdDate", direction = Sort.Direction.DESC) Pageable pageable
     ) {
         return orderService.filterOrders(businessId, request, pageable);
     }
