@@ -15,12 +15,15 @@ import kh.edu.istad.ite.features.catalog.entity.Item;
 import kh.edu.istad.ite.features.catalog.entity.ItemGroup;
 import kh.edu.istad.ite.features.catalog.entity.Unit;
 import kh.edu.istad.ite.features.dataimport.canonical.ItemGroupImportRecord;
+import kh.edu.istad.ite.features.dataimport.canonical.DeclaredUnit;
 import kh.edu.istad.ite.features.dataimport.canonical.ItemImportRecord;
 import kh.edu.istad.ite.features.dataimport.canonical.MappingPlan;
 import kh.edu.istad.ite.features.dataimport.canonical.OpeningStockImportRecord;
 import kh.edu.istad.ite.features.dataimport.canonical.RowOptions;
 import kh.edu.istad.ite.features.dataimport.field.ImportField;
 import kh.edu.istad.ite.shared.enums.ImportDuplicateStrategy;
+import kh.edu.istad.ite.shared.enums.UnitCategory;
+import kh.edu.istad.ite.shared.enums.ImportIssueSeverity;
 import kh.edu.istad.ite.shared.enums.ImportRowStatus;
 import kh.edu.istad.ite.shared.enums.ImportTargetType;
 import kh.edu.istad.ite.shared.enums.ItemStatus;
@@ -70,7 +73,19 @@ class ImportValidatorTest {
             Set<UUID> withStock,
             Set<UUID> withVariants
     ) {
-        return new ValidationContext(BUSINESS, groups, List.of(unit("Piece")), items, withStock, withVariants);
+        return context(groups, items, withStock, withVariants, List.of());
+    }
+
+    /** A shop, plus whatever units the uploaded workbook declared for itself. */
+    private ValidationContext context(
+            List<ItemGroup> groups,
+            List<Item> items,
+            Set<UUID> withStock,
+            Set<UUID> withVariants,
+            List<DeclaredUnit> declaredUnits
+    ) {
+        return new ValidationContext(
+                BUSINESS, groups, List.of(unit("Piece")), items, withStock, withVariants, declaredUnits);
     }
 
     private ValidationContext emptyShop() {
@@ -529,5 +544,128 @@ class ImportValidatorTest {
 
         assertThat(verdict.status()).isEqualTo(ImportRowStatus.VALID);
         assertThat(codesOf(verdict)).doesNotContain("PARENT_GROUP_WILL_BE_CREATED");
+    }
+
+    private ItemImportRecord countedIn(String unitName) {
+        return new ItemImportRecord(
+                "Rice", "RICE-1", null, "Groceries", null, unitName, ItemType.PHYSICAL,
+                BigDecimal.ONE, BigDecimal.ONE, null, null,
+                null, null, ItemStatus.ACTIVE, null, null, RowOptions.NONE, null);
+    }
+
+    private static final DeclaredUnit KILOGRAM =
+            new DeclaredUnit("Kilogram", "kg", UnitCategory.MASS, null);
+
+    /** A unit the shop already has is used as it stands, and says nothing. */
+    @Test
+    void reusesAUnitTheShopAlreadyHas() {
+        RowVerdict verdict = judge(countedIn("Piece"), emptyShop());
+
+        assertThat(verdict.status()).isEqualTo(ImportRowStatus.VALID);
+        assertThat(codesOf(verdict)).doesNotContain("UNIT_NOT_FOUND", "UNIT_WILL_BE_CREATED");
+    }
+
+    /** Written as its symbol, or its name, or its slug — all the same unit. */
+    @Test
+    void findsAUnitByWhateverTheRowCallsIt() {
+        assertThat(judge(countedIn("piece"), emptyShop()).status())
+                .isEqualTo(ImportRowStatus.VALID);
+    }
+
+    /**
+     * The point of the Units sheet: a shop counting in sacks should not have to
+     * go and create the unit somewhere else and start the import again.
+     */
+    @Test
+    void createsAUnitTheWorkbookDeclares() {
+        ValidationContext context =
+                context(List.of(), List.of(), Set.of(), Set.of(), List.of(KILOGRAM));
+
+        RowVerdict verdict = judge(countedIn("kg"), context);
+
+        assertThat(verdict.status()).isEqualTo(ImportRowStatus.VALID);
+        assertThat(codesOf(verdict)).contains("UNIT_WILL_BE_CREATED");
+        assertThat(messagesOf(verdict))
+                .anySatisfy(message -> assertThat(message).contains("Kilogram (kg)"));
+    }
+
+    /**
+     * "Will be created" is the import saying what it is about to do, not a
+     * problem — the row has to stay importable and the note has to read as
+     * information rather than as something to fix.
+     */
+    @Test
+    void treatsAUnitItWillCreateAsInformationRatherThanAProblem() {
+        ValidationContext context =
+                context(List.of(), List.of(), Set.of(), Set.of(), List.of(KILOGRAM));
+
+        RowVerdict verdict = judge(countedIn("kg"), context);
+
+        assertThat(verdict.issues())
+                .filteredOn(issue -> issue.code().equals("UNIT_WILL_BE_CREATED"))
+                .allSatisfy(issue -> assertThat(issue.severity()).isEqualTo(ImportIssueSeverity.INFO));
+    }
+
+    /**
+     * A unit nobody has and nobody described. "sack" could be a weight or a
+     * count, and being wrong about that corrupts every quantity it touches.
+     */
+    @Test
+    void refusesAUnitNothingDefines() {
+        RowVerdict verdict = judge(countedIn("sack"), emptyShop());
+
+        assertThat(verdict.status()).isEqualTo(ImportRowStatus.INVALID);
+        assertThat(codesOf(verdict)).contains("UNIT_NOT_FOUND");
+    }
+
+    /** Told the same unit measures something else, we stop rather than choose. */
+    @Test
+    void refusesAUnitTheFileRedefines() {
+        ValidationContext context = context(
+                List.of(), List.of(), Set.of(), Set.of(),
+                List.of(new DeclaredUnit("Piece", "pc", UnitCategory.MASS, null)));
+
+        RowVerdict verdict = judge(countedIn("Piece"), context);
+
+        assertThat(verdict.status()).isEqualTo(ImportRowStatus.INVALID);
+        assertThat(codesOf(verdict)).contains("UNIT_TYPE_CONFLICT");
+    }
+
+    /**
+     * An item's options share its unit, because the catalogue keeps the unit on
+     * the item. Whichever row was read last would otherwise decide it silently.
+     */
+    @Test
+    void refusesOptionRowsThatDisagreeAboutTheUnit() {
+        // Both units resolve, so the only thing left to complain about is that
+        // the rows disagree — which is the thing under test.
+        ValidationContext context =
+                context(List.of(), List.of(), Set.of(), Set.of(), List.of(KILOGRAM));
+
+        RowVerdict first = judge(optionCountedIn("Piece", "Small"), context);
+        RowVerdict second = judge(optionCountedIn("kg", "Large"), context);
+
+        assertThat(first.status()).isEqualTo(ImportRowStatus.VALID);
+        assertThat(second.status()).isEqualTo(ImportRowStatus.INVALID);
+        assertThat(codesOf(second)).contains("UNIT_CONFLICT_IN_GROUP");
+    }
+
+    /** Options agreeing about the unit are the ordinary case and pass. */
+    @Test
+    void acceptsOptionRowsThatShareAUnit() {
+        ValidationContext context = emptyShop();
+
+        judge(optionCountedIn("Piece", "Small"), context);
+        RowVerdict second = judge(optionCountedIn("Piece", "Large"), context);
+
+        assertThat(codesOf(second)).doesNotContain("UNIT_CONFLICT_IN_GROUP");
+    }
+
+    private ItemImportRecord optionCountedIn(String unitName, String size) {
+        return new ItemImportRecord(
+                "T-Shirt", "TS-" + size, null, "Apparel", null, unitName, ItemType.PHYSICAL,
+                BigDecimal.ONE, BigDecimal.ONE, null, null,
+                null, null, ItemStatus.ACTIVE, null, "TSHIRT-01",
+                RowOptions.of("Size", size, null, null), null);
     }
 }

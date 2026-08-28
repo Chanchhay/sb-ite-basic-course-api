@@ -2,6 +2,8 @@ package kh.edu.istad.ite.features.inventory.repository;
 
 import kh.edu.istad.ite.features.inventory.entity.StockLayer;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.repository.query.Param;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 
 import java.math.BigDecimal;
@@ -9,6 +11,11 @@ import java.util.List;
 import java.util.UUID;
 
 public interface StockLayerRepository extends JpaRepository<StockLayer, UUID> {
+
+    /** The FIFO batches an item was received in, cleared when the item is deleted. */
+    @Modifying
+    @Query("delete from StockLayer l where l.item.id = :itemId")
+    void deleteByItemId(@Param("itemId") UUID itemId);
 
     /**
      * Batches with stock left, in the order they are consumed.

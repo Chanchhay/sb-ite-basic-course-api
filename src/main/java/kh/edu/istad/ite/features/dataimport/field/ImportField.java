@@ -163,8 +163,9 @@ public enum ImportField {
             "Ties option rows together. Rows sharing this value become one item sold in options.",
             ImportFieldType.TEXT,
             Map.of(ImportTargetType.ITEM, OPTIONAL),
-            List.of("itemgroupid", "parentsku", "parentid", "parentcode", "styleid", "stylecode",
-                    "handle", "groupid", "productid", "parent", "variantgroup", "modelcode")
+            List.of("groupsby", "groupby", "itemgroupid", "parentsku", "parentid", "parentcode",
+                    "styleid", "stylecode", "handle", "groupid", "productid", "parent",
+                    "variantgroup", "modelcode")
     ),
 
     OPTION_1_NAME(

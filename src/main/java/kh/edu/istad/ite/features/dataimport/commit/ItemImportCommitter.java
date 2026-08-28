@@ -96,7 +96,7 @@ public class ItemImportCommitter implements ImportCommitter {
                         item.sku(),
                         null,
                         item.description(),
-                        null,
+                        item.imageUrl(),
                         null,
                         item.badge(),
                         item.barcode(),
@@ -146,7 +146,7 @@ public class ItemImportCommitter implements ImportCommitter {
                         item.sku(),
                         null,
                         item.description(),
-                        null,
+                        item.imageUrl(),
                         null,
                         item.badge(),
                         item.barcode(),
@@ -229,19 +229,21 @@ public class ItemImportCommitter implements ImportCommitter {
          * in it, which is not what importing a price list means.
          */
         if (existing != null) {
-            return new ResolvedGroup(existing.getId(), false);
+            return new ResolvedGroup(existing.getId(), List.of());
         }
+
+        List<UUID> created = new ArrayList<>();
+        UUID parentId = resolveParentGroupId(businessId, item.parentGroupName(), created);
 
         UUID createdId = itemGroupService
                 .createItemGroup(
                         businessId,
-                        new CreateItemGroupRequest(
-                                item.itemGroupName(),
-                                null,
-                                resolveParentGroupId(businessId, item.parentGroupName())))
+                        new CreateItemGroupRequest(item.itemGroupName(), null, parentId))
                 .id();
 
-        return new ResolvedGroup(createdId, true);
+        created.add(createdId);
+
+        return new ResolvedGroup(createdId, created);
     }
 
     /**
@@ -252,17 +254,26 @@ public class ItemImportCommitter implements ImportCommitter {
      * them. The two-level limit is the catalogue's to enforce, and checking has
      * already refused a row naming a parent that is itself a sub-category.
      */
-    private UUID resolveParentGroupId(UUID businessId, String parentName) {
+    private UUID resolveParentGroupId(UUID businessId, String parentName, List<UUID> created) {
         if (parentName == null) {
             return null;
         }
 
-        return itemGroupRepository
+        ItemGroup existing = itemGroupRepository
                 .findFirstByBusinessIdAndNameIgnoreCase(businessId, parentName)
-                .map(ItemGroup::getId)
-                .orElseGet(() -> itemGroupService
-                        .createItemGroup(businessId, new CreateItemGroupRequest(parentName, null, null))
-                        .id());
+                .orElse(null);
+
+        if (existing != null) {
+            return existing.getId();
+        }
+
+        UUID parentId = itemGroupService
+                .createItemGroup(businessId, new CreateItemGroupRequest(parentName, null, null))
+                .id();
+
+        created.add(parentId);
+
+        return parentId;
     }
 
     /**
@@ -294,12 +305,20 @@ public class ItemImportCommitter implements ImportCommitter {
                 .isPresent();
     }
 
-    /** A category id, and whether this import is what brought it into being. */
-    private record ResolvedGroup(UUID id, boolean created) {
+    /**
+     * The category a row is filed in, and whatever had to be brought into being
+     * to get there.
+     *
+     * A list rather than a flag because a single row can create two: the
+     * category and, when the file named one the shop had not got, its parent as
+     * well. Undoing an import has to take both away, and nothing else records
+     * which categories it invented rather than found.
+     */
+    private record ResolvedGroup(UUID id, List<UUID> created) {
     }
 
     private static List<UUID> createdGroupIds(ResolvedGroup group) {
-        return group.created() ? List.of(group.id()) : List.of();
+        return group.created();
     }
 
     // --- items sold in options ---------------------------------------------------

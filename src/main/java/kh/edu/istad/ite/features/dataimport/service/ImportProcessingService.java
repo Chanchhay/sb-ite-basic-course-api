@@ -2,6 +2,7 @@ package kh.edu.istad.ite.features.dataimport.service;
 
 import kh.edu.istad.ite.features.dataimport.canonical.MappingPlan;
 import kh.edu.istad.ite.features.dataimport.commit.GroupCommitOutcome;
+import kh.edu.istad.ite.features.dataimport.commit.UnitImportCommitter;
 import kh.edu.istad.ite.features.dataimport.entity.ImportJob;
 import kh.edu.istad.ite.features.dataimport.entity.ImportRow;
 import kh.edu.istad.ite.features.dataimport.repository.ImportJobRepository;
@@ -57,6 +58,7 @@ public class ImportProcessingService {
     private final ImportStagingService stagingService;
     private final ImportRowCommitService rowCommitService;
     private final ImportJobStateService jobStateService;
+    private final UnitImportCommitter unitCommitter;
 
     // --- checking ------------------------------------------------------------------
 
@@ -111,6 +113,20 @@ public class ImportProcessingService {
         try {
             ImportJob job = importJobRepository.findById(jobId).orElseThrow();
             MappingPlan plan = MappingPlan.from(job);
+
+            /*
+             * Units first, and before a single item is written.
+             *
+             * Everything downstream is measured in one: an item cannot be
+             * created without a unit, and stock cannot be counted without an
+             * item. Doing this after the rows would not fail loudly — it would
+             * fail as a whole file refused one row at a time for a unit sitting
+             * in the same workbook.
+             */
+            UnitImportCommitter.UnitCommitOutcome units =
+                    unitCommitter.commitUnits(job.getBusiness().getId(), job.getDeclaredUnits());
+
+            totals.addUnitsCreated(units.created());
 
             List<ImportRow> rows = importRowRepository.findByImportJobIdAndStatusInOrderByRowNumberAsc(
                     jobId,

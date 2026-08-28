@@ -13,6 +13,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.io.InputStream;
 import java.math.BigDecimal;
 import java.time.format.DateTimeFormatter;
@@ -38,6 +39,12 @@ import java.util.function.Consumer;
  */
 @Component
 public class XlsxSourceFileParser implements SourceFileParser {
+
+    /** The sheet our samples explain themselves on. */
+    public static final String INSTRUCTIONS_SHEET = "Instructions";
+
+    /** The sheet a shop declares units on, so the import can create them. */
+    public static final String UNITS_SHEET = "Units";
 
     private static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ISO_LOCAL_DATE;
 
@@ -99,12 +106,68 @@ public class XlsxSourceFileParser implements SourceFileParser {
         }
     }
 
+    /**
+     * The sheet holding the rows to import.
+     *
+     * Our own workbooks carry an Instructions sheet to read and a Units sheet
+     * to fill in beside the one that matters, so "the first sheet" stopped
+     * being the right answer the moment we started shipping them. Sheets we
+     * put there ourselves are skipped by name; anything else — every export a
+     * shop brings from its old system — falls through to the first sheet
+     * exactly as before.
+     */
     private Sheet firstSheet(Workbook workbook) {
         if (workbook.getNumberOfSheets() == 0) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "This workbook has no sheets in it.");
         }
 
+        for (int index = 0; index < workbook.getNumberOfSheets(); index++) {
+            Sheet sheet = workbook.getSheetAt(index);
+
+            if (!isOursToSkip(sheet.getSheetName())) {
+                return sheet;
+            }
+        }
+
         return workbook.getSheetAt(0);
+    }
+
+    /** Sheets we add to our own samples, which never hold the rows to import. */
+    private boolean isOursToSkip(String sheetName) {
+        String normalized = sheetName == null ? "" : sheetName.trim().toLowerCase();
+
+        return normalized.equals(INSTRUCTIONS_SHEET.toLowerCase())
+                || normalized.equals(UNITS_SHEET.toLowerCase());
+    }
+
+    @Override
+    public List<SourceRow> readNamedSheet(InputStream input, String sheetName, int rowLimit) {
+        try (Workbook workbook = new XSSFWorkbook(input)) {
+            Sheet sheet = workbook.getSheet(sheetName);
+
+            if (sheet == null) {
+                return List.of();
+            }
+
+            List<String> columns = columnsOf(sheet);
+            List<SourceRow> rows = new ArrayList<>();
+
+            for (int index = sheet.getFirstRowNum() + 1; index <= sheet.getLastRowNum(); index++) {
+                if (rows.size() >= rowLimit) {
+                    break;
+                }
+
+                SourceRow row = toRow(sheet.getRow(index), index, columns);
+
+                if (row != null) {
+                    rows.add(row);
+                }
+            }
+
+            return rows;
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
     }
 
     private List<String> columnsOf(Sheet sheet) {

@@ -3,6 +3,7 @@ package kh.edu.istad.ite.features.dataimport.validation;
 import kh.edu.istad.ite.features.catalog.entity.Item;
 import kh.edu.istad.ite.features.catalog.entity.ItemGroup;
 import kh.edu.istad.ite.features.catalog.entity.Unit;
+import kh.edu.istad.ite.features.dataimport.canonical.DeclaredUnit;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -62,7 +63,18 @@ public class ValidationContext {
 
     /** Which category each sub-category sits under, both as the shop spelled them. */
     private final Map<String, String> parentNameByGroup = new HashMap<>();
-    private final Map<String, UUID> unitIdsByName = new HashMap<>();
+    /**
+     * Every way of naming a unit, mapped to the units that answer to it.
+     *
+     * A list rather than a single id because nothing stops two units sharing a
+     * symbol — the catalogue enforces unique names and slugs, never symbols —
+     * so "bag" can genuinely mean two things, and picking one would be a guess
+     * with a shop's quantities riding on it.
+     */
+    private final Map<String, List<Unit>> unitsByName = new HashMap<>();
+
+    /** What the uploaded workbook says it needs, from its Units sheet. */
+    private final List<DeclaredUnit> declaredUnits = new ArrayList<>();
     private final Map<String, ExistingItem> itemsBySku = new HashMap<>();
     private final Map<String, ExistingItem> itemsByBarcode = new HashMap<>();
     private final Map<String, ExistingItem> itemsByName = new HashMap<>();
@@ -83,6 +95,17 @@ public class ValidationContext {
      * name but the option — one Small/Black per shirt.
      */
     private final Map<String, Integer> groupFirstRow = new LinkedHashMap<>();
+
+    /**
+     * The unit the first row of each option group named.
+     *
+     * FluxiBiz keeps the unit on the item, not on the shelf — {@code ItemVariant}
+     * has no unit of its own — so every row describing one item has to agree
+     * about it. A file selling Small in pieces and Large by the kilogram is
+     * describing something the catalogue cannot hold, and the last row read
+     * would otherwise silently decide it for all of them.
+     */
+    private final Map<String, String> groupUnitNames = new LinkedHashMap<>();
     private final Map<String, Map<String, Integer>> groupOptions = new LinkedHashMap<>();
 
     /** Categories this file will create, so a second row naming one is not a clash. */
@@ -108,9 +131,14 @@ public class ValidationContext {
             List<Unit> units,
             List<Item> items,
             Set<UUID> itemIdsWithStockHistory,
-            Set<UUID> itemIdsWithVariants
+            Set<UUID> itemIdsWithVariants,
+            List<DeclaredUnit> declaredUnits
     ) {
         this.businessId = businessId;
+
+        if (declaredUnits != null) {
+            this.declaredUnits.addAll(declaredUnits);
+        }
 
         Map<UUID, String> groupNamesById = new HashMap<>();
 
@@ -140,13 +168,9 @@ public class ValidationContext {
         }
 
         for (Unit unit : units) {
-            unitIdsByName.putIfAbsent(key(unit.getName()), unit.getId());
-            if (unit.getSlug() != null) {
-                unitIdsByName.putIfAbsent(key(unit.getSlug()), unit.getId());
-            }
-            if (unit.getSymbol() != null) {
-                unitIdsByName.putIfAbsent(key(unit.getSymbol()), unit.getId());
-            }
+            rememberUnitAs(unit.getName(), unit);
+            rememberUnitAs(unit.getSlug(), unit);
+            rememberUnitAs(unit.getSymbol(), unit);
         }
 
         for (Item item : items) {
@@ -208,8 +232,69 @@ public class ValidationContext {
         return name == null ? null : parentNameByGroup.get(key(name));
     }
 
-    public UUID findUnitId(String name) {
-        return name == null ? null : unitIdsByName.get(key(name));
+    /**
+     * What a row's unit cell means: an existing unit, one this file will
+     * create, or a reason it cannot be used.
+     *
+     * The catalogue is asked first. A shop that already counts in Kilograms
+     * keeps counting in the one it has, whatever a workbook declares beside it
+     * — an import brings a catalogue in, it does not redefine the shop.
+     */
+    public UnitResolution resolveUnit(String name) {
+        if (name == null || name.isBlank()) {
+            return UnitResolution.notFound();
+        }
+
+        List<Unit> existing = unitsByName.getOrDefault(key(name), List.of());
+
+        if (existing.size() > 1) {
+            return UnitResolution.ambiguous(existing.stream().map(Unit::getName).toList());
+        }
+
+        DeclaredUnit declared = declaredUnits.stream()
+                .filter(unit -> unit.answersTo(name))
+                .findFirst()
+                .orElse(null);
+
+        if (existing.size() == 1) {
+            Unit unit = existing.getFirst();
+
+            /*
+             * Told the same unit measures something else, we stop rather than
+             * choose. Silently keeping ours would import quantities under a
+             * meaning the file never intended; silently taking theirs would
+             * change what every item already counted in it means.
+             */
+            if (declared != null && declared.category() != unit.getCategory()) {
+                return UnitResolution.typeConflict(declared, unit.getCategory().name());
+            }
+
+            return UnitResolution.existing(unit.getId());
+        }
+
+        return declared == null
+                ? UnitResolution.notFound()
+                : UnitResolution.willBeCreated(declared);
+    }
+
+    /** The units this file will have to create, in the order it declared them. */
+    public List<DeclaredUnit> unitsToCreate() {
+        return declaredUnits.stream()
+                .filter(declared -> resolveUnit(declared.name()).outcome()
+                        == UnitResolution.Outcome.WILL_BE_CREATED)
+                .toList();
+    }
+
+    private void rememberUnitAs(String name, Unit unit) {
+        if (name == null || name.isBlank()) {
+            return;
+        }
+
+        List<Unit> held = unitsByName.computeIfAbsent(key(name), ignored -> new ArrayList<>());
+
+        if (held.stream().noneMatch(other -> other.getId().equals(unit.getId()))) {
+            held.add(unit);
+        }
     }
 
     public ExistingItem findItemBySku(String sku) {
@@ -359,6 +444,26 @@ public class ValidationContext {
         Integer first = groupFirstRow.putIfAbsent(key(groupKey), rowNumber);
 
         return first == null;
+    }
+
+    /**
+     * Claims the unit for an option group, or names the one already claimed.
+     *
+     * Returns null when this row agrees with its siblings — including when
+     * neither names a unit, which leaves the file's own default to cover them.
+     */
+    public String claimGroupUnit(String groupKey, String unitName) {
+        if (groupKey == null) {
+            return null;
+        }
+
+        String claimed = groupUnitNames.putIfAbsent(key(groupKey), unitName == null ? "" : unitName);
+
+        if (claimed == null || claimed.equalsIgnoreCase(unitName == null ? "" : unitName)) {
+            return null;
+        }
+
+        return claimed;
     }
 
     public Integer groupOpenedAt(String groupKey) {
