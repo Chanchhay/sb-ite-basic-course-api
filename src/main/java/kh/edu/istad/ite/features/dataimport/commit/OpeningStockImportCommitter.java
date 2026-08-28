@@ -82,7 +82,7 @@ public class OpeningStockImportCommitter implements ImportCommitter {
                 job.getSourceFileName()
         );
 
-        return CommitOutcome.created(item.getId(), stockEntryId, false);
+        return CommitOutcome.created(item.getId(), stockEntryId, List.of());
     }
 
     /**
