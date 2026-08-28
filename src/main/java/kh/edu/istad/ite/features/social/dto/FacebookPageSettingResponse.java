@@ -9,5 +9,8 @@ public record FacebookPageSettingResponse(
         String pageName,
         boolean connected,
         boolean active,
-        String welcomeMessage
+        String welcomeMessage,
+        boolean miniAppEnabled,
+        /** Only set when miniAppEnabled — the same webview URL the persistent menu button opens. */
+        String miniAppUrl
 ) {}

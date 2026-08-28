@@ -108,16 +108,23 @@ public class FacebookWebhookController {
         String pageId = messaging.path("recipient").path("id").asText();
 
         Optional<BusinessFacebookPage> optPage = pageService.findByPageId(pageId);
-        if (optPage.isEmpty() || !Boolean.TRUE.equals(optPage.get().getIsActive())) {
-            log.warn("Page ID {} not found in database or is inactive.", pageId);
+        if (optPage.isEmpty()) {
+            log.warn("Page ID {} not found in database.", pageId);
             return;
         }
         BusinessFacebookPage page = optPage.get();
 
+        boolean textFlowEnabled = Boolean.TRUE.equals(page.getIsActive());
+        boolean miniAppEnabled = Boolean.TRUE.equals(page.getIsMiniAppEnabled());
+        if (!textFlowEnabled && !miniAppEnabled) {
+            log.warn("Page ID {} has neither text flow nor Mini App enabled — ignoring.", pageId);
+            return;
+        }
+
         if (messaging.has("postback")) {
             String payload = messaging.path("postback").path("payload").asText();
             log.info("🔘 Postback from PSID [{}] to Page [{}]: {}", senderId, pageId, payload);
-            handlePostback(page, senderId, payload);
+            handlePostback(page, senderId, payload, textFlowEnabled, miniAppEnabled);
             return;
         }
 
@@ -126,17 +133,39 @@ public class FacebookWebhookController {
         JsonNode messageNode = messaging.get("message");
 
         if (messageNode.has("quick_reply")) {
-            handlePostback(page, senderId, messageNode.path("quick_reply").path("payload").asText());
+            handlePostback(page, senderId, messageNode.path("quick_reply").path("payload").asText(), textFlowEnabled, miniAppEnabled);
             return;
         }
 
         String text = messageNode.path("text").asText();
         log.info("📩 Message from PSID [{}] to Page [{}]: {}", senderId, pageId, text);
 
-        // Shopping happens entirely inside the Mini App webview now — the
-        // bot's only job in a text conversation is to point back at it,
-        // never to browse/search the catalog through chat itself.
-        sendOpenShopPrompt(page, senderId);
+        if (textFlowEnabled) {
+            if (isCatalogCommand(text)) {
+                catalogService.showCatalog(page, senderId);
+            } else if (text != null && (text.contains("ប្រភេទទំនិញ") || text.toLowerCase().contains("category"))) {
+                catalogService.showCategories(page, senderId);
+            } else if (text != null && text.trim().length() >= 2) {
+                catalogService.searchItems(page, senderId, text.trim());
+            } else {
+                catalogService.sendWelcomeMenu(page, senderId);
+            }
+        } else {
+            // Mini App only — the bot's only job in a text conversation is
+            // to point back at the webview, never to browse/search the
+            // catalog through chat itself.
+            sendOpenShopPrompt(page, senderId);
+        }
+    }
+
+    private boolean isCatalogCommand(String text) {
+        if (text == null) return false;
+        String normalized = text.trim().toLowerCase();
+        return normalized.contains("catalog")
+                || normalized.contains("menu")
+                || normalized.contains("ម៉ឺនុយ")
+                || normalized.contains("ផលិតផល")
+                || normalized.contains("មើលផលិតផល");
     }
 
     /** Messenger's equivalent of Telegram's "Open Shop" prompt — a single
@@ -158,7 +187,7 @@ public class FacebookWebhookController {
                 List.of(shopButton));
     }
 
-    private void handlePostback(BusinessFacebookPage page, String psid, String payload) {
+    private void handlePostback(BusinessFacebookPage page, String psid, String payload, boolean textFlowEnabled, boolean miniAppEnabled) {
         if (payload == null) return;
 
         // Auto-register/fetch customer and bot session for any postback
@@ -267,7 +296,11 @@ public class FacebookWebhookController {
         }
 
         if ("GET_STARTED".equals(payload)) {
-            sendOpenShopPrompt(page, psid);
+            if (miniAppEnabled) {
+                sendOpenShopPrompt(page, psid);
+            } else if (textFlowEnabled) {
+                catalogService.sendWelcomeMenu(page, psid);
+            }
         }
     }
 }
