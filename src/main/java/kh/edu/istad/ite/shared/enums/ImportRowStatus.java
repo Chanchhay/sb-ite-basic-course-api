@@ -16,5 +16,8 @@ public enum ImportRowStatus {
     CREATED,
     UPDATED,
     SKIPPED,
+
+    /** Created by this import, and since deleted by undoing it. */
+    REVERTED,
     FAILED
 }
