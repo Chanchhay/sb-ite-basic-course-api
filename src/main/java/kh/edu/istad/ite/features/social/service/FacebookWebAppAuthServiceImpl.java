@@ -56,7 +56,11 @@ public class FacebookWebAppAuthServiceImpl implements FacebookWebAppAuthService 
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND, "This store has no Facebook Page connected"));
 
-        if (!Boolean.TRUE.equals(page.getIsActive())) {
+        // This endpoint is exclusively the Mini App's own login — gate it on
+        // isMiniAppEnabled alone. isActive (the text/button flow) is a
+        // separate switch and must never decide whether the Mini App itself
+        // is reachable, same reasoning as Telegram's auth gate.
+        if (!Boolean.TRUE.equals(page.getIsMiniAppEnabled())) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Messenger ordering is not enabled for this store");
         }
 

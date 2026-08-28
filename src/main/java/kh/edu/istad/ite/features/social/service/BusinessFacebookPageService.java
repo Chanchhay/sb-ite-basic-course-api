@@ -39,8 +39,7 @@ public class BusinessFacebookPageService {
 
         BusinessFacebookPage saved = repository.save(page);
 
-        String miniAppUrl = storefrontProps.buildMessengerMiniAppUrl(business.getSlug());
-        graphClient.setupMessengerProfile(pageAccessToken, miniAppUrl);
+        applyMessengerProfile(saved);
         graphClient.subscribePageToWebhook(pageId, pageAccessToken);
 
         return saved;
@@ -57,5 +56,38 @@ public class BusinessFacebookPageService {
     @Transactional
     public void disconnectPage(UUID businessId) {
         repository.findByBusinessId(businessId).ifPresent(repository::delete);
+    }
+
+    /** The old conversational text/button bot flow — independent of Mini App. */
+    @Transactional
+    public BusinessFacebookPage setActive(UUID businessId, boolean active) {
+        BusinessFacebookPage page = findMySetting(businessId);
+        page.setIsActive(active);
+        BusinessFacebookPage saved = repository.save(page);
+        applyMessengerProfile(saved);
+        return saved;
+    }
+
+    @Transactional
+    public BusinessFacebookPage setMiniAppEnabled(UUID businessId, boolean enabled) {
+        BusinessFacebookPage page = findMySetting(businessId);
+        page.setIsMiniAppEnabled(enabled);
+        BusinessFacebookPage saved = repository.save(page);
+        applyMessengerProfile(saved);
+        return saved;
+    }
+
+    private void applyMessengerProfile(BusinessFacebookPage page) {
+        String miniAppUrl = storefrontProps.buildMessengerMiniAppUrl(page.getBusiness().getSlug());
+        graphClient.setupMessengerProfile(
+                page.getPageAccessTokenEncrypted(),
+                miniAppUrl,
+                Boolean.TRUE.equals(page.getIsActive()),
+                Boolean.TRUE.equals(page.getIsMiniAppEnabled()));
+    }
+
+    private BusinessFacebookPage findMySetting(UUID businessId) {
+        return repository.findByBusinessId(businessId)
+                .orElseThrow(() -> new IllegalArgumentException("Facebook Page has not been connected"));
     }
 }

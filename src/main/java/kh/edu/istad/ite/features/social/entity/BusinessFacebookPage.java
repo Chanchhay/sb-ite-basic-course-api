@@ -46,6 +46,12 @@ public class BusinessFacebookPage extends BasedAuditingEntity {
     @Column(name = "welcome_message", columnDefinition = "text")
     private String welcomeMessage;
 
+    // The old conversational text/button flow (catalog browsing, cart, bot-driven checkout).
     @Column(name = "is_active", nullable = false)
     private Boolean isActive = false;
+
+    // The Mini App webview ("🛍 Open Shop" button) — independent of isActive,
+    // same relationship as BusinessTelegramBot's isActive/isMiniAppEnabled pair.
+    @Column(name = "is_mini_app_enabled", nullable = false)
+    private Boolean isMiniAppEnabled = false;
 }

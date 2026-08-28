@@ -2,11 +2,13 @@ package kh.edu.istad.ite.features.social.facebook;
 
 import kh.edu.istad.ite.shared.helper.BusinessHelper;
 import kh.edu.istad.ite.config.props.FacebookProps;
+import kh.edu.istad.ite.config.props.StorefrontProps;
 import kh.edu.istad.ite.config.security.BusinessSecurityValidator;
 import kh.edu.istad.ite.config.security.SecurityUtils;
 import kh.edu.istad.ite.features.business.entity.Business;
 import kh.edu.istad.ite.features.business.repository.BusinessRepository;
 import kh.edu.istad.ite.features.social.dto.FacebookPageSettingResponse;
+import kh.edu.istad.ite.features.social.entity.BusinessFacebookPage;
 import kh.edu.istad.ite.features.social.service.BusinessFacebookPageService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -14,6 +16,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -33,6 +36,7 @@ public class FacebookConnectController {
     private static final String SCOPES = "pages_show_list,pages_messaging,pages_manage_metadata,pages_read_engagement";
 
     private final FacebookProps facebookProps;
+    private final StorefrontProps storefrontProps;
     private final FacebookGraphClient graphClient;
     private final BusinessFacebookPageService pageService;
     private final BusinessSecurityValidator businessSecurityValidator;
@@ -47,24 +51,43 @@ public class FacebookConnectController {
     public ResponseEntity<FacebookPageSettingResponse> getMyFacebookPageSetting() {
         UUID businessId = findMyBusiness().getId();
         return pageService.findByBusinessId(businessId)
-                .map(page -> ResponseEntity.ok(new FacebookPageSettingResponse(
-                        page.getId(),
-                        businessId,
-                        page.getPageId(),
-                        page.getPageName(),
-                        true,
-                        Boolean.TRUE.equals(page.getIsActive()),
-                        page.getWelcomeMessage()
-                )))
-                .orElseGet(() -> ResponseEntity.ok(new FacebookPageSettingResponse(
-                        null,
-                        businessId,
-                        null,
-                        null,
-                        false,
-                        false,
-                        null
-                )));
+                .map(page -> ResponseEntity.ok(toResponse(page)))
+                .orElseGet(() -> ResponseEntity.ok(emptyResponse(businessId)));
+    }
+
+    /** The old conversational text/button bot flow — independent of Mini App, same relationship as Telegram's isActive/isMiniAppEnabled pair. */
+    @PatchMapping("/api/v1/businesses/social-settings/facebook/activate")
+    public FacebookPageSettingResponse activate() {
+        return toResponse(pageService.setActive(findMyBusiness().getId(), true));
+    }
+
+    @PatchMapping("/api/v1/businesses/social-settings/facebook/deactivate")
+    public FacebookPageSettingResponse deactivate() {
+        return toResponse(pageService.setActive(findMyBusiness().getId(), false));
+    }
+
+    @PatchMapping("/api/v1/businesses/social-settings/facebook/mini-app")
+    public FacebookPageSettingResponse setMiniAppEnabled(@RequestParam boolean enabled) {
+        return toResponse(pageService.setMiniAppEnabled(findMyBusiness().getId(), enabled));
+    }
+
+    private FacebookPageSettingResponse toResponse(BusinessFacebookPage page) {
+        boolean miniAppEnabled = Boolean.TRUE.equals(page.getIsMiniAppEnabled());
+        return new FacebookPageSettingResponse(
+                page.getId(),
+                page.getBusiness().getId(),
+                page.getPageId(),
+                page.getPageName(),
+                true,
+                Boolean.TRUE.equals(page.getIsActive()),
+                page.getWelcomeMessage(),
+                miniAppEnabled,
+                miniAppEnabled ? storefrontProps.buildMessengerMiniAppUrl(page.getBusiness().getSlug()) : null
+        );
+    }
+
+    private FacebookPageSettingResponse emptyResponse(UUID businessId) {
+        return new FacebookPageSettingResponse(null, businessId, null, null, false, false, null, false, null);
     }
 
     @GetMapping("/api/v1/businesses/social-settings/facebook/connect-url")
@@ -96,24 +119,8 @@ public class FacebookConnectController {
         businessSecurityValidator.validateBusinessOwner(businessId);
 
         return pageService.findByBusinessId(businessId)
-                .map(page -> ResponseEntity.ok(new FacebookPageSettingResponse(
-                        page.getId(),
-                        businessId,
-                        page.getPageId(),
-                        page.getPageName(),
-                        true,
-                        Boolean.TRUE.equals(page.getIsActive()),
-                        page.getWelcomeMessage()
-                )))
-                .orElseGet(() -> ResponseEntity.ok(new FacebookPageSettingResponse(
-                        null,
-                        businessId,
-                        null,
-                        null,
-                        false,
-                        false,
-                        null
-                )));
+                .map(page -> ResponseEntity.ok(toResponse(page)))
+                .orElseGet(() -> ResponseEntity.ok(emptyResponse(businessId)));
     }
 
     @DeleteMapping("/api/v1/businesses/{businessId}/social/facebook")
