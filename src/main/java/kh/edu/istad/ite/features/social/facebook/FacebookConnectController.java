@@ -49,40 +49,50 @@ public class FacebookConnectController {
 
     @GetMapping("/api/v1/businesses/social-settings/facebook")
     public ResponseEntity<FacebookPageSettingResponse> getMyFacebookPageSetting() {
-        UUID businessId = findMyBusiness().getId();
-        return pageService.findByBusinessId(businessId)
-                .map(page -> ResponseEntity.ok(toResponse(page)))
-                .orElseGet(() -> ResponseEntity.ok(emptyResponse(businessId)));
+        Business business = findMyBusiness();
+        return pageService.findByBusinessId(business.getId())
+                .map(page -> ResponseEntity.ok(toResponse(page, business)))
+                .orElseGet(() -> ResponseEntity.ok(emptyResponse(business.getId())));
     }
 
     /** The old conversational text/button bot flow — independent of Mini App, same relationship as Telegram's isActive/isMiniAppEnabled pair. */
     @PatchMapping("/api/v1/businesses/social-settings/facebook/activate")
     public FacebookPageSettingResponse activate() {
-        return toResponse(pageService.setActive(findMyBusiness().getId(), true));
+        Business business = findMyBusiness();
+        return toResponse(pageService.setActive(business.getId(), true), business);
     }
 
     @PatchMapping("/api/v1/businesses/social-settings/facebook/deactivate")
     public FacebookPageSettingResponse deactivate() {
-        return toResponse(pageService.setActive(findMyBusiness().getId(), false));
+        Business business = findMyBusiness();
+        return toResponse(pageService.setActive(business.getId(), false), business);
     }
 
     @PatchMapping("/api/v1/businesses/social-settings/facebook/mini-app")
     public FacebookPageSettingResponse setMiniAppEnabled(@RequestParam boolean enabled) {
-        return toResponse(pageService.setMiniAppEnabled(findMyBusiness().getId(), enabled));
+        Business business = findMyBusiness();
+        return toResponse(pageService.setMiniAppEnabled(business.getId(), enabled), business);
     }
 
-    private FacebookPageSettingResponse toResponse(BusinessFacebookPage page) {
+    /**
+     * Takes the {@link Business} explicitly rather than reading {@code page.getBusiness()} —
+     * that association is lazy, and by the time this DTO is built the transaction that
+     * loaded {@code page} (inside the service layer) has already closed, so touching the
+     * proxy here throws {@code LazyInitializationException}. Every caller already has a
+     * fully-loaded {@code Business} in hand anyway.
+     */
+    private FacebookPageSettingResponse toResponse(BusinessFacebookPage page, Business business) {
         boolean miniAppEnabled = Boolean.TRUE.equals(page.getIsMiniAppEnabled());
         return new FacebookPageSettingResponse(
                 page.getId(),
-                page.getBusiness().getId(),
+                business.getId(),
                 page.getPageId(),
                 page.getPageName(),
                 true,
                 Boolean.TRUE.equals(page.getIsActive()),
                 page.getWelcomeMessage(),
                 miniAppEnabled,
-                miniAppEnabled ? storefrontProps.buildMessengerMiniAppUrl(page.getBusiness().getSlug()) : null
+                miniAppEnabled ? storefrontProps.buildMessengerMiniAppUrl(business.getSlug()) : null
         );
     }
 
@@ -117,9 +127,11 @@ public class FacebookConnectController {
     @GetMapping("/api/v1/businesses/{businessId}/social/facebook")
     public ResponseEntity<FacebookPageSettingResponse> getFacebookPageSetting(@PathVariable UUID businessId) {
         businessSecurityValidator.validateBusinessOwner(businessId);
+        Business business = businessRepository.findById(businessId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Business has not been found"));
 
         return pageService.findByBusinessId(businessId)
-                .map(page -> ResponseEntity.ok(toResponse(page)))
+                .map(page -> ResponseEntity.ok(toResponse(page, business)))
                 .orElseGet(() -> ResponseEntity.ok(emptyResponse(businessId)));
     }
 
