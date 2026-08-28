@@ -56,7 +56,7 @@ public class ItemGroupImportCommitter implements ImportCommitter {
                     new UpdateItemGroupRequest(null, group.note(), null)
             );
 
-            return CommitOutcome.updated(matchedEntityId, null, false);
+            return CommitOutcome.updated(matchedEntityId, null, java.util.List.of());
         }
 
         UUID parentId = null;
@@ -87,6 +87,6 @@ public class ItemGroupImportCommitter implements ImportCommitter {
                 new CreateItemGroupRequest(group.name(), group.note(), parentId)
         );
 
-        return CommitOutcome.created(created.id(), null, false);
+        return CommitOutcome.created(created.id(), null, java.util.List.of(created.id()));
     }
 }

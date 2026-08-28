@@ -44,6 +44,9 @@ public class CartItem extends BasedAuditingEntity {
     @Column(name = "price_snapshot", nullable = false, precision = 10, scale = 2)
     private BigDecimal priceSnapshot;
 
+    @Column(name = "base_price", precision = 10, scale = 2)
+    private BigDecimal basePrice;
+
     /** The unit this line is sold in — a case, a six-pack, or the base unit. */
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "unit_id")
@@ -57,14 +60,7 @@ public class CartItem extends BasedAuditingEntity {
     @Column(name = "unit_factor", precision = 18, scale = 6)
     private BigDecimal unitFactor = BigDecimal.ONE;
 
-    /**
-     * The options chosen on this line — 50% sugar, no ice.
-     *
-     * Part of what makes the line the line: two of the same drink at different
-     * sweetness are two orders, not one of quantity two, so
-     * {@link #selectionKey()} joins the item and the variant in deciding
-     * whether an add lands on an existing line or starts a new one.
-     */
+
     @Builder.Default
     @OneToMany(mappedBy = "cartItem", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<CartItemSelection> selections = new ArrayList<>();
@@ -74,14 +70,7 @@ public class CartItem extends BasedAuditingEntity {
         selections.add(selection);
     }
 
-    /**
-     * The extras ticked on this line — pearls, an extra shot.
-     *
-     * Part of what makes the line the line, exactly as the options are: a
-     * latte with pearls and one without are two orders, not one of quantity
-     * two, so {@link #addOnKey()} joins {@link #selectionKey()} in deciding
-     * whether an add lands on an existing line or starts a new one.
-     */
+
     @Builder.Default
     @OneToMany(mappedBy = "cartItem", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<CartItemAddOn> addOns = new ArrayList<>();

@@ -117,7 +117,7 @@ public class ItemImportCommitter implements ImportCommitter {
 
         UUID stockEntryId = postOpeningStock(businessId, created, item, job);
 
-        return CommitOutcome.created(created.id(), stockEntryId, group.created());
+        return CommitOutcome.created(created.id(), stockEntryId, createdGroupIds(group));
     }
 
     /**
@@ -167,7 +167,7 @@ public class ItemImportCommitter implements ImportCommitter {
 
         UUID stockEntryId = postOpeningStock(businessId, updated, item, job);
 
-        return CommitOutcome.updated(updated.id(), stockEntryId, group.created());
+        return CommitOutcome.updated(updated.id(), stockEntryId, createdGroupIds(group));
     }
 
     /**
@@ -266,6 +266,10 @@ public class ItemImportCommitter implements ImportCommitter {
     private record ResolvedGroup(UUID id, boolean created) {
     }
 
+    private static List<UUID> createdGroupIds(ResolvedGroup group) {
+        return group.created() ? List.of(group.id()) : List.of();
+    }
+
     // --- items sold in options ---------------------------------------------------
 
     /**
@@ -293,7 +297,7 @@ public class ItemImportCommitter implements ImportCommitter {
         UUID businessId = job.getBusiness().getId();
 
         if (matchedEntityId != null && plan.duplicateStrategy() != ImportDuplicateStrategy.UPDATE_EXISTING) {
-            return GroupCommitOutcome.of(ImportRowStatus.SKIPPED, matchedEntityId, false, Map.of());
+            return GroupCommitOutcome.of(ImportRowStatus.SKIPPED, matchedEntityId, List.of(), Map.of());
         }
 
         UUID unitId = resolveUnitId(businessId, head, plan);
@@ -345,7 +349,7 @@ public class ItemImportCommitter implements ImportCommitter {
         return GroupCommitOutcome.of(
                 matchedEntityId == null ? ImportRowStatus.CREATED : ImportRowStatus.UPDATED,
                 item.id(),
-                group.created(),
+                createdGroupIds(group),
                 stock
         );
     }

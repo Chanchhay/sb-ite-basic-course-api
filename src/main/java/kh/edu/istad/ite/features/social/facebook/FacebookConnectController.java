@@ -90,6 +90,7 @@ public class FacebookConnectController {
         return ResponseEntity.noContent().build();
     }
 
+
     @GetMapping("/api/v1/businesses/{businessId}/social/facebook")
     public ResponseEntity<FacebookPageSettingResponse> getFacebookPageSetting(@PathVariable UUID businessId) {
         businessSecurityValidator.validateBusinessOwner(businessId);

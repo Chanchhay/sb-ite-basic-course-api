@@ -1,18 +1,27 @@
 package kh.edu.istad.ite.features.order.mapper;
 
+import kh.edu.istad.ite.features.discount.entity.Discount;
+import kh.edu.istad.ite.features.discount.repository.DiscountRepository;
 import kh.edu.istad.ite.features.order.dto.OrderItemResponse;
 import kh.edu.istad.ite.features.order.dto.OrderResponse;
 import kh.edu.istad.ite.features.order.dto.SaleResponse;
 import kh.edu.istad.ite.features.order.entity.Order;
 import kh.edu.istad.ite.features.order.entity.OrderItem;
 import kh.edu.istad.ite.features.order.entity.Sale;
+import lombok.RequiredArgsConstructor;
 import org.mapstruct.Mapping;
 import org.springframework.stereotype.Component;
+import org.springframework.util.StringUtils;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.List;
 
 @Component
+@RequiredArgsConstructor
 public class OrderMapper {
+
+    private final DiscountRepository discountRepository;
 
     @Mapping(target = "taxInclusionType", source = "taxInclusionType")
     public OrderResponse toResponse(Order order) {
@@ -37,6 +46,7 @@ public class OrderMapper {
                 null,
                 order.getSubtotal(),
                 order.getDiscountAmount(),
+                resolveDiscountLabel(order.getDiscountAmount(), order.getSubtotal(), order.getDiscountCode(), order.getDiscountId()),
                 order.getTaxRate(),
                 order.getTaxAmount(),
                 order.getTaxInclusionType(),
@@ -49,6 +59,37 @@ public class OrderMapper {
                 items,
                 order.getCreatedDate()
         );
+    }
+
+    /**
+     * What to call a discount on a receipt — the coupon code the shopper
+     * typed, the discount's own name, or a plain percentage when neither is
+     * on record. Mirrors StorefrontCheckoutServiceImpl's receipt mapping, so
+     * every channel names the same discount the same way.
+     */
+    private String resolveDiscountLabel(BigDecimal discountAmount, BigDecimal subtotal, String discountCode, java.util.UUID discountId) {
+        if (discountAmount == null || discountAmount.compareTo(BigDecimal.ZERO) <= 0) {
+            return null;
+        }
+
+        if (StringUtils.hasText(discountCode)) {
+            return discountCode;
+        }
+
+        if (discountId != null) {
+            String name = discountRepository.findById(discountId).map(Discount::getName).orElse(null);
+            if (StringUtils.hasText(name)) {
+                return name;
+            }
+        }
+
+        if (subtotal != null && subtotal.compareTo(BigDecimal.ZERO) > 0) {
+            BigDecimal pct = discountAmount.multiply(new BigDecimal("100"))
+                    .divide(subtotal, 0, RoundingMode.HALF_UP);
+            return pct.toPlainString() + "% OFF";
+        }
+
+        return null;
     }
 
     public OrderItemResponse toItemResponse(OrderItem item) {
@@ -92,10 +133,11 @@ public class OrderMapper {
         kh.edu.istad.ite.features.customer.entity.Customer customer = sale.getCustomer();
         kh.edu.istad.ite.features.customer.entity.GlobalCustomer globalCustomer =
                 customer == null ? null : customer.getGlobalCustomer();
+        Order order = sale.getOrder();
 
         return new SaleResponse(
                 sale.getId(),
-                sale.getOrder().getId(),
+                order.getId(),
                 sale.getInvoiceNumber(),
                 sale.getCashierId(),
                 customer == null ? null : customer.getId(),
@@ -105,6 +147,7 @@ public class OrderMapper {
                 sale.getChannel(),
                 sale.getSubtotal(),
                 sale.getDiscountAmount(),
+                resolveDiscountLabel(sale.getDiscountAmount(), sale.getSubtotal(), order.getDiscountCode(), order.getDiscountId()),
                 sale.getTaxRate(),
                 sale.getTaxAmount(),
                 sale.getTaxInclusionType(),

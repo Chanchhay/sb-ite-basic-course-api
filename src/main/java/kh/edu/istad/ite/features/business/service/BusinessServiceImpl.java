@@ -159,6 +159,18 @@ public class BusinessServiceImpl implements BusinessService {
         if (request.closeTime() != null) {
             business.setCloseTime(TextHelper.trimToNull(request.closeTime()));
         }
+        if (request.taxEnabled() != null) {
+            business.setTaxEnabled(request.taxEnabled());
+        }
+        if (request.taxRate() != null) {
+            business.setTaxRate(request.taxRate());
+        }
+        if (request.taxInclusionType() != null) {
+            business.setTaxInclusionType(request.taxInclusionType());
+        }
+        if (request.taxLabel() != null) {
+            business.setTaxLabel(TextHelper.trimToNull(request.taxLabel()));
+        }
 
         return businessMapper.toResponse(businessRepository.save(business));
     }
