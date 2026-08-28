@@ -173,6 +173,9 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/v1/businesses/social-settings/facebook",
                                 "/api/v1/businesses/social-settings/facebook/*")
                         .hasAuthority("SCOPE_business:read")
+                        .requestMatchers(HttpMethod.PATCH, "/api/v1/businesses/social-settings/facebook",
+                                "/api/v1/businesses/social-settings/facebook/*")
+                        .hasAuthority("SCOPE_business:update")
                         .requestMatchers(HttpMethod.DELETE, "/api/v1/businesses/social-settings/facebook")
                         .hasAuthority("SCOPE_business:update")
 
