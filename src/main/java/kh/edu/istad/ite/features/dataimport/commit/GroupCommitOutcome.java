@@ -3,6 +3,7 @@ package kh.edu.istad.ite.features.dataimport.commit;
 import kh.edu.istad.ite.shared.enums.ImportRowStatus;
 
 import java.util.Map;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -19,22 +20,30 @@ import java.util.UUID;
 public record GroupCommitOutcome(
         ImportRowStatus status,
         UUID entityId,
-        boolean itemGroupCreated,
+        List<UUID> createdItemGroupIds,
         Map<Integer, UUID> stockEntryByRow,
         String failureMessage
 ) {
 
+    public GroupCommitOutcome {
+        createdItemGroupIds = createdItemGroupIds == null ? List.of() : List.copyOf(createdItemGroupIds);
+    }
+
+    public boolean itemGroupCreated() {
+        return !createdItemGroupIds.isEmpty();
+    }
+
     public static GroupCommitOutcome of(
             ImportRowStatus status,
             UUID entityId,
-            boolean itemGroupCreated,
+            List<UUID> createdItemGroupIds,
             Map<Integer, UUID> stockEntryByRow
     ) {
-        return new GroupCommitOutcome(status, entityId, itemGroupCreated, stockEntryByRow, null);
+        return new GroupCommitOutcome(status, entityId, createdItemGroupIds, stockEntryByRow, null);
     }
 
     public static GroupCommitOutcome failed(String message) {
-        return new GroupCommitOutcome(ImportRowStatus.FAILED, null, false, Map.of(), message);
+        return new GroupCommitOutcome(ImportRowStatus.FAILED, null, List.of(), Map.of(), message);
     }
 
     /** From a single-row commit, so both paths report the same way. */
@@ -46,7 +55,7 @@ public record GroupCommitOutcome(
         return new GroupCommitOutcome(
                 outcome.status(),
                 outcome.entityId(),
-                outcome.itemGroupCreated(),
+                outcome.createdItemGroupIds(),
                 stock,
                 outcome.failureMessage()
         );
