@@ -11,7 +11,6 @@ public record FacebookWebAppAuthResponse(
         String logoUrl,
         UUID customerId,
         UUID globalCustomerId,
-        /** The psid for a real signed_request login, or the local device id for the device-registration flow. */
         String externalId,
         String fullName,
         String phoneNumber,
