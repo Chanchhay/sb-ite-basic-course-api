@@ -18,6 +18,7 @@ import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 
 public interface OrderRepository extends JpaRepository<Order, UUID>, JpaSpecificationExecutor<Order> {
 
+    Page<Order> findAllByBusinessId(UUID businessId, Pageable pageable);
     Optional<Order> findByIdAndBusinessId(UUID id, UUID businessId);
     Optional<Order> findByBusinessIdAndInvoiceNumber(UUID businessId, String invoiceNumber);
     boolean existsByInvoiceNumber(String invoiceNumber);

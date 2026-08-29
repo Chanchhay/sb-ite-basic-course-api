@@ -85,12 +85,7 @@ public class OpeningStockImportCommitter implements ImportCommitter {
         return CommitOutcome.created(item.getId(), stockEntryId, List.of());
     }
 
-    /**
-     * The item this row is about, by SKU, then barcode, then name.
-     *
-     * The same order checking used, so the row commits against the item the
-     * shop was shown in the preview.
-     */
+
     private Item findItem(UUID businessId, OpeningStockImportRecord stock) {
         if (stock.sku() != null) {
             Item bySku = first(itemRepository.findByBusinessIdAndSkuIgnoreCase(businessId, stock.sku()));

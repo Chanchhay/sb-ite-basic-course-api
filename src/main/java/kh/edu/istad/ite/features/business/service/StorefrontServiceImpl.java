@@ -2,6 +2,7 @@ package kh.edu.istad.ite.features.business.service;
 
 import kh.edu.istad.ite.config.props.StorefrontProps;
 import kh.edu.istad.ite.config.security.SecurityUtils;
+import kh.edu.istad.ite.features.business.dto.PublicFacebookPageResponse;
 import kh.edu.istad.ite.features.business.dto.PublicStoreDetailResponse;
 import kh.edu.istad.ite.features.business.dto.PublicStoreResponse;
 import kh.edu.istad.ite.features.business.dto.SlugAvailabilityResponse;
@@ -31,6 +32,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.regex.Pattern;
 
@@ -41,12 +43,9 @@ import kh.edu.istad.ite.features.catalog.mapper.ItemMapper;
 import kh.edu.istad.ite.features.catalog.service.ItemGroupService;
 import kh.edu.istad.ite.shared.enums.ItemStatus;
 
-import kh.edu.istad.ite.features.discount.service.DiscountService;
-import kh.edu.istad.ite.features.discount.dto.DiscountResponse;
+import kh.edu.istad.ite.features.discount.service.DiscountApplicationService;
+import kh.edu.istad.ite.features.discount.dto.LineDiscountApplication;
 import kh.edu.istad.ite.shared.enums.OrderChannel;
-import kh.edu.istad.ite.shared.enums.DiscountType;
-import kh.edu.istad.ite.shared.enums.DiscountRuleType;
-import kh.edu.istad.ite.shared.enums.DiscountScope;
 import kh.edu.istad.ite.shared.enums.ItemType;
 import kh.edu.istad.ite.features.catalog.dto.ItemVariantResponse;
 import kh.edu.istad.ite.features.catalog.entity.ItemVariant;
@@ -54,8 +53,8 @@ import kh.edu.istad.ite.features.channel.service.ChannelPriceResolver;
 import kh.edu.istad.ite.features.channel.service.ItemChannelStockService;
 import kh.edu.istad.ite.features.inventory.dto.StockSummaryResponse;
 import kh.edu.istad.ite.features.inventory.service.StockEntryService;
+import kh.edu.istad.ite.features.social.repository.BusinessFacebookPageRepository;
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -75,11 +74,12 @@ public class StorefrontServiceImpl implements StorefrontService {
     private final ItemMapper itemMapper;
     private final StorefrontMapper storefrontMapper;
     private final StorefrontProps storefrontProps;
-    private final DiscountService discountService;
+    private final DiscountApplicationService discountApplicationService;
     private final ChannelPriceResolver channelPriceResolver;
     private final ItemChannelStockService itemChannelStockService;
     private final StockEntryService stockEntryService;
     private final ItemGroupService itemGroupService;
+    private final BusinessFacebookPageRepository businessFacebookPageRepository;
 
     @Override
     @Transactional(readOnly = true)
@@ -263,84 +263,37 @@ public class StorefrontServiceImpl implements StorefrontService {
                             business.getId());
 
                     try {
-                        List<DiscountResponse> applicable = discountService.findApplicableDiscounts(
-                                business.getId(),
-                                OrderChannel.WEB,
-                                item.getId(),
-                                item.getItemGroup() != null ? item.getItemGroup().getId() : null
-                        );
-                        
-                        if (!applicable.isEmpty()) {
-                            List<DiscountResponse> autoDiscounts = applicable.stream()
-                                    .filter(d -> !Boolean.TRUE.equals(d.requiresCoupon()))
-                                    .toList();
+                        // Quantity 1, no order subtotal: browsing is a single
+                        // unit outside any cart, so a discount conditioned on
+                        // a quantity or order total it can't yet satisfy is
+                        // correctly absent here — see
+                        // DiscountApplicationService for why, and for why
+                        // this is the same lookup add-to-cart and checkout
+                        // use, rather than its own copy of the logic.
+                        if (base.price() != null) {
+                            Optional<LineDiscountApplication> applied = discountApplicationService.resolveLineDiscount(
+                                    business.getId(),
+                                    OrderChannel.WEB,
+                                    item.getId(),
+                                    item.getItemGroup() != null ? item.getItemGroup().getId() : null,
+                                    base.price(),
+                                    1,
+                                    null
+                            );
 
-                            if (!autoDiscounts.isEmpty()) {
-                                DiscountResponse best = autoDiscounts.stream()
-                                        .sorted((d1, d2) -> {
-                                            int s1 = (d1.scope() == DiscountScope.SPECIFIC_ITEMS || d1.scope() == DiscountScope.ITEM) ? 2
-                                                    : (d1.scope() == DiscountScope.SPECIFIC_CATEGORIES || d1.scope() == DiscountScope.CATEGORY) ? 1 : 0;
-                                            int s2 = (d2.scope() == DiscountScope.SPECIFIC_ITEMS || d2.scope() == DiscountScope.ITEM) ? 2
-                                                    : (d2.scope() == DiscountScope.SPECIFIC_CATEGORIES || d2.scope() == DiscountScope.CATEGORY) ? 1 : 0;
-                                            if (s1 != s2) return Integer.compare(s2, s1);
-
-                                            int r1 = d1.ruleType() == DiscountRuleType.BUY_X_GET_Y ? 2 : 0;
-                                            int r2 = d2.ruleType() == DiscountRuleType.BUY_X_GET_Y ? 2 : 0;
-                                            if (r1 != r2) return Integer.compare(r2, r1);
-
-                                            BigDecimal v1 = d1.value() != null ? d1.value() : BigDecimal.ZERO;
-                                            BigDecimal v2 = d2.value() != null ? d2.value() : BigDecimal.ZERO;
-                                            return v2.compareTo(v1);
-                                        })
-                                        .findFirst()
-                                        .orElse(autoDiscounts.get(0));
-
-                                String computedBadge = null;
-                                if (best.name() != null && !best.name().isBlank()) {
-                                    computedBadge = best.name();
-                                } else if (best.ruleType() == DiscountRuleType.BUY_X_GET_Y) {
-                                    int buy = best.buyQuantity() != null ? best.buyQuantity() : 1;
-                                    int get = best.getQuantity() != null ? best.getQuantity() : 1;
-                                    computedBadge = "Buy " + buy + " Get " + get;
-                                } else if (best.type() == DiscountType.PERCENTAGE && best.value() != null) {
-                                    computedBadge = best.value().stripTrailingZeros().toPlainString() + "% OFF";
-                                } else if (best.type() == DiscountType.FIXED_AMOUNT && best.value() != null) {
-                                    computedBadge = "$" + best.value().stripTrailingZeros().toPlainString() + " OFF";
+                            if (applied.isPresent()) {
+                                LineDiscountApplication discount = applied.get();
+                                BigDecimal originalPrice = base.price();
+                                BigDecimal newPrice = originalPrice.subtract(discount.amount());
+                                if (newPrice.compareTo(BigDecimal.ZERO) < 0) {
+                                    newPrice = BigDecimal.ZERO;
                                 }
 
-                                String effectiveBadge = computedBadge != null ? computedBadge : base.badge();
-
-                                if (base.price() != null) {
-                                    BigDecimal originalPrice = base.price();
-                                    BigDecimal discountAmount = BigDecimal.ZERO;
-                                    
-                                    if (best.type() == DiscountType.PERCENTAGE && best.value() != null) {
-                                        discountAmount = originalPrice.multiply(best.value()).divide(new BigDecimal("100"), 2, RoundingMode.HALF_UP);
-                                    } else if (best.type() == DiscountType.FIXED_AMOUNT && best.value() != null) {
-                                        discountAmount = best.value();
-                                    }
-                                    
-                                    BigDecimal newPrice = originalPrice.subtract(discountAmount);
-                                    if (newPrice.compareTo(BigDecimal.ZERO) < 0) {
-                                        newPrice = BigDecimal.ZERO;
-                                    }
-                                    
-                                    if (newPrice.compareTo(originalPrice) < 0) {
-                                        return base.toBuilder()
-                                            .price(newPrice)
-                                            .compareAtPrice(originalPrice)
-                                            .badge(effectiveBadge)
-                                            .build();
-                                    } else {
-                                        return base.toBuilder()
-                                            .badge(effectiveBadge)
-                                            .build();
-                                    }
-                                } else {
-                                    return base.toBuilder()
-                                        .badge(effectiveBadge)
+                                return base.toBuilder()
+                                        .price(newPrice)
+                                        .compareAtPrice(originalPrice)
+                                        .badge(discount.label() != null ? discount.label() : base.badge())
                                         .build();
-                                }
                             }
                         }
                     } catch (Exception e) {
@@ -376,6 +329,18 @@ public class StorefrontServiceImpl implements StorefrontService {
 
         return businessRepository.findOne(spec)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Store has not been found"));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public PublicFacebookPageResponse getPublicFacebookSocialSettings(String slugOrId) {
+        Business business = resolvePublicBusiness(slugOrId);
+
+        return businessFacebookPageRepository.findByBusinessId(business.getId())
+                .map(page -> new PublicFacebookPageResponse(
+                        page.getPageName(),
+                        "https://www.facebook.com/" + page.getPageId()))
+                .orElse(new PublicFacebookPageResponse(null, null));
     }
 
     @Override

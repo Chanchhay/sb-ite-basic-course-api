@@ -13,7 +13,7 @@ public class CashMovementResponse {
     private Long id;
     private Long sessionId;
     private CashMovementType type;
-    /** Inherited from the session — cash movements are counted in its currency. */
+
     private String currency;
     private BigDecimal amount;
     private String reason;

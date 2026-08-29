@@ -171,6 +171,19 @@ public class KeycloakBotAuthService {
         return findOrCreateChannelKeycloakUser("facebook", psid, firstName, lastName, null, null);
     }
 
+    /**
+     * The Messenger Mini App's device-registration path — a different
+     * channel namespace ("msgrdevice") from the real-psid one above, so a
+     * self-entered device id can never collide with an actual Facebook psid.
+     * Unlike the other channels, the phone number is already known at
+     * creation time (the customer just typed it in), so it's passed straight
+     * through to be set on the Keycloak user immediately.
+     */
+    public KeycloakUserInfo findOrCreateMessengerDeviceKeycloakUser(
+            String deviceId, String firstName, String lastName, String phoneNumber) {
+        return findOrCreateChannelKeycloakUser("msgrdevice", deviceId, firstName, lastName, null, phoneNumber);
+    }
+
     private KeycloakUserInfo findOrCreateChannelKeycloakUser(
             String channel, String externalId, String firstName, String lastName, String username, String phoneNumber) {
         String primaryUsername = (username != null && !username.isBlank()) ? username : channel + "_" + externalId;

@@ -11,7 +11,7 @@ public record FacebookWebAppAuthResponse(
         String logoUrl,
         UUID customerId,
         UUID globalCustomerId,
-        String psid,
+        String externalId,
         String fullName,
         String phoneNumber,
         String email,

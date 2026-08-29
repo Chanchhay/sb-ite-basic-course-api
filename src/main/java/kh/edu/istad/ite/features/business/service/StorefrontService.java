@@ -1,5 +1,6 @@
 package kh.edu.istad.ite.features.business.service;
 
+import kh.edu.istad.ite.features.business.dto.PublicFacebookPageResponse;
 import kh.edu.istad.ite.features.business.dto.PublicStoreDetailResponse;
 import kh.edu.istad.ite.features.business.dto.PublicStoreResponse;
 import kh.edu.istad.ite.features.business.dto.SlugAvailabilityResponse;
@@ -47,4 +48,7 @@ public interface StorefrontService {
 
     /** Every province name actually in use by a publicly-listed store — self-populating, nothing to seed. */
     List<String> getDistinctProvinces();
+
+    /** The public "Find us on Facebook" link — both fields null when no Page is connected. */
+    PublicFacebookPageResponse getPublicFacebookSocialSettings(String slugOrId);
 }

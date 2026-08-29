@@ -46,7 +46,8 @@ public class DiscountMapper {
                 discount.getSelectedDays(),
                 discount.getApplicableChannels(),
                 toTargetResponses(targets),
-                discount.getStatus()
+                discount.getStatus(),
+                discount.getPausedDiscountIds()
         );
     }
 

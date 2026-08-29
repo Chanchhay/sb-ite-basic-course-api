@@ -59,8 +59,9 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/v1/webhooks/telegram/**").permitAll()
                         // Verified by initData's own HMAC signature, not a bearer token — that's what this endpoint exists to issue.
                         .requestMatchers(HttpMethod.POST, "/api/v1/telegram-webapp/auth").permitAll()
-                        // Same story for Messenger's signed_request.
-                        .requestMatchers(HttpMethod.POST, "/api/v1/facebook-webapp/auth").permitAll()
+                        // Same story for Messenger's signed_request, and for the device-registration
+                        // fallback that replaced it — neither has a bearer token to check yet.
+                        .requestMatchers(HttpMethod.POST, "/api/v1/facebook-webapp/auth", "/api/v1/facebook-webapp/device-auth").permitAll()
                         .requestMatchers("/api/v1/social/facebook/webhook", "/api/v1/social/facebook/webhook/**", "/api/webhook", "/api/webhook/**", "/api/v1/social/facebook/webhook/setup").permitAll()                        .requestMatchers(HttpMethod.GET, "/api/v1/social/facebook/oauth/callback").permitAll()
                         .requestMatchers(
                                 "/ws/customer-display",
@@ -83,6 +84,12 @@ public class SecurityConfig {
                         .hasAuthority("SCOPE_admin-dashboard:read")
 
                         // Admin Businesses
+                        // Assisted migration works on a customer's catalogue on
+                        // their behalf, so it asks for the authority that manages
+                        // a business rather than the one that merely reads one.
+                        .requestMatchers("/api/v1/admin/businesses/*/assisted-migrations",
+                                "/api/v1/admin/businesses/*/assisted-migrations/**")
+                        .hasAuthority("SCOPE_admin-business:manage")
                         .requestMatchers(HttpMethod.GET, "/api/v1/admin/businesses",
                                 "/api/v1/admin/businesses/**")
                         .hasAuthority("SCOPE_admin-business:read")
@@ -173,6 +180,9 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/v1/businesses/social-settings/facebook",
                                 "/api/v1/businesses/social-settings/facebook/*")
                         .hasAuthority("SCOPE_business:read")
+                        .requestMatchers(HttpMethod.PATCH, "/api/v1/businesses/social-settings/facebook",
+                                "/api/v1/businesses/social-settings/facebook/*")
+                        .hasAuthority("SCOPE_business:update")
                         .requestMatchers(HttpMethod.DELETE, "/api/v1/businesses/social-settings/facebook")
                         .hasAuthority("SCOPE_business:update")
 

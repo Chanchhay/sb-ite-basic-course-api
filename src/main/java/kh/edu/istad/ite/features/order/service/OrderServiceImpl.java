@@ -897,6 +897,30 @@ public class OrderServiceImpl implements OrderService {
 
     @Override
     @Transactional(readOnly = true)
+    public PageResponse<OrderResponse> findAllOrders(UUID businessId, Pageable pageable) {
+        businessHelper.findAccessibleBusiness(businessId);
+        Page<Order> orders = orderRepository.findAllByBusinessId(businessId, pageable);
+
+        List<UUID> paidOrderIds = orders.getContent().stream()
+                .filter(order -> OrderStatus.PAID.equals(order.getStatus()))
+                .map(Order::getId)
+                .toList();
+
+        java.util.Map<UUID, PaymentMethodType> paymentMethodByOrderId = paidOrderIds.isEmpty()
+                ? java.util.Map.of()
+                : saleRepository.findByOrder_IdIn(paidOrderIds).stream()
+                        .collect(java.util.stream.Collectors.toMap(
+                                sale -> sale.getOrder().getId(), Sale::getPaymentMethod));
+
+        return PageResponse.from(orders.map(order -> {
+            OrderResponse response = orderMapper.toResponse(order);
+            response.setPaymentMethod(paymentMethodByOrderId.get(order.getId()));
+            return response;
+        }));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public PageResponse<OrderResponse> filterOrders(UUID businessId, RequestDto requestDto, Pageable pageable) {
         businessHelper.findAccessibleBusiness(businessId);
 
@@ -1038,16 +1062,29 @@ public class OrderServiceImpl implements OrderService {
     @Transactional
     public OrderResponse updateOrderDiscount(UUID businessId, UUID orderId, UpdateOrderDiscountRequest request) {
         Order order = validateOrderModification(businessId, orderId);
-        BigDecimal itemDiscount = itemDiscountTotal(order);
-        BigDecimal orderLevelDiscount = resolveOrderDiscountAmount(
-                businessId,
-                order,
-                order.getCustomer(),
-                request.discountId(),
-                request.discountCode(),
-                request.discountAmount(),
-                false);
-        order.setDiscountAmount(itemDiscount.add(orderLevelDiscount));
+
+        List<UUID> discountIds = request.discountIds();
+        BigDecimal totalDiscount;
+        if (discountIds != null && discountIds.size() > 1) {
+            // Several simultaneously-active discounts, each auto-matched to
+            // its own line (e.g. two item-scoped promos on different
+            // products) — no single id speaks for the whole order.
+            totalDiscount = resolveMultipleOrderDiscounts(businessId, order, order.getCustomer(), discountIds);
+        } else {
+            UUID singleDiscountId = request.discountId() != null
+                    ? request.discountId()
+                    : (discountIds != null && !discountIds.isEmpty() ? discountIds.get(0) : null);
+            totalDiscount = resolveOrderDiscountAmount(
+                    businessId,
+                    order,
+                    order.getCustomer(),
+                    singleDiscountId,
+                    request.discountCode(),
+                    request.discountAmount(),
+                    false);
+        }
+
+        order.setDiscountAmount(totalDiscount);
         recalculateOrderTotals(order);
         return orderMapper.toResponse(orderRepository.save(order));
     }
@@ -1061,10 +1098,16 @@ public class OrderServiceImpl implements OrderService {
             BigDecimal manualDiscountAmount,
             boolean applyMembershipDiscount
     ) {
+        // Clear attribution left by a previously-applied catalog discount
+        // before recomputing anything — manual (cashier-typed) per-item
+        // amounts never carry a label and are never touched here, so this
+        // can't clobber them.
+        clearCatalogAttributedItemDiscounts(order);
+
         BigDecimal discountableSubtotal = grossSubtotal(order).subtract(itemDiscountTotal(order));
         if (discountableSubtotal.compareTo(BigDecimal.ZERO) <= 0) {
             clearOrderDiscountSource(order);
-            return BigDecimal.ZERO;
+            return itemDiscountTotal(order);
         }
 
         if (StringUtils.hasText(requestedDiscountCode)) {
@@ -1078,7 +1121,9 @@ public class OrderServiceImpl implements OrderService {
             validateDiscountForOrder(discount, order, customer, true);
             order.setDiscountId(discount.getId());
             order.setDiscountCode(coupon.getCode());
-            return calculateDiscountAmount(discount, order, discountableSubtotal);
+            BigDecimal amount = calculateDiscountAmount(discount, order, discountableSubtotal);
+            distributeItemLevelDiscount(discount, order, amount);
+            return totalDiscountAfterDistribution(order, discount, amount);
         }
 
         if (requestedDiscountId != null) {
@@ -1087,13 +1132,14 @@ public class OrderServiceImpl implements OrderService {
             order.setDiscountId(discount.getId());
             order.setDiscountCode(null);
             BigDecimal calculated = calculateDiscountAmount(discount, order, discountableSubtotal);
+            distributeItemLevelDiscount(discount, order, calculated);
             if (calculated.compareTo(BigDecimal.ZERO) > 0) {
-                return calculated;
+                return totalDiscountAfterDistribution(order, discount, calculated);
             }
             if (manualDiscountAmount != null && manualDiscountAmount.compareTo(BigDecimal.ZERO) > 0) {
-                return manualDiscountAmount.min(discountableSubtotal);
+                return itemDiscountTotal(order).add(manualDiscountAmount.min(discountableSubtotal));
             }
-            return calculated;
+            return totalDiscountAfterDistribution(order, discount, calculated);
         }
 
         if (applyMembershipDiscount
@@ -1105,11 +1151,133 @@ public class OrderServiceImpl implements OrderService {
             validateDiscountForOrder(discount, order, customer, false);
             order.setDiscountId(discount.getId());
             order.setDiscountCode(null);
-            return calculateDiscountAmount(discount, order, discountableSubtotal);
+            BigDecimal amount = calculateDiscountAmount(discount, order, discountableSubtotal);
+            distributeItemLevelDiscount(discount, order, amount);
+            return totalDiscountAfterDistribution(order, discount, amount);
         }
 
         clearOrderDiscountSource(order);
-        return manualDiscountAmount == null ? BigDecimal.ZERO : manualDiscountAmount;
+        BigDecimal manual = manualDiscountAmount == null ? BigDecimal.ZERO : manualDiscountAmount;
+        return itemDiscountTotal(order).add(manual);
+    }
+
+    /**
+     * Applies several simultaneously-active catalog discounts in one pass
+     * (e.g. two item-scoped promos each auto-matched to a different line,
+     * with no single one explicitly picked by the cashier). Each is resolved
+     * and attributed independently; a discount that no longer qualifies
+     * (expired, wrong channel, below its own minimum) is skipped rather than
+     * failing the whole batch, since the others may still be valid.
+     */
+    private BigDecimal resolveMultipleOrderDiscounts(
+            UUID businessId, Order order, Customer customer, List<UUID> discountIds
+    ) {
+        clearCatalogAttributedItemDiscounts(order);
+
+        BigDecimal discountableSubtotal = grossSubtotal(order).subtract(itemDiscountTotal(order));
+        if (discountableSubtotal.compareTo(BigDecimal.ZERO) <= 0) {
+            clearOrderDiscountSource(order);
+            return itemDiscountTotal(order);
+        }
+
+        BigDecimal orderLevelPortion = BigDecimal.ZERO;
+        UUID primaryDiscountId = null;
+        for (UUID discountId : discountIds) {
+            Discount discount = discountRepository.findByIdAndBusinessId(discountId, businessId).orElse(null);
+            if (discount == null) {
+                continue;
+            }
+            BigDecimal amount;
+            try {
+                validateDiscountForOrder(discount, order, customer, false);
+                amount = calculateDiscountAmount(discount, order, discountableSubtotal);
+            } catch (ResponseStatusException e) {
+                continue;
+            }
+            if (amount.compareTo(BigDecimal.ZERO) <= 0) {
+                continue;
+            }
+            distributeItemLevelDiscount(discount, order, amount);
+            DiscountScope scope = normalizeScope(discount.getScope());
+            if (scope != DiscountScope.SPECIFIC_ITEMS && scope != DiscountScope.SPECIFIC_CATEGORIES) {
+                orderLevelPortion = orderLevelPortion.add(amount);
+            }
+            if (primaryDiscountId == null) {
+                primaryDiscountId = discountId;
+            }
+        }
+
+        order.setDiscountId(primaryDiscountId);
+        order.setDiscountCode(null);
+        return itemDiscountTotal(order).add(orderLevelPortion);
+    }
+
+    /**
+     * The order's full discount total after a discount has just been
+     * distributed: per-item-attributed scopes (SPECIFIC_ITEMS/CATEGORIES)
+     * are already reflected in itemDiscountTotal, so adding the calculated
+     * amount again would double-count it; order-wide scopes aren't attributed
+     * to any line, so their amount has to be added on top.
+     */
+    private BigDecimal totalDiscountAfterDistribution(Order order, Discount discount, BigDecimal amount) {
+        DiscountScope scope = normalizeScope(discount.getScope());
+        boolean itemAttributed = scope == DiscountScope.SPECIFIC_ITEMS || scope == DiscountScope.SPECIFIC_CATEGORIES;
+        BigDecimal itemLevelTotal = itemDiscountTotal(order);
+        return itemAttributed ? itemLevelTotal : itemLevelTotal.add(amount);
+    }
+
+    /** Removes any per-item discount amount/label left by a catalog discount
+     *  that no longer applies (e.g. the cashier switched to a different
+     *  promo). A manual, cashier-typed per-item discount never carries a
+     *  label, so this can't touch one. */
+    private void clearCatalogAttributedItemDiscounts(Order order) {
+        for (OrderItem item : order.getItems()) {
+            if (item.getDiscountLabel() != null) {
+                item.setDiscountAmount(BigDecimal.ZERO);
+                item.setDiscountLabel(null);
+            }
+        }
+    }
+
+    /**
+     * Records which line(s) an item/category-scoped discount actually
+     * applied to, so receipts can name the promo per item instead of only
+     * showing one lump discount on the whole order. Order-wide discounts
+     * (ALL_ITEMS/ORDER/SPECIFIC_MEMBERSHIP) aren't attributed to specific
+     * lines — the order-level discountLabel already names those.
+     */
+    private void distributeItemLevelDiscount(Discount discount, Order order, BigDecimal calculatedAmount) {
+        DiscountScope scope = normalizeScope(discount.getScope());
+        if (scope != DiscountScope.SPECIFIC_ITEMS && scope != DiscountScope.SPECIFIC_CATEGORIES) {
+            return;
+        }
+        if (calculatedAmount == null || calculatedAmount.compareTo(BigDecimal.ZERO) <= 0) {
+            return;
+        }
+
+        List<OrderItem> eligible = eligibleItems(discount, order);
+        BigDecimal eligibleTotal = eligible.stream().map(this::grossLineTotal).reduce(BigDecimal.ZERO, BigDecimal::add);
+        if (eligibleTotal.compareTo(BigDecimal.ZERO) <= 0) {
+            return;
+        }
+
+        BigDecimal remaining = calculatedAmount;
+        for (int i = 0; i < eligible.size(); i++) {
+            OrderItem item = eligible.get(i);
+            BigDecimal share;
+            if (i == eligible.size() - 1) {
+                // Last line absorbs the rounding remainder so the parts sum
+                // exactly to calculatedAmount.
+                share = remaining;
+            } else {
+                BigDecimal lineTotal = grossLineTotal(item);
+                share = calculatedAmount.multiply(lineTotal)
+                        .divide(eligibleTotal, 2, RoundingMode.HALF_UP);
+                remaining = remaining.subtract(share);
+            }
+            item.setDiscountAmount(share.max(BigDecimal.ZERO));
+            item.setDiscountLabel(discount.getName());
+        }
     }
 
     private Coupon findUsableCoupon(UUID businessId, String code, BigDecimal subtotal, Customer customer) {
@@ -1277,10 +1445,12 @@ public class OrderServiceImpl implements OrderService {
                     .map(target -> target.getItem().getId())
                     .collect(java.util.stream.Collectors.toSet());
             if (itemIds.isEmpty()) return order.getItems();
-            List<OrderItem> matching = order.getItems().stream()
+            // No fallback to "all items" when none of the target items are
+            // in this cart: a discount scoped to items that aren't here
+            // means it applies to nothing, not to everything.
+            return order.getItems().stream()
                     .filter(item -> item.getItem() != null && itemIds.contains(item.getItem().getId()))
                     .toList();
-            return matching.isEmpty() ? order.getItems() : matching;
         }
         if (DiscountScope.SPECIFIC_CATEGORIES.equals(scope)) {
             Set<UUID> itemGroupIds = targets.stream()
@@ -1288,12 +1458,11 @@ public class OrderServiceImpl implements OrderService {
                     .map(target -> target.getItemGroup().getId())
                     .collect(java.util.stream.Collectors.toSet());
             if (itemGroupIds.isEmpty()) return order.getItems();
-            List<OrderItem> matching = order.getItems().stream()
+            return order.getItems().stream()
                     .filter(item -> item.getItem() != null
                             && item.getItem().getItemGroup() != null
                             && itemGroupIds.contains(item.getItem().getItemGroup().getId()))
                     .toList();
-            return matching.isEmpty() ? order.getItems() : matching;
         }
 
         return order.getItems();
