@@ -6,6 +6,8 @@ import kh.edu.istad.ite.features.dataimport.parser.SourceRow;
 import kh.edu.istad.ite.features.migration.normalize.DataNormalizationService;
 import kh.edu.istad.ite.features.migration.normalize.Normalized;
 import kh.edu.istad.ite.features.migration.normalize.UnitAliases;
+import kh.edu.istad.ite.features.migration.resolve.FieldValue;
+import kh.edu.istad.ite.features.migration.resolve.ResolvedRecord;
 import kh.edu.istad.ite.shared.enums.ImportTargetType;
 import kh.edu.istad.ite.shared.enums.UnitCategory;
 import lombok.RequiredArgsConstructor;
@@ -17,17 +19,18 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Reads a whole source file through the operator's mapping and decisions.
+ * Reads joined records through the operator's decisions into FluxiBiz's terms.
  *
- * The one place that turns somebody else's export into FluxiBiz's own terms —
- * and it stops there. What comes out is rows in the shape of our official
- * workbook, which the ordinary importer then checks, previews and commits like
- * any other upload. Nothing here touches the catalogue.
+ * The one place that turns somebody else's export into our own words — and it
+ * stops there. What comes out is rows in the shape of our official workbook,
+ * which the ordinary importer then checks, previews and commits like any other
+ * upload. Nothing here touches the catalogue.
  *
- * Deterministic on purpose. Running it twice over the same file with the same
- * mapping and the same decisions produces the same rows and the same findings,
- * which is what lets an operator fix one column and re-run without losing the
- * forty answers they already gave.
+ * Deterministic on purpose. Running it twice over the same records with the
+ * same decisions produces the same rows and the same findings, which is what
+ * lets an operator fix one column and re-run without losing the forty answers
+ * they already gave — and what lets a single row be explained later by simply
+ * running it again.
  */
 @Component
 @RequiredArgsConstructor
@@ -36,29 +39,16 @@ public class SourceTransformer {
     private final DataNormalizationService normalizer;
 
     /**
-     * @param mapping    source heading to FluxiBiz field, as the operator settled it
-     * @param decisions  what the operator already answered, keyed by
-     *                   {@code field + "|" + source value} — the same key an
-     *                   issue is grouped by, so a decision found here is a
-     *                   question not asked again
+     * @param decisions what the operator already answered, keyed by
+     *                  {@code field + "|" + source value} — the same key an
+     *                  issue is grouped by, so a decision found here is a
+     *                  question not asked again
+     * @param axisNames what to call the option axes, when the operator has
+     *                  said. Otherwise the source column's own heading is
+     *                  used, which is where a file keeps that word.
      */
     public TransformResult transform(
-            List<SourceRow> rows,
-            Map<String, ImportField> mapping,
-            ImportTargetType targetType,
-            Map<String, DeclaredUnit> decisions
-    ) {
-        return transform(rows, mapping, targetType, decisions, Map.of());
-    }
-
-    /**
-     * @param axisNames what to call the option axes, when the operator has said.
-     *                  Otherwise the source column's own heading is used, which
-     *                  is where a file keeps that word.
-     */
-    public TransformResult transform(
-            List<SourceRow> rows,
-            Map<String, ImportField> mapping,
+            List<ResolvedRecord> records,
             ImportTargetType targetType,
             Map<String, DeclaredUnit> decisions,
             Map<String, String> axisNames
@@ -67,19 +57,20 @@ public class SourceTransformer {
         List<TransformResult.Finding> findings = new ArrayList<>();
         Map<String, DeclaredUnit> units = new LinkedHashMap<>();
 
-        for (SourceRow row : rows) {
-            PreparedRow out = PreparedRow.empty(row.rowNumber());
+        for (ResolvedRecord record : records) {
+            PreparedRow out = PreparedRow.empty(record.rowNumber());
 
-            for (Map.Entry<String, ImportField> column : mapping.entrySet()) {
-                String raw = row.value(column.getKey());
-                ImportField field = column.getValue();
+            for (Map.Entry<ImportField, FieldValue> entry : record.fields().entrySet()) {
+                ImportField field = entry.getKey();
+                FieldValue origin = entry.getValue();
+                String raw = origin.value();
 
                 if (raw == null || raw.isBlank()) {
                     continue;
                 }
 
                 if (field == ImportField.UNIT) {
-                    readUnit(raw, row.rowNumber(), out, findings, units, decisions);
+                    readUnit(raw, record.rowNumber(), out, findings, units, decisions, origin);
                     continue;
                 }
 
@@ -91,7 +82,7 @@ public class SourceTransformer {
                             field.name(),
                             raw.trim(),
                             read.problem() + " for " + field.getLabel() + ".",
-                            row.rowNumber(),
+                            record.rowNumber(),
                             true));
                     continue;
                 }
@@ -102,15 +93,14 @@ public class SourceTransformer {
                             field.name(),
                             raw.trim(),
                             read.rule() + ": \"" + raw.trim() + "\" reads as \"" + read.value() + "\".",
-                            row.rowNumber(),
+                            record.rowNumber(),
                             false));
                 }
 
-                out.put(field, read.value());
+                out.put(field, read.value(), origin);
             }
 
-            nameTheOptionAxes(out, mapping, axisNames);
-            requireName(out, row.rowNumber(), findings);
+            nameTheOptionAxes(out, axisNames);
 
             if (!out.isEmpty()) {
                 prepared.add(out);
@@ -120,6 +110,56 @@ public class SourceTransformer {
         requireOneUnitPerItem(prepared, findings);
 
         return new TransformResult(prepared, findings, List.copyOf(units.values()));
+    }
+
+    /**
+     * The same reading, starting from one file's rows and one mapping.
+     *
+     * A single-source migration is a joined one with nothing to join, so it
+     * takes the same path rather than a shorter one kept beside it — two paths
+     * would eventually disagree about a file that used only one.
+     */
+    public TransformResult transform(
+            List<SourceRow> rows,
+            Map<String, ImportField> mapping,
+            ImportTargetType targetType,
+            Map<String, DeclaredUnit> decisions,
+            Map<String, String> axisNames
+    ) {
+        return transform(asRecords(rows, mapping), targetType, decisions, axisNames);
+    }
+
+    public TransformResult transform(
+            List<SourceRow> rows,
+            Map<String, ImportField> mapping,
+            ImportTargetType targetType,
+            Map<String, DeclaredUnit> decisions
+    ) {
+        return transform(rows, mapping, targetType, decisions, Map.of());
+    }
+
+    /** One file's rows, read through its mapping and owing nothing to a join. */
+    public static List<ResolvedRecord> asRecords(
+            List<SourceRow> rows,
+            Map<String, ImportField> mapping
+    ) {
+        List<ResolvedRecord> records = new ArrayList<>();
+
+        for (SourceRow row : rows) {
+            ResolvedRecord record = ResolvedRecord.empty(row.rowNumber());
+
+            mapping.forEach((heading, field) -> {
+                String value = row.value(heading);
+
+                if (value != null && !value.isBlank()) {
+                    record.offer(field, FieldValue.direct(value, null, heading, row.rowNumber()));
+                }
+            });
+
+            records.add(record);
+        }
+
+        return records;
     }
 
     /**
@@ -137,7 +177,8 @@ public class SourceTransformer {
             PreparedRow out,
             List<TransformResult.Finding> findings,
             Map<String, DeclaredUnit> units,
-            Map<String, DeclaredUnit> decisions
+            Map<String, DeclaredUnit> decisions,
+            FieldValue origin
     ) {
         String value = raw.trim();
         String key = ImportField.UNIT.name() + "|" + value.toLowerCase();
@@ -146,7 +187,7 @@ public class SourceTransformer {
 
         if (decided != null) {
             units.putIfAbsent(decided.name().toLowerCase(), decided);
-            out.put(ImportField.UNIT, symbolOf(decided));
+            out.put(ImportField.UNIT, symbolOf(decided), origin);
             return;
         }
 
@@ -154,7 +195,7 @@ public class SourceTransformer {
 
         if (known != null) {
             units.putIfAbsent(known.name().toLowerCase(), known);
-            out.put(ImportField.UNIT, symbolOf(known));
+            out.put(ImportField.UNIT, symbolOf(known), origin);
 
             if (!symbolOf(known).equalsIgnoreCase(value)) {
                 findings.add(new TransformResult.Finding(
@@ -178,42 +219,21 @@ public class SourceTransformer {
                 true));
     }
 
-    /** An item with no name is not an item, and no decision can supply one. */
-    private void requireName(PreparedRow out, int rowNumber, List<TransformResult.Finding> findings) {
-        if (out.isEmpty() || out.get(ImportField.NAME) != null) {
-            return;
-        }
-
-        findings.add(new TransformResult.Finding(
-                "NAME_MISSING",
-                ImportField.NAME.name(),
-                "",
-                "This row has no item name.",
-                rowNumber,
-                true));
-    }
-
-
     /**
      * Gives each option axis its name.
      *
      * A source file says what an axis is in the heading and what this row's
-     * value is in the cell — a SIZE column holding "Small". FluxiBiz wants both,
-     * and shows the name to shoppers, so a heading of "SZ" is worth an operator
-     * overriding.
+     * value is in the cell — a SIZE column holding "Small". FluxiBiz wants
+     * both, and shows the name to shoppers, so a heading of "SZ" is worth an
+     * operator overriding.
      */
-    private void nameTheOptionAxes(
-            PreparedRow out,
-            Map<String, ImportField> mapping,
-            Map<String, String> axisNames
-    ) {
-        nameAxis(out, mapping, axisNames, ImportField.OPTION_1_VALUE, ImportField.OPTION_1_NAME, "option1");
-        nameAxis(out, mapping, axisNames, ImportField.OPTION_2_VALUE, ImportField.OPTION_2_NAME, "option2");
+    private void nameTheOptionAxes(PreparedRow out, Map<String, String> axisNames) {
+        nameAxis(out, axisNames, ImportField.OPTION_1_VALUE, ImportField.OPTION_1_NAME, "option1");
+        nameAxis(out, axisNames, ImportField.OPTION_2_VALUE, ImportField.OPTION_2_NAME, "option2");
     }
 
     private void nameAxis(
             PreparedRow out,
-            Map<String, ImportField> mapping,
             Map<String, String> axisNames,
             ImportField valueField,
             ImportField nameField,
@@ -226,15 +246,15 @@ public class SourceTransformer {
         String chosen = axisNames.get(key);
 
         if (chosen != null && !chosen.isBlank()) {
-            out.put(nameField, chosen.trim());
+            out.put(nameField, chosen.trim(), FieldValue.decided(chosen.trim(), "Named by the operator"));
             return;
         }
 
-        mapping.entrySet().stream()
-                .filter(entry -> entry.getValue() == valueField)
-                .map(Map.Entry::getKey)
-                .findFirst()
-                .ifPresent(heading -> out.put(nameField, readable(heading)));
+        FieldValue origin = out.originOf(valueField);
+
+        if (origin != null && origin.sourceColumn() != null) {
+            out.put(nameField, readable(origin.sourceColumn()), origin);
+        }
     }
 
     /** "SUB_CAT" is a column; "Sub Cat" is something to show a shopper. */

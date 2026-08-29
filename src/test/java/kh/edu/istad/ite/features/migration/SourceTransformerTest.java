@@ -164,14 +164,23 @@ class SourceTransformerTest {
                 .satisfies(u -> assertThat(u.category()).isEqualTo(UnitCategory.MASS));
     }
 
-    /** A shop does not sell things with no name, and no decision supplies one. */
+    /**
+     * Reading a file is not the same as judging it.
+     *
+     * A row with no name is a row this class has nothing to say about — the
+     * name might yet arrive from a joined file, and deciding it is missing
+     * before the other sources have been consulted would raise a question the
+     * data already answers. That judgement belongs to
+     * {@link kh.edu.istad.ite.features.migration.resolve.MissingFieldResolutionService},
+     * which sees every source at once.
+     */
     @Test
-    void treatsAMissingNameAsBlocking() {
+    void leavesTheVerdictOnAMissingNameToTheStepThatSeesEverySource() {
         TransformResult result = run(List.of(
                 row(2, Map.of("prd_code", "P001", "sell_p", "1.00", "uom", "CAN"))));
 
-        assertThat(result.findings())
-                .anyMatch(f -> f.code().equals("NAME_MISSING") && f.blocking());
+        assertThat(result.findings()).noneMatch(f -> f.code().equals("NAME_MISSING"));
+        assertThat(result.rows().getFirst().get(ImportField.NAME)).isNull();
     }
 
     /** Whitespace is untidiness; a different name is a different product. */
