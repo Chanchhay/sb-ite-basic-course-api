@@ -2,6 +2,7 @@ package kh.edu.istad.ite.features.discount.service.Impl;
 
 import kh.edu.istad.ite.features.discount.dto.DiscountResponse;
 import kh.edu.istad.ite.features.discount.dto.LineDiscountApplication;
+import kh.edu.istad.ite.features.discount.dto.OrderLineUnits;
 import kh.edu.istad.ite.features.discount.service.DiscountApplicationService;
 import kh.edu.istad.ite.features.discount.service.DiscountService;
 import kh.edu.istad.ite.shared.enums.DiscountRuleType;
@@ -13,6 +14,7 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
@@ -61,10 +63,14 @@ public class DiscountApplicationServiceImpl implements DiscountApplicationServic
     public Optional<LineDiscountApplication> resolveOrderDiscount(
             UUID businessId,
             OrderChannel channel,
-            BigDecimal orderSubtotal,
-            int totalQuantity
+            List<OrderLineUnits> lines
     ) {
-        if (orderSubtotal == null || orderSubtotal.compareTo(BigDecimal.ZERO) <= 0) {
+        BigDecimal orderSubtotal = lines.stream()
+                .map(line -> line.unitPrice().multiply(BigDecimal.valueOf(line.quantity())))
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        int totalQuantity = lines.stream().mapToInt(OrderLineUnits::quantity).sum();
+
+        if (orderSubtotal.compareTo(BigDecimal.ZERO) <= 0) {
             return Optional.empty();
         }
 
@@ -78,10 +84,42 @@ public class DiscountApplicationServiceImpl implements DiscountApplicationServic
 
         return pickBest(candidates)
                 .map(discount -> {
-                    BigDecimal amount = computeAmount(discount, orderSubtotal, 1, orderSubtotal);
+                    BigDecimal amount = discount.ruleType() == DiscountRuleType.BUY_X_GET_Y
+                            ? computeOrderBundleAmount(discount, lines)
+                            : computeAmount(discount, orderSubtotal, 1, orderSubtotal);
                     return new LineDiscountApplication(discount.id(), labelFor(discount), amount);
                 })
                 .filter(application -> application.amount().compareTo(BigDecimal.ZERO) > 0);
+    }
+
+    /**
+     * "Buy 2 get 1 free, any item" spread across a real order: every unit in
+     * the order is one entry, cheapest first, and every complete bundle's
+     * free slots come off the cheapest units still left — the same rule a
+     * single repeated item already gets for free from the bundle math, made
+     * to work when the order mixes different items at different prices too.
+     */
+    private BigDecimal computeOrderBundleAmount(DiscountResponse discount, List<OrderLineUnits> lines) {
+        int bundle = bundleSize(discount);
+        int get = discount.getQuantity() != null && discount.getQuantity() > 0 ? discount.getQuantity() : 1;
+
+        List<BigDecimal> units = new ArrayList<>();
+        for (OrderLineUnits line : lines) {
+            for (int i = 0; i < line.quantity(); i++) {
+                units.add(line.unitPrice());
+            }
+        }
+        units.sort(Comparator.naturalOrder());
+
+        int freeCount = (units.size() / bundle) * get;
+        BigDecimal amount = units.stream()
+                .limit(freeCount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        if (discount.maxDiscountAmount() != null && amount.compareTo(discount.maxDiscountAmount()) > 0) {
+            amount = discount.maxDiscountAmount();
+        }
+        return amount;
     }
 
     private boolean isOrderScoped(DiscountResponse discount) {
