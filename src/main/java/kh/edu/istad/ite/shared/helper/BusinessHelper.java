@@ -9,6 +9,7 @@ import kh.edu.istad.ite.features.user.repository.UserProfileRepository;
 import kh.edu.istad.ite.shared.enums.BusinessFeature;
 import kh.edu.istad.ite.shared.enums.RecordStatus;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 import org.springframework.web.server.ResponseStatusException;
@@ -17,6 +18,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 @Component
+@Slf4j
 @RequiredArgsConstructor
 public class BusinessHelper {
 
@@ -44,6 +46,33 @@ public class BusinessHelper {
     @Deprecated
     public Business findOwnedBusiness(UUID businessId) {
         return findAccessibleBusiness(businessId);
+    }
+
+    /**
+     * The business, for FluxiBiz staff working on its behalf.
+     *
+     * Deliberately a separate door rather than a widening of the tenant check.
+     * Assisted migration needs a support operator to reach a shop they are not
+     * staff of, and the check above is used in more than a hundred places
+     * across a dozen features — letting operators through it would hand them
+     * that shop's carts, orders, customers and discounts to buy a handover of
+     * four calls.
+     *
+     * So this exists, only migration calls it, and it grants nothing anywhere
+     * else. The endpoints that reach it are separately guarded by the same
+     * admin scope, and the entities record who acted.
+     */
+    public Business findBusinessForOperator(UUID businessId) {
+        if (!AuthHelper.isPlatformOperator()) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You have been forbidden");
+        }
+
+        Business business = findBusiness(businessId);
+
+        log.info("Platform operator {} acting on business {}",
+                AuthHelper.currentUserId(), businessId);
+
+        return business;
     }
 
     /** The business, provided the caller owns it or is active staff there. */

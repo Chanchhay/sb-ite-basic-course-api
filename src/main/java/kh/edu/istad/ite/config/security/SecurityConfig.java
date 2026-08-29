@@ -84,6 +84,12 @@ public class SecurityConfig {
                         .hasAuthority("SCOPE_admin-dashboard:read")
 
                         // Admin Businesses
+                        // Assisted migration works on a customer's catalogue on
+                        // their behalf, so it asks for the authority that manages
+                        // a business rather than the one that merely reads one.
+                        .requestMatchers("/api/v1/admin/businesses/*/assisted-migrations",
+                                "/api/v1/admin/businesses/*/assisted-migrations/**")
+                        .hasAuthority("SCOPE_admin-business:manage")
                         .requestMatchers(HttpMethod.GET, "/api/v1/admin/businesses",
                                 "/api/v1/admin/businesses/**")
                         .hasAuthority("SCOPE_admin-business:read")
