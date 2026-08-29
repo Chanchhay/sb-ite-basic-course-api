@@ -51,7 +51,7 @@ public class OrderMapper {
                 null,
                 order.getSubtotal(),
                 order.getDiscountAmount(),
-                resolveDiscountLabel(order.getDiscountAmount(), order.getSubtotal(), order.getDiscountCode(), order.getDiscountId()),
+                resolveDiscountLabel(order.getDiscountAmount(), order.getSubtotal(), order.getDiscountCode(), order.getDiscountId(), order.getItems()),
                 order.getTaxRate(),
                 order.getTaxAmount(),
                 order.getTaxInclusionType(),
@@ -73,12 +73,41 @@ public class OrderMapper {
      * every channel names the same discount the same way.
      */
     private String resolveDiscountLabel(BigDecimal discountAmount, BigDecimal subtotal, String discountCode, java.util.UUID discountId) {
+        return resolveDiscountLabel(discountAmount, subtotal, discountCode, discountId, null);
+    }
+
+    /**
+     * As above, but when several different discounts are attributed to
+     * different lines (order.discountId can only ever name one of them),
+     * names all of them instead of picking one arbitrarily or falling back
+     * to a blended percentage that doesn't correspond to any real rule.
+     */
+    private String resolveDiscountLabel(
+            BigDecimal discountAmount, BigDecimal subtotal, String discountCode,
+            java.util.UUID discountId, List<OrderItem> items
+    ) {
         if (discountAmount == null || discountAmount.compareTo(BigDecimal.ZERO) <= 0) {
             return null;
         }
 
         if (StringUtils.hasText(discountCode)) {
             return discountCode;
+        }
+
+        if (items != null) {
+            java.util.LinkedHashSet<String> distinctLabels = items.stream()
+                    .map(OrderItem::getDiscountLabel)
+                    .filter(StringUtils::hasText)
+                    .collect(java.util.stream.Collectors.toCollection(java.util.LinkedHashSet::new));
+            if (distinctLabels.size() > 3) {
+                return distinctLabels.size() + " discounts applied";
+            }
+            if (distinctLabels.size() > 1) {
+                return String.join(" + ", distinctLabels);
+            }
+            if (distinctLabels.size() == 1) {
+                return distinctLabels.iterator().next();
+            }
         }
 
         if (discountId != null) {
@@ -110,6 +139,7 @@ public class OrderMapper {
                 item.getQuantity(),
                 item.getUnitPrice(),
                 item.getDiscountAmount(),
+                item.getDiscountLabel(),
                 item.getLineTotal(),
                 item.getItem() == null ? Boolean.TRUE : item.getItem().getTrackInventory(),
                 item.getAddOns() == null ? List.of() : item.getAddOns().stream()
@@ -152,7 +182,7 @@ public class OrderMapper {
                 sale.getChannel(),
                 sale.getSubtotal(),
                 sale.getDiscountAmount(),
-                resolveDiscountLabel(sale.getDiscountAmount(), sale.getSubtotal(), order.getDiscountCode(), order.getDiscountId()),
+                resolveDiscountLabel(sale.getDiscountAmount(), sale.getSubtotal(), order.getDiscountCode(), order.getDiscountId(), order.getItems()),
                 sale.getTaxRate(),
                 sale.getTaxAmount(),
                 sale.getTaxInclusionType(),

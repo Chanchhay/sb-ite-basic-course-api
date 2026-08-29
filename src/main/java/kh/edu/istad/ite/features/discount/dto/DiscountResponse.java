@@ -28,6 +28,7 @@ public record DiscountResponse(
         List<DayOfWeek> selectedDay,
         List<OrderChannel> applicableChannels,
         List<DiscountTargetResponse> targets,
-        RecordStatus status
+        RecordStatus status,
+        List<UUID> pausedDiscountIds
 ) {
 }

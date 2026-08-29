@@ -28,4 +28,18 @@ public interface DiscountTargetRepository extends JpaRepository<DiscountTarget, 
     // Discounts that are scoped to this exact category.
     List<DiscountTarget> findAllByItemGroupIdAndDiscount_BusinessId(UUID itemGroupId, UUID businessId);
 
+    @org.springframework.data.jpa.repository.Query("""
+        SELECT dt FROM DiscountTarget dt
+        JOIN dt.discount d
+        WHERE d.business.id = :businessId
+          AND d.status = 'ACTIVE'
+          AND dt.targetType = 'ITEM'
+          AND dt.item.id IN :itemIds
+          AND (:excludeDiscountId IS NULL OR d.id != :excludeDiscountId)
+    """)
+    List<DiscountTarget> findActiveItemTargetsByBusinessIdAndItemIds(
+            @org.springframework.data.repository.query.Param("businessId") UUID businessId,
+            @org.springframework.data.repository.query.Param("itemIds") List<UUID> itemIds,
+            @org.springframework.data.repository.query.Param("excludeDiscountId") UUID excludeDiscountId
+    );
 }

@@ -38,6 +38,5 @@ public class NotificationWebSocketPublisher {
     private void sendAll(String tenantUserDestination, String userDestination, ReceivedNotificationResponse payload) {
         messagingTemplate.convertAndSend(tenantUserDestination, payload);
         messagingTemplate.convertAndSend(userDestination, payload);
-        messagingTemplate.convertAndSend("/topic/notifications", payload);
     }
 }

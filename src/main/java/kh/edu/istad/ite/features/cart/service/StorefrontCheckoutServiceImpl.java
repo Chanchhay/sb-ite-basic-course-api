@@ -242,15 +242,68 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
             BigDecimal rawLineSubtotal = orderItem.priceWithAddOns().multiply(BigDecimal.valueOf(quantity));
 
             BigDecimal lineDiscount = BigDecimal.ZERO;
-            Optional<kh.edu.istad.ite.features.discount.dto.LineDiscountApplication> applied =
-                    discountApplicationService.resolveLineDiscount(
-                            business.getId(), OrderChannel.WEB, item.getId(), itemGroupId,
-                            baseUnitPrice, quantity, rawSubtotal);
+            if (discountService != null) {
+                List<kh.edu.istad.ite.features.discount.dto.DiscountResponse> applicableDiscounts = discountService.findApplicableDiscounts(
+                        business.getId(),
+                        OrderChannel.WEB,
+                        item.getId(),
+                        itemGroupId
+                );
 
-            if (applied.isPresent()) {
-                lineDiscount = applied.get().amount().setScale(scale, RoundingMode.HALF_UP);
-                if (appliedDiscountId == null) {
-                    appliedDiscountId = applied.get().discountId();
+                List<kh.edu.istad.ite.features.discount.dto.DiscountResponse> autoDiscounts = applicableDiscounts.stream()
+                        .filter(d -> !Boolean.TRUE.equals(d.requiresCoupon()))
+                        .toList();
+
+                if (!autoDiscounts.isEmpty()) {
+                    kh.edu.istad.ite.features.discount.dto.DiscountResponse discount = autoDiscounts.stream()
+                            .sorted((d1, d2) -> {
+                                int s1 = (d1.scope() == kh.edu.istad.ite.shared.enums.DiscountScope.SPECIFIC_ITEMS || d1.scope() == kh.edu.istad.ite.shared.enums.DiscountScope.ITEM) ? 2
+                                        : (d1.scope() == kh.edu.istad.ite.shared.enums.DiscountScope.SPECIFIC_CATEGORIES || d1.scope() == kh.edu.istad.ite.shared.enums.DiscountScope.CATEGORY) ? 1 : 0;
+                                int s2 = (d2.scope() == kh.edu.istad.ite.shared.enums.DiscountScope.SPECIFIC_ITEMS || d2.scope() == kh.edu.istad.ite.shared.enums.DiscountScope.ITEM) ? 2
+                                        : (d2.scope() == kh.edu.istad.ite.shared.enums.DiscountScope.SPECIFIC_CATEGORIES || d2.scope() == kh.edu.istad.ite.shared.enums.DiscountScope.CATEGORY) ? 1 : 0;
+                                if (s1 != s2) return Integer.compare(s2, s1);
+
+                                int r1 = d1.ruleType() == kh.edu.istad.ite.shared.enums.DiscountRuleType.BUY_X_GET_Y ? 2 : 0;
+                                int r2 = d2.ruleType() == kh.edu.istad.ite.shared.enums.DiscountRuleType.BUY_X_GET_Y ? 2 : 0;
+                                if (r1 != r2) return Integer.compare(r2, r1);
+
+                                BigDecimal v1 = d1.value() != null ? d1.value() : BigDecimal.ZERO;
+                                BigDecimal v2 = d2.value() != null ? d2.value() : BigDecimal.ZERO;
+                                return v2.compareTo(v1);
+                            })
+                            .findFirst()
+                            .orElse(autoDiscounts.get(0));
+
+                    if (appliedDiscountId == null) {
+                        appliedDiscountId = discount.id();
+                    }
+
+                    if (discount.ruleType() == kh.edu.istad.ite.shared.enums.DiscountRuleType.BUY_X_GET_Y) {
+                        int buy = discount.buyQuantity() != null && discount.buyQuantity() > 0 ? discount.buyQuantity() : 1;
+                        int get = discount.getQuantity() != null && discount.getQuantity() > 0 ? discount.getQuantity() : 1;
+                        int bundle = buy + get;
+                        if (quantity >= bundle) {
+                            int freeUnits = (quantity / bundle) * get;
+                            lineDiscount = baseUnitPrice.multiply(BigDecimal.valueOf(freeUnits));
+                        }
+                    } else if (discount.type() == kh.edu.istad.ite.shared.enums.DiscountType.PERCENTAGE && discount.value() != null) {
+                        BigDecimal unitDiscount = baseUnitPrice.multiply(discount.value()).divide(BigDecimal.valueOf(100), scale, RoundingMode.HALF_UP);
+                        lineDiscount = unitDiscount.multiply(BigDecimal.valueOf(quantity));
+                    } else if (discount.type() == kh.edu.istad.ite.shared.enums.DiscountType.FIXED_AMOUNT && discount.value() != null) {
+                        lineDiscount = discount.value().multiply(BigDecimal.valueOf(quantity));
+                    }
+
+                    if (discount.maxDiscountAmount() != null && lineDiscount.compareTo(discount.maxDiscountAmount()) > 0) {
+                        lineDiscount = discount.maxDiscountAmount();
+                    }
+
+                    if (lineDiscount.compareTo(rawLineSubtotal) > 0) {
+                        lineDiscount = rawLineSubtotal;
+                    }
+
+                    if (lineDiscount.compareTo(BigDecimal.ZERO) > 0) {
+                        orderItem.setDiscountLabel(discount.name());
+                    }
                 }
             }
 
@@ -1034,6 +1087,7 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
                         item.getQuantity() != null ? item.getQuantity() : 1,
                         item.getUnitPrice() != null ? item.getUnitPrice() : BigDecimal.ZERO,
                         item.getDiscountAmount() != null ? item.getDiscountAmount() : BigDecimal.ZERO,
+                        item.getDiscountLabel(),
                         item.getLineTotal() != null ? item.getLineTotal() : BigDecimal.ZERO,
                         // The extras read alongside the options: without them
                         // the line total is higher than the item's price with

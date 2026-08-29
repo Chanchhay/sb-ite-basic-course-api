@@ -18,6 +18,8 @@ public record OrderItemResponse(
         Integer quantity,
         BigDecimal unitPrice,
         BigDecimal discountAmount,
+        /** Name of the discount that produced discountAmount for this line, if any. */
+        String discountLabel,
         BigDecimal lineTotal,
         Boolean trackInventory,
         /** Extras chosen on this line, priced as they were when rung up. */
