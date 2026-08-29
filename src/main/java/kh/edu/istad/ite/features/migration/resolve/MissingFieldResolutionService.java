@@ -8,6 +8,7 @@ import kh.edu.istad.ite.shared.enums.ImportTargetType;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -95,44 +96,90 @@ public class MissingFieldResolutionService {
      * A rule for one category beats a rule for everything, so an operator can
      * say "services are counted in services, and everything else in pieces"
      * as two rules rather than as one rule and a list of exceptions.
+     *
+     * Narrowest is worked out here rather than trusted from the caller. The
+     * list arrives in whatever order the operator answered the questions, and
+     * a migration that came out differently depending on that order would be
+     * the same catalogue imported two ways.
      */
     private void applyRules(PreparedRow row, ImportTargetType targetType, List<FieldRule> rules) {
-        String category = row.get(ImportField.ITEM_GROUP);
-        String itemType = row.get(ImportField.ITEM_TYPE);
+        List<FieldRule> narrowestFirst = rules.stream()
+                .sorted(Comparator.comparingInt(MissingFieldResolutionService::breadthOf))
+                .toList();
 
-        for (FieldRule rule : rules) {
-            if (row.has(rule.field()) || !rule.covers(category, itemType)) {
-                continue;
-            }
+        /*
+         * Passes until nothing more is settled. A rule scoped to an item type
+         * can only be judged once that item type is known, and the rule that
+         * settles it may sit anywhere in the list — so a single pass would
+         * apply or drop it depending on the order the answers came in.
+         *
+         * Each pass only fills fields that are still empty, so there are at
+         * most as many passes as there are fields.
+         */
+        boolean settledSomething = true;
 
-            /*
-             * A rule cannot supply what only the customer knows. Choosing one
-             * value for every nameless row would import a shelf of identical
-             * items nobody can tell apart, and the shop would have to find and
-             * delete them by hand — worse than the rows simply not importing.
-             */
-            if (!MigrationFieldPolicy.of(rule.field(), targetType).answerableForEveryone()) {
-                continue;
-            }
+        while (settledSomething) {
+            settledSomething = false;
 
-            row.put(rule.field(), rule.value(),
-                    FieldValue.decided(rule.value(), rule.rule()));
+            String category = row.get(ImportField.ITEM_GROUP);
+            String itemType = row.get(ImportField.ITEM_TYPE);
 
-            /*
-             * An item type settled by a rule can settle the stock question
-             * behind it, in the same pass. Otherwise an operator who answers
-             * "these are all services" would be asked immediately afterwards
-             * whether services hold stock, which FluxiBiz already knows.
-             */
-            if (rule.field() == ImportField.ITEM_TYPE) {
-                itemType = rule.value();
-                derive(row);
-            }
+            for (FieldRule rule : narrowestFirst) {
+                if (rule.value() == null || rule.value().isBlank()) {
+                    continue;
+                }
 
-            if (rule.field() == ImportField.ITEM_GROUP) {
-                category = rule.value();
+                if (row.has(rule.field()) || !rule.covers(category, itemType)) {
+                    continue;
+                }
+
+                /*
+                 * A rule cannot supply what only the customer knows. Choosing one
+                 * value for every nameless row would import a shelf of identical
+                 * items nobody can tell apart, and the shop would have to find and
+                 * delete them by hand — worse than the rows simply not importing.
+                 */
+                if (!MigrationFieldPolicy.of(rule.field(), targetType).answerableForEveryone()) {
+                    continue;
+                }
+
+                row.put(rule.field(), rule.value(),
+                        FieldValue.decided(rule.value(), rule.rule()));
+
+                settledSomething = true;
+
+                /*
+                 * An item type settled by a rule can settle the stock question
+                 * behind it, in the same pass. Otherwise an operator who answers
+                 * "these are all services" would be asked immediately afterwards
+                 * whether services hold stock, which FluxiBiz already knows.
+                 */
+                if (rule.field() == ImportField.ITEM_TYPE) {
+                    itemType = rule.value();
+                    derive(row);
+                }
+
+                if (rule.field() == ImportField.ITEM_GROUP) {
+                    category = rule.value();
+                }
             }
         }
+    }
+
+    /**
+     * How much of the catalogue a rule claims — lower reaches fewer rows.
+     *
+     * A category names a shelf the operator picked out by hand; an item type
+     * cuts across the whole catalogue; everything reaches the rest. Rules of
+     * equal breadth keep the order they were given, so two answers that truly
+     * overlap settle the way the operator wrote them.
+     */
+    private static int breadthOf(FieldRule rule) {
+        return switch (rule.scope()) {
+            case CATEGORY -> 0;
+            case ITEM_TYPE -> 1;
+            case ALL -> 2;
+        };
     }
 
     /**
