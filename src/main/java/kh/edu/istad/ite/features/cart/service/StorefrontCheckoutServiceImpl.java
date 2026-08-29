@@ -19,6 +19,7 @@ import kh.edu.istad.ite.features.customer.repository.CustomerRepository;
 import kh.edu.istad.ite.features.customer.service.CustomerIdentityService;
 import kh.edu.istad.ite.features.discount.entity.Discount;
 import kh.edu.istad.ite.features.discount.repository.DiscountRepository;
+import kh.edu.istad.ite.features.discount.service.DiscountService;
 import kh.edu.istad.ite.features.inventory.dto.StockSummaryResponse;
 import kh.edu.istad.ite.features.channel.service.ItemChannelStockService;
 import kh.edu.istad.ite.features.inventory.service.StockEntryService;
@@ -114,6 +115,7 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
     private final TelegramAlertService telegramAlertService;
     private final kh.edu.istad.ite.features.business.service.TaxCalculator taxCalculator;
     private final kh.edu.istad.ite.features.customer.repository.CustomerChannelIdentityRepository customerChannelIdentityRepository;
+    private final DiscountService discountService;
 
 
     @Override
