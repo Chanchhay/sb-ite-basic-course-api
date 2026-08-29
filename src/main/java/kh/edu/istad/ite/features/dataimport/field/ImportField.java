@@ -277,6 +277,17 @@ public enum ImportField {
         return help;
     }
 
+    /**
+     * The headings this field answers to, already flattened for comparison.
+     *
+     * Exposed because assisted migration weighs them rather than matching them
+     * outright — a heading that merely contains an alias is worth something
+     * there, and worth nothing to the shop's own importer.
+     */
+    public List<String> getAliases() {
+        return aliases;
+    }
+
     public ImportFieldType getType() {
         return type;
     }
