@@ -50,6 +50,7 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.server.ResponseStatusException;
 
 import kh.edu.istad.ite.features.discount.dto.LineDiscountApplication;
+import kh.edu.istad.ite.features.discount.dto.OrderLineUnits;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -657,7 +658,6 @@ public class StorefrontCartService {
         BigDecimal rawSubtotal = cart.getItems().stream()
                 .map(this::rawLineSubtotal)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
-        int totalQuantity = cart.getTotalItemsCount();
 
         List<PricedCartLine> priced = cart.getItems().stream()
                 .map(item -> toLine(item, rawSubtotal))
@@ -675,8 +675,15 @@ public class StorefrontCartService {
         // disagree over the same cart.
         BigDecimal orderDiscountAmount = BigDecimal.ZERO;
         if (itemDiscountTotal.compareTo(BigDecimal.ZERO) == 0) {
+            List<OrderLineUnits> lineUnits = cart.getItems().stream()
+                    .map(item -> new OrderLineUnits(
+                            item.getBasePrice() != null ? item.getBasePrice() : item.getPriceSnapshot(),
+                            item.getQuantity() == null ? 0 : item.getQuantity()))
+                    .filter(units -> units.unitPrice() != null && units.quantity() > 0)
+                    .toList();
+
             orderDiscountAmount = discountApplicationService
-                    .resolveOrderDiscount(business.getId(), OrderChannel.WEB, rawSubtotal, totalQuantity)
+                    .resolveOrderDiscount(business.getId(), OrderChannel.WEB, lineUnits)
                     .map(LineDiscountApplication::amount)
                     .orElse(BigDecimal.ZERO);
         }
@@ -706,7 +713,7 @@ public class StorefrontCartService {
                 Boolean.TRUE.equals(business.getIsEnabled())
                         && !Boolean.TRUE.equals(business.getIsClosed())
                         && channelPriceResolver.isOpenNow(business.getId(), WEB_CHANNEL_CODE),
-                totalQuantity,
+                cart.getTotalItemsCount(),
                 finalSubtotal,
                 lines);
     }

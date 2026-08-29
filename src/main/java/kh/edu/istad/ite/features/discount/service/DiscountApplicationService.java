@@ -1,9 +1,11 @@
 package kh.edu.istad.ite.features.discount.service;
 
 import kh.edu.istad.ite.features.discount.dto.LineDiscountApplication;
+import kh.edu.istad.ite.features.discount.dto.OrderLineUnits;
 import kh.edu.istad.ite.shared.enums.OrderChannel;
 
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -46,13 +48,16 @@ public interface DiscountApplicationService {
     );
 
     /**
-     * The best auto-applied, ALL_ITEMS/ORDER-scoped discount, given the
-     * order's real subtotal and total item count.
+     * The best auto-applied, ALL_ITEMS/ORDER-scoped discount, given every
+     * line actually in the order. Line-level detail (not just a subtotal)
+     * matters here specifically for BUY_X_GET_Y: "buy 2 get 1 free, any
+     * item" spread across a mixed order has to free whichever units are
+     * actually cheapest, not just divide the subtotal by a unit price that
+     * doesn't exist when the order has more than one kind of item in it.
      */
     Optional<LineDiscountApplication> resolveOrderDiscount(
             UUID businessId,
             OrderChannel channel,
-            BigDecimal orderSubtotal,
-            int totalQuantity
+            List<OrderLineUnits> lines
     );
 }

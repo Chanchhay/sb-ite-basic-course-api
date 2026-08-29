@@ -227,9 +227,6 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
         BigDecimal rawSubtotal = cart.getItems().stream()
                 .map(this::rawCartLineSubtotal)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
-        int totalQuantity = cart.getItems().stream()
-                .mapToInt(l -> l.getQuantity() == null ? 0 : l.getQuantity())
-                .sum();
 
         BigDecimal totalDiscount = BigDecimal.ZERO;
         UUID appliedDiscountId = null;
@@ -273,8 +270,15 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
         // the real subtotal, and only when nothing item-level already
         // applied: a storewide promo and a targeted item promo don't stack.
         if (totalDiscount.compareTo(BigDecimal.ZERO) == 0) {
+            List<kh.edu.istad.ite.features.discount.dto.OrderLineUnits> lineUnits = cart.getItems().stream()
+                    .map(l -> new kh.edu.istad.ite.features.discount.dto.OrderLineUnits(
+                            l.getBasePrice() != null ? l.getBasePrice() : l.getPriceSnapshot(),
+                            l.getQuantity() == null ? 0 : l.getQuantity()))
+                    .filter(units -> units.unitPrice() != null && units.quantity() > 0)
+                    .toList();
+
             Optional<kh.edu.istad.ite.features.discount.dto.LineDiscountApplication> orderDiscount =
-                    discountApplicationService.resolveOrderDiscount(business.getId(), OrderChannel.WEB, rawSubtotal, totalQuantity);
+                    discountApplicationService.resolveOrderDiscount(business.getId(), OrderChannel.WEB, lineUnits);
 
             if (orderDiscount.isPresent()) {
                 totalDiscount = orderDiscount.get().amount().setScale(scale, RoundingMode.HALF_UP);

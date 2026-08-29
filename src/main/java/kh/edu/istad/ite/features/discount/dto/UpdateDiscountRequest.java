@@ -16,7 +16,7 @@ public record UpdateDiscountRequest(
         @Size(max = 2000, message = "description must be at most 2000 characters")
         String description,
 
-        @Pattern(regexp = "PERCENTAGE|FIXED_AMOUNT", message = "type must be one of: PERCENTAGE, FIXED_AMOUNT")
+        @Pattern(regexp = "PERCENTAGE|FIXED_AMOUNT|BUY_X_GET_Y", message = "type must be one of: PERCENTAGE, FIXED_AMOUNT, BUY_X_GET_Y")
         String type,
 
         @Pattern(regexp = "NO_CONDITION|MIN_QUANTITY|MIN_ORDER_AMOUNT|BUY_X_GET_Y", message = "ruleType must be one of: NO_CONDITION, MIN_QUANTITY, MIN_ORDER_AMOUNT, BUY_X_GET_Y")
