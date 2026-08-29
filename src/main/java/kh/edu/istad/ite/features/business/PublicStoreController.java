@@ -1,5 +1,6 @@
 package kh.edu.istad.ite.features.business;
 
+import kh.edu.istad.ite.features.business.dto.PublicFacebookPageResponse;
 import kh.edu.istad.ite.features.business.dto.PublicStoreDetailResponse;
 import kh.edu.istad.ite.features.business.dto.PublicStoreResponse;
 import kh.edu.istad.ite.features.business.service.StorefrontService;
@@ -63,6 +64,12 @@ public class PublicStoreController {
     @GetMapping("/{slug}/item-groups")
     public List<ItemGroupResponse> getStoreItemGroups(@PathVariable String slug) {
         return storefrontService.getPublicStoreItemGroups(slug);
+    }
+
+    /** The public "Find us on Facebook" link — both fields null when this store has no Page connected. */
+    @GetMapping("/{slug}/social-settings/facebook")
+    public PublicFacebookPageResponse getStoreFacebookSocialSettings(@PathVariable String slug) {
+        return storefrontService.getPublicFacebookSocialSettings(slug);
     }
 
     @GetMapping("/recommended")
