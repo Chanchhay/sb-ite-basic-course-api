@@ -284,7 +284,11 @@ public class FacebookGraphClient {
 
             log.info("Configured Messenger profile: textFlow={} miniApp={}", textFlowEnabled, miniAppEnabled);
         } catch (Exception e) {
-            log.error("Failed to configure Messenger profile: {}", e.getMessage());
+            // Was logging only e.getMessage() — the persistent menu (and the
+            // "Open Shop" button on it) silently stays whatever it was
+            // before on failure, with no stack trace left behind to explain
+            // why the push itself didn't take.
+            log.error("Failed to configure Messenger profile (textFlow={}, miniApp={})", textFlowEnabled, miniAppEnabled, e);
         }
     }
 

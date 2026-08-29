@@ -148,7 +148,8 @@ public class FacebookWebhookController {
             } else if (text != null && text.trim().length() >= 2) {
                 catalogService.searchItems(page, senderId, text.trim());
             } else {
-                catalogService.sendWelcomeMenu(page, senderId);
+                catalogService.sendWelcomeMenu(page, senderId,
+                        miniAppEnabled ? storefrontProps.buildMessengerMiniAppUrl(page.getBusiness().getSlug()) : null);
             }
         } else {
             // Mini App only — the bot's only job in a text conversation is
@@ -187,7 +188,32 @@ public class FacebookWebhookController {
                 List.of(shopButton));
     }
 
+    /**
+     * A tapped button whose handler throws anything other than the
+     * {@code IllegalArgumentException} the individual branches already guard
+     * against (an NPE deep in stock/discount/image-URL lookup, a Graph API
+     * call failing, etc.) used to propagate all the way to {@code receiveEvent}'s
+     * catch-all, which only logs — so from the customer's side, tapping
+     * "🔍 លម្អិត" (View details) or any other button did visibly nothing at
+     * all, with no error and no way to tell the tap even registered. This
+     * catches that case and at least says something went wrong, rather than
+     * leaving the tap looking unanswered.
+     */
     private void handlePostback(BusinessFacebookPage page, String psid, String payload, boolean textFlowEnabled, boolean miniAppEnabled) {
+        try {
+            dispatchPostback(page, psid, payload, textFlowEnabled, miniAppEnabled);
+        } catch (Exception e) {
+            log.error("Error handling Facebook postback [{}] from PSID [{}]", payload, psid, e);
+            try {
+                graphClient.sendTextMessage(page.getPageId(), page.getPageAccessTokenEncrypted(), psid,
+                        "😔 សូមអភ័យទោស មានបញ្ហាបច្ចេកទេស សូមព្យាយាមម្តងទៀត។");
+            } catch (Exception ignored) {
+                // Already logged above — a failure sending the apology isn't worth a second log entry.
+            }
+        }
+    }
+
+    private void dispatchPostback(BusinessFacebookPage page, String psid, String payload, boolean textFlowEnabled, boolean miniAppEnabled) {
         if (payload == null) return;
 
         // Auto-register/fetch customer and bot session for any postback

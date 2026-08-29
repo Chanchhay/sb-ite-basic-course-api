@@ -50,13 +50,36 @@ public class FacebookCatalogService {
 
 
     public void sendWelcomeMenu(BusinessFacebookPage page, String psid) {
+        sendWelcomeMenu(page, psid, null);
+    }
+
+    /**
+     * @param miniAppUrl when non-null (the business also has the Mini App
+     *                   enabled), a web_url "Open Shop" button rides along in
+     *                   the same message — otherwise the only place a
+     *                   customer could ever find that button again after the
+     *                   first "Get Started" is the persistent menu icon next
+     *                   to the composer, which is easy to miss entirely.
+     */
+    public void sendWelcomeMenu(BusinessFacebookPage page, String psid, String miniAppUrl) {
         String storeName = page.getBusiness().getDisplayName();
         String text = "👋 សូមស្វាគមន៍មកកាន់ " + storeName + "!\n\nសូមចុចប៊ូតុងខាងក្រោម ដើម្បីមើល ឬស្វែងរកផលិតផលរបស់យើង។";
 
-        List<Map<String, Object>> buttons = List.of(
-                Map.of("type", "postback", "title", "🗂️ មើលផលិតផល", "payload", "CATALOG"),
-                Map.of("type", "postback", "title", "📂 ប្រភេទទំនិញ", "payload", "CATALOG_CATEGORIES")
-        );
+        List<Map<String, Object>> buttons = new ArrayList<>();
+        if (StringUtils.hasText(miniAppUrl)) {
+            Map<String, Object> shopButton = new java.util.HashMap<>();
+            shopButton.put("type", "web_url");
+            shopButton.put("title", "🛍 បើកហាង");
+            shopButton.put("url", miniAppUrl);
+            shopButton.put("webview_height_ratio", "tall");
+            shopButton.put("messenger_extensions", true);
+            buttons.add(shopButton);
+        }
+        buttons.add(Map.of("type", "postback", "title", "🗂️ មើលផលិតផល", "payload", "CATALOG"));
+        // Messenger button templates cap out at 3 buttons.
+        if (buttons.size() < 3) {
+            buttons.add(Map.of("type", "postback", "title", "📂 ប្រភេទទំនិញ", "payload", "CATALOG_CATEGORIES"));
+        }
 
         graphClient.sendButtonTemplate(page.getPageId(), page.getPageAccessTokenEncrypted(), psid, text, buttons);
     }
