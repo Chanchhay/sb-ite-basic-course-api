@@ -94,9 +94,7 @@ public class CustomerServiceImpl implements CustomerService {
             ensureCustomerDoesNotExist(businessId, globalCustomer, customerId);
             customer.setGlobalCustomer(globalCustomer);
         }
-        if (request.membershipTypeId() != null) {
-            customer.setMembershipType(findMembershipTypeOrNull(request.membershipTypeId(), businessId));
-        }
+        customer.setMembershipType(findMembershipTypeOrNull(request.membershipTypeId(), businessId));
         if (request.salesChannelId() != null) {
             customer.setSalesChannel(findSalesChannelOrNull(request.salesChannelId()));
         }

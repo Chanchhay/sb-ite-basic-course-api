@@ -139,7 +139,20 @@ public class ImportJobServiceImpl implements ImportJobService {
     @Override
     @Transactional
     public ImportJobResponse upload(UUID businessId, ImportTargetType targetType, MultipartFile file) {
-        Business business = businessHelper.findAccessibleBusiness(businessId);
+        return uploadFor(businessHelper.findAccessibleBusiness(businessId), targetType, file);
+    }
+
+    /**
+     * The upload itself, once the caller has been allowed in.
+     *
+     * Split from the check so assisted migration can hand its prepared workbook
+     * to exactly this code without the tenant rule having to be relaxed for
+     * every other feature that shares it.
+     */
+    private ImportJobResponse uploadFor(
+            Business business, ImportTargetType targetType, MultipartFile file) {
+        UUID businessId = business.getId();
+
         validateUpload(file);
 
         SourceFileParser parser = parserRegistry.parserFor(file.getOriginalFilename());
@@ -306,7 +319,10 @@ public class ImportJobServiceImpl implements ImportJobService {
     @Override
     @Transactional
     public ImportJobResponse saveMapping(UUID businessId, UUID importId, ImportMappingRequest request) {
-        ImportJob job = findOwnedJob(businessId, importId);
+        return applyMapping(findOwnedJob(businessId, importId), request);
+    }
+
+    private ImportJobResponse applyMapping(ImportJob job, ImportMappingRequest request) {
         requireNotFinished(job);
 
         Map<String, String> mappings = cleanMappings(job, request.mappings());
@@ -711,9 +727,40 @@ public class ImportJobServiceImpl implements ImportJobService {
     private ImportJob findOwnedJob(UUID businessId, UUID importId) {
         businessHelper.findAccessibleBusiness(businessId);
 
+        return jobOf(businessId, importId);
+    }
+
+    /** The job, having established elsewhere that the caller may see it. */
+    private ImportJob jobOf(UUID businessId, UUID importId) {
         return importJobRepository.findByIdAndBusinessId(importId, businessId)
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND, "That import has not been found"));
+    }
+
+    // --- the handover assisted migration uses --------------------------------------
+
+    @Override
+    @Transactional
+    public ImportJobResponse uploadAsOperator(
+            UUID businessId, ImportTargetType targetType, MultipartFile file) {
+        return uploadFor(businessHelper.findBusinessForOperator(businessId), targetType, file);
+    }
+
+    @Override
+    @Transactional
+    public ImportJobResponse saveMappingAsOperator(
+            UUID businessId, UUID importId, ImportMappingRequest request) {
+        businessHelper.findBusinessForOperator(businessId);
+
+        return applyMapping(jobOf(businessId, importId), request);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public ImportJobResponse findJobAsOperator(UUID businessId, UUID importId) {
+        businessHelper.findBusinessForOperator(businessId);
+
+        return mapper.toResponse(jobOf(businessId, importId));
     }
 
     private void requireNotFinished(ImportJob job) {

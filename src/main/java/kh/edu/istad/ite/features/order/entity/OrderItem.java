@@ -56,6 +56,12 @@ public class OrderItem {
     @Column(name = "discount_amount", nullable = false, precision = 12, scale = 2)
     private BigDecimal discountAmount = BigDecimal.ZERO;
 
+    // Name of the catalog Discount that produced discountAmount for this
+    // line, if any — so receipts/checkout can show which promo applied to
+    // which item instead of just a lump order-level discount total.
+    @Column(name = "discount_label", length = 150)
+    private String discountLabel;
+
     @Column(name = "line_total", nullable = false, precision = 14, scale = 2)
     private BigDecimal lineTotal = BigDecimal.ZERO;
 

@@ -59,6 +59,22 @@ public interface ImportJobService {
 
     ImportJobResponse saveMapping(UUID businessId, UUID importId, ImportMappingRequest request);
 
+    /*
+     * The three calls assisted migration makes, and the only ones a FluxiBiz
+     * operator may make on a shop's behalf.
+     *
+     * Separate methods rather than a relaxed tenant check, because that check
+     * guards more than a hundred places across a dozen features and this
+     * feature needs three of them. An operator gets a door into the importer
+     * and into nothing else.
+     */
+
+    ImportJobResponse uploadAsOperator(UUID businessId, ImportTargetType targetType, MultipartFile file);
+
+    ImportJobResponse saveMappingAsOperator(UUID businessId, UUID importId, ImportMappingRequest request);
+
+    ImportJobResponse findJobAsOperator(UUID businessId, UUID importId);
+
     /** Starts checking in the background and returns immediately. */
     ImportJobResponse startValidation(UUID businessId, UUID importId);
 

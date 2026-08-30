@@ -72,6 +72,9 @@ public record UpdateDiscountRequest(
         //Null = don't touch category targets. pass an empty list to clear
         // all category targets (only meaningful while scope = CATEGORY ).
         @Size(max = 200, message = "targetItemGroupIds cannot contain more than 200 entries")
-        List<UUID> targetItemGroupIds
+        List<UUID> targetItemGroupIds,
+
+        // Optional: when activating or updating scope = ALL_ITEMS / ORDER, if true, pauses other active discounts
+        Boolean pauseOtherDiscounts
 ) {
 }

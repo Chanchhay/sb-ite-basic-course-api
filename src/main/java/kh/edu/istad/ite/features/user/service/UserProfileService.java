@@ -21,4 +21,6 @@ public interface UserProfileService {
 
     List<UserProfile> findByBusinessIdAndStaffStatus(UUID businessId, RecordStatus status);
 
+    void notifyStaffLogin();
+
 }

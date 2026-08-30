@@ -38,4 +38,10 @@ public class UserProfileController {
     public void removeProfilePicture() {
         userProfileService.removeProfilePicture();
     }
+
+    @PostMapping("/login-notify")
+    @ResponseStatus(HttpStatus.OK)
+    public void notifyStaffLogin() {
+        userProfileService.notifyStaffLogin();
+    }
 }
