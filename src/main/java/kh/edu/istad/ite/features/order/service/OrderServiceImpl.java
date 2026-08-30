@@ -39,12 +39,15 @@ import kh.edu.istad.ite.features.catalog.entity.Unit;
 import kh.edu.istad.ite.features.catalog.repository.ItemRepository;
 import kh.edu.istad.ite.features.customer.entity.Customer;
 import kh.edu.istad.ite.features.customer.repository.CustomerRepository;
+import kh.edu.istad.ite.features.discount.dto.LineDiscountApplication;
+import kh.edu.istad.ite.features.discount.dto.OrderLineUnits;
 import kh.edu.istad.ite.features.discount.entity.Coupon;
 import kh.edu.istad.ite.features.discount.entity.Discount;
 import kh.edu.istad.ite.features.discount.entity.DiscountTarget;
 import kh.edu.istad.ite.features.discount.repository.CouponRepository;
 import kh.edu.istad.ite.features.discount.repository.DiscountRepository;
 import kh.edu.istad.ite.features.discount.repository.DiscountTargetRepository;
+import kh.edu.istad.ite.features.discount.service.DiscountApplicationService;
 import kh.edu.istad.ite.features.channel.service.ItemChannelStockService;
 import kh.edu.istad.ite.features.inventory.service.StockEntryService;
 import kh.edu.istad.ite.features.order.dto.OfflineOrderDto;
@@ -132,6 +135,7 @@ public class OrderServiceImpl implements OrderService {
     private final TelegramAlertService telegramAlertService;
     private final kh.edu.istad.ite.features.channel.service.ChannelPriceResolver channelPriceResolver;
     private final TaxCalculator taxCalculator;
+    private final DiscountApplicationService discountApplicationService;
 
     @Override
     @Transactional
@@ -967,7 +971,6 @@ public class OrderServiceImpl implements OrderService {
     @Transactional
     public OrderResponse addOrderItem(UUID businessId, UUID orderId, AddOrderItemRequest request) {
         Order order = validateOrderModification(businessId, orderId);
-        BigDecimal orderLevelDiscount = currentOrderLevelDiscount(order);
 
         java.util.Optional<OrderItem> existingOpt = order.getItems().stream()
                 .filter(i -> sameLine(i, request.itemId(), request.variantId(), request.unitId(),
@@ -1001,7 +1004,7 @@ public class OrderServiceImpl implements OrderService {
             order.addItem(item);
         }
 
-        order.setDiscountAmount(itemDiscountTotal(order).add(orderLevelDiscount));
+        syncOrderDiscount(businessId, order);
         recalculateOrderTotals(order);
         return orderMapper.toResponse(orderRepository.save(order));
     }
@@ -1010,7 +1013,6 @@ public class OrderServiceImpl implements OrderService {
     @Transactional
     public OrderResponse updateOrderItem(UUID businessId, UUID orderId, UUID orderItemId, UpdateOrderItemRequest request) {
         Order order = validateOrderModification(businessId, orderId);
-        BigDecimal orderLevelDiscount = currentOrderLevelDiscount(order);
 
         OrderItem item = order.getItems().stream()
                 .filter(i -> i.getId().equals(orderItemId))
@@ -1029,7 +1031,7 @@ public class OrderServiceImpl implements OrderService {
         BigDecimal discount = item.getDiscountAmount() != null ? item.getDiscountAmount() : BigDecimal.ZERO;
         item.setLineTotal(item.priceWithAddOns().multiply(BigDecimal.valueOf(item.getQuantity())).subtract(discount));
 
-        order.setDiscountAmount(itemDiscountTotal(order).add(orderLevelDiscount));
+        syncOrderDiscount(businessId, order);
         recalculateOrderTotals(order);
         return orderMapper.toResponse(orderRepository.save(order));
     }
@@ -1038,14 +1040,13 @@ public class OrderServiceImpl implements OrderService {
     @Transactional
     public OrderResponse removeOrderItem(UUID businessId, UUID orderId, UUID orderItemId) {
         Order order = validateOrderModification(businessId, orderId);
-        BigDecimal orderLevelDiscount = currentOrderLevelDiscount(order);
 
         boolean removed = order.getItems().removeIf(i -> i.getId().equals(orderItemId));
         if (!removed) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Order item not found");
         }
 
-        order.setDiscountAmount(itemDiscountTotal(order).add(orderLevelDiscount));
+        syncOrderDiscount(businessId, order);
         recalculateOrderTotals(order);
         return orderMapper.toResponse(orderRepository.save(order));
     }
@@ -1498,10 +1499,82 @@ public class OrderServiceImpl implements OrderService {
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 
-    private BigDecimal currentOrderLevelDiscount(Order order) {
-        BigDecimal storedTotalDiscount = order.getDiscountAmount() == null ? BigDecimal.ZERO : order.getDiscountAmount();
-        BigDecimal orderLevelDiscount = storedTotalDiscount.subtract(itemDiscountTotal(order));
-        return orderLevelDiscount.max(BigDecimal.ZERO);
+    /**
+     * Keeps the order's discount atomically correct for its current items,
+     * inside the very same transaction as the item mutation that just
+     * changed them.
+     *
+     * This replaces carrying the order-level discount forward as a frozen
+     * dollar amount while a
+     * separate client-triggered {@code PATCH /discount} request was relied
+     * on to recompute it whenever a promotion's condition newly became met
+     * (e.g. a 3rd unit completing a Buy 2 Get 1 bundle). That second request
+     * raced this one on an {@code Order} row with no optimistic-locking
+     * {@code @Version} column: whichever save landed last silently overwrote
+     * the other's total, with no error on either side — the item mutation
+     * would win by reverting the discount right back to zero if its own
+     * (slower) transaction happened to commit after the discount PATCH's.
+     * Resolving the discount here, in the same transaction, removes the
+     * second request — and the race — entirely.
+     *
+     * An explicitly chosen discount or coupon (via {@link #updateOrderDiscount})
+     * is kept exactly as chosen, just re-priced against the item set as it
+     * now stands. Only when nothing has been explicitly chosen does this
+     * auto-detect the best currently-applicable catalog discount, the same
+     * way the storefront cart already does via {@link DiscountApplicationService}.
+     */
+    private void syncOrderDiscount(UUID businessId, Order order) {
+        if (order.getDiscountId() != null || StringUtils.hasText(order.getDiscountCode())) {
+            BigDecimal discountableSubtotal = grossSubtotal(order).subtract(itemDiscountTotal(order));
+            BigDecimal orderLevelDiscount = BigDecimal.ZERO;
+            if (discountableSubtotal.compareTo(BigDecimal.ZERO) > 0) {
+                try {
+                    orderLevelDiscount = resolveOrderDiscountAmount(businessId, order, order.getCustomer(),
+                            order.getDiscountId(), order.getDiscountCode(), null, false);
+                } catch (ResponseStatusException e) {
+                    // The discount/coupon that was explicitly chosen earlier
+                    // is no longer valid (expired, day/schedule changed,
+                    // deactivated) — an item edit as ordinary as a quantity
+                    // change must not be blocked by that; drop it instead of
+                    // re-throwing, the same way an item mutation has never
+                    // failed on other pricing edge cases.
+                    clearOrderDiscountSource(order);
+                }
+            }
+            order.setDiscountAmount(itemDiscountTotal(order).add(orderLevelDiscount));
+            return;
+        }
+
+        OrderChannel channel = order.getChannel();
+        BigDecimal grossOrderSubtotal = grossSubtotal(order);
+        BigDecimal itemDiscountTotal = BigDecimal.ZERO;
+        List<OrderLineUnits> lineUnits = new ArrayList<>();
+
+        for (OrderItem item : order.getItems()) {
+            BigDecimal unitPrice = item.priceWithAddOns();
+            int quantity = item.getQuantity() == null ? 0 : item.getQuantity();
+            UUID itemId = item.getItem().getId();
+            UUID itemGroupId = item.getItem().getItemGroup() != null ? item.getItem().getItemGroup().getId() : null;
+
+            BigDecimal amount = discountApplicationService.resolveLineDiscount(
+                            businessId, channel, itemId, itemGroupId, unitPrice, quantity, grossOrderSubtotal)
+                    .map(LineDiscountApplication::amount)
+                    .orElse(BigDecimal.ZERO);
+
+            item.setDiscountAmount(amount);
+            item.setLineTotal(unitPrice.multiply(BigDecimal.valueOf(quantity)).subtract(amount));
+            itemDiscountTotal = itemDiscountTotal.add(amount);
+            lineUnits.add(new OrderLineUnits(unitPrice, quantity));
+        }
+
+        BigDecimal orderLevelDiscount = BigDecimal.ZERO;
+        if (itemDiscountTotal.compareTo(BigDecimal.ZERO) == 0) {
+            orderLevelDiscount = discountApplicationService.resolveOrderDiscount(businessId, channel, lineUnits)
+                    .map(LineDiscountApplication::amount)
+                    .orElse(BigDecimal.ZERO);
+        }
+
+        order.setDiscountAmount(itemDiscountTotal.add(orderLevelDiscount));
     }
 
     private BigDecimal grossLineTotal(OrderItem item) {
