@@ -7,6 +7,8 @@ import kh.edu.istad.ite.features.order.dto.SaleResponse;
 import kh.edu.istad.ite.features.order.dto.ItemProfitResponse;
 import kh.edu.istad.ite.features.order.dto.PeriodProfitResponse;
 import kh.edu.istad.ite.features.order.dto.SalesProfitResponse;
+import kh.edu.istad.ite.features.order.dto.SalesPredictionsResponse;
+import kh.edu.istad.ite.features.order.dto.PredictionWindow;
 import kh.edu.istad.ite.features.order.service.SalesReportService;
 import kh.edu.istad.ite.shared.enums.ReportGranularity;
 import lombok.RequiredArgsConstructor;
@@ -114,5 +116,13 @@ public class SalesReportController {
             @Valid @RequestBody CollectPayLaterRequest request) {
 
         return salesReportService.collectPayLater(businessId, saleId, request);
+    }
+
+    @GetMapping("/predictions")
+    public SalesPredictionsResponse getSalesPredictions(
+            @PathVariable UUID businessId,
+            @RequestParam(defaultValue = "WEEK") PredictionWindow window) {
+
+        return salesReportService.getSalesPredictions(businessId, window);
     }
 }

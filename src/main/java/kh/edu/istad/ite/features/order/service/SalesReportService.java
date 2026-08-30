@@ -1,11 +1,18 @@
 package kh.edu.istad.ite.features.order.service;
 
+import kh.edu.istad.ite.features.catalog.entity.Item;
+import kh.edu.istad.ite.features.catalog.repository.ItemRepository;
+import kh.edu.istad.ite.features.inventory.dto.StockSummaryResponse;
+import kh.edu.istad.ite.features.inventory.service.StockEntryService;
 import kh.edu.istad.ite.features.order.dto.CollectPayLaterRequest;
 import kh.edu.istad.ite.features.order.dto.DailyChannelRevenue;
 import kh.edu.istad.ite.features.order.dto.SaleResponse;
 import kh.edu.istad.ite.features.order.dto.ItemProfitResponse;
 import kh.edu.istad.ite.features.order.dto.PeriodProfitResponse;
 import kh.edu.istad.ite.features.order.dto.SalesProfitResponse;
+import kh.edu.istad.ite.features.order.dto.PredictionItem;
+import kh.edu.istad.ite.features.order.dto.PredictionWindow;
+import kh.edu.istad.ite.features.order.dto.SalesPredictionsResponse;
 import kh.edu.istad.ite.features.order.entity.Sale;
 import kh.edu.istad.ite.features.order.mapper.OrderMapper;
 import kh.edu.istad.ite.features.order.repository.SaleRepository;
@@ -23,8 +30,11 @@ import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 /**
  * What the shop made, per channel it sells on.
@@ -44,6 +54,8 @@ public class SalesReportService {
     private final SaleRepository saleRepository;
     private final BusinessHelper businessHelper;
     private final OrderMapper orderMapper;
+    private final ItemRepository itemRepository;
+    private final StockEntryService stockEntryService;
 
     public SalesProfitResponse profitByChannel(
             UUID businessId,
@@ -341,11 +353,150 @@ public class SalesReportService {
         return orderMapper.toSaleResponse(saleRepository.save(sale));
     }
 
+    public SalesPredictionsResponse getSalesPredictions(UUID businessId, PredictionWindow window) {
+        businessHelper.findOwnedBusiness(businessId);
+        PredictionWindow activeWindow = window != null ? window : PredictionWindow.WEEK;
+        int windowDays = activeWindow == PredictionWindow.MONTH ? 30 : 7;
+        int prevWindowDays = windowDays * 2;
+        int maxDays = Math.max(prevWindowDays, 30);
+
+        LocalDateTime now = LocalDateTime.now();
+
+        List<SaleRepository.ItemPredictionBucketProjection> buckets =
+                saleRepository.findItemPredictionBuckets(businessId, now, windowDays, prevWindowDays, maxDays);
+
+        Map<UUID, SaleRepository.ItemPredictionBucketProjection> bucketByItemId = buckets.stream()
+                .filter(b -> b.getItemId() != null)
+                .map(b -> Map.entry(tryParseUuid(b.getItemId()), b))
+                .filter(e -> e.getKey() != null)
+                .collect(Collectors.toMap(
+                        Map.Entry::getKey,
+                        Map.Entry::getValue,
+                        (existing, replacement) -> existing
+                ));
+
+        List<StockSummaryResponse> stockSummaries = stockEntryService.findCurrentStock(businessId);
+        Map<UUID, BigDecimal> stockByItemId = new HashMap<>();
+        for (StockSummaryResponse summary : stockSummaries) {
+            if (summary.itemId() != null) {
+                BigDecimal current = stockByItemId.getOrDefault(summary.itemId(), BigDecimal.ZERO);
+                BigDecimal onHand = summary.quantityOnHand() == null ? BigDecimal.ZERO : summary.quantityOnHand();
+                stockByItemId.put(summary.itemId(), current.add(onHand));
+            }
+        }
+
+        List<Item> allItems = itemRepository.findAllByBusinessIdOrderByNameAsc(businessId);
+
+        List<PredictionItem> predictionItems = new ArrayList<>();
+        long risingCount = 0;
+        long stockoutSoonCount = 0;
+        long slowMoverCount = 0;
+
+        for (Item item : allItems) {
+            UUID itemId = item.getId();
+            String name = item.getName();
+
+            BigDecimal currentStock = stockByItemId.getOrDefault(itemId, BigDecimal.ZERO);
+            SaleRepository.ItemPredictionBucketProjection bucket = bucketByItemId.get(itemId);
+
+            long windowQty = bucket != null ? bucket.getWindowQty() : 0L;
+            long prevWindowQty = bucket != null ? bucket.getPrevWindowQty() : 0L;
+            long last30Qty = bucket != null ? bucket.getLast30Qty() : 0L;
+
+            double avgDailyDemand = roundTo2Decimals(windowQty / (double) windowDays);
+            long expectedDemandWindow = windowQty;
+
+            Double trendPercent = null;
+            if (prevWindowQty > 0) {
+                trendPercent = roundTo1Decimal(((double) (windowQty - prevWindowQty) / prevWindowQty) * 100.0);
+            }
+
+            double safetyStock = Math.ceil(avgDailyDemand * 2.0);
+            long recommendedRestock = Math.max(0L, (long) Math.ceil(expectedDemandWindow + safetyStock - currentStock.doubleValue()));
+
+            Double estimatedStockoutDays = null;
+            if (avgDailyDemand > 0) {
+                estimatedStockoutDays = roundTo1Decimal(currentStock.doubleValue() / avgDailyDemand);
+            }
+
+            if (trendPercent != null && trendPercent >= 10.0) {
+                risingCount++;
+            }
+            if (estimatedStockoutDays != null && estimatedStockoutDays <= windowDays) {
+                stockoutSoonCount++;
+            }
+            if (currentStock.compareTo(BigDecimal.ZERO) > 0 && last30Qty <= 3) {
+                slowMoverCount++;
+            }
+
+            predictionItems.add(new PredictionItem(
+                    itemId,
+                    name,
+                    currentStock,
+                    avgDailyDemand,
+                    expectedDemandWindow,
+                    trendPercent,
+                    estimatedStockoutDays,
+                    recommendedRestock,
+                    last30Qty
+            ));
+        }
+
+        SaleRepository.BusinessRevenueTrendProjection revenueTrendProj =
+                saleRepository.findBusinessRevenueTrend(businessId, now, windowDays, prevWindowDays);
+
+        BigDecimal windowRevenue = revenueTrendProj != null && revenueTrendProj.getWindowRevenue() != null
+                ? revenueTrendProj.getWindowRevenue() : BigDecimal.ZERO;
+        BigDecimal prevWindowRevenue = revenueTrendProj != null && revenueTrendProj.getPrevWindowRevenue() != null
+                ? revenueTrendProj.getPrevWindowRevenue() : BigDecimal.ZERO;
+
+        double revenueTrend = 0.0;
+        if (prevWindowRevenue.compareTo(BigDecimal.ZERO) > 0) {
+            double rawTrend = windowRevenue.subtract(prevWindowRevenue)
+                    .divide(prevWindowRevenue, 4, RoundingMode.HALF_UP).doubleValue();
+            revenueTrend = Math.max(-0.5, Math.min(0.5, rawTrend));
+        }
+
+        BigDecimal mid = windowRevenue.multiply(BigDecimal.valueOf(1.0 + revenueTrend)).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal low = mid.multiply(BigDecimal.valueOf(0.9)).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal high = mid.multiply(BigDecimal.valueOf(1.1)).setScale(2, RoundingMode.HALF_UP);
+
+        SalesPredictionsResponse.RevenueForecast revenueForecast =
+                new SalesPredictionsResponse.RevenueForecast(low, mid, high);
+
+        return new SalesPredictionsResponse(
+                now,
+                windowDays,
+                risingCount,
+                stockoutSoonCount,
+                slowMoverCount,
+                revenueForecast,
+                predictionItems
+        );
+    }
+
+    private static double roundTo1Decimal(double val) {
+        return Math.round(val * 10.0) / 10.0;
+    }
+
+    private static double roundTo2Decimals(double val) {
+        return Math.round(val * 100.0) / 100.0;
+    }
+
     private static BigDecimal orZero(BigDecimal value) {
         return value == null ? BigDecimal.ZERO : value;
     }
 
     private static BigDecimal money(BigDecimal value) {
         return orZero(value).setScale(2, RoundingMode.HALF_UP);
+    }
+
+    private static UUID tryParseUuid(String uuidStr) {
+        if (uuidStr == null) return null;
+        try {
+            return UUID.fromString(uuidStr);
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
     }
 }
