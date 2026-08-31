@@ -112,19 +112,25 @@ public class StockEntryServiceImpl implements StockEntryService {
         stockEntry.setUnitSalePrice(normalizeUnitCost(request.unitSalePrice()));
         applyEnteredAmount(stockEntry, target, request, quantityChange);
 
+        BigDecimal unitCost = normalizeUnitCost(request.unitCost());
+
+        if (unitCost != null && entryType == StockEntryType.ADJUSTMENT) {
+            List<StockLayer> openLayers = stockLayerRepository.findOpenLayers(
+                    businessId,
+                    target.itemId(),
+                    target.variantId(),
+                    target.addOnId()
+            );
+            for (StockLayer layer : openLayers) {
+                layer.setUnitCost(unitCost);
+                stockLayerRepository.save(layer);
+            }
+        }
+
         if (standing) {
-            /*
-             * The correction is written to the ledger and stops there. The
-             * batches already holding this stock keep the cost they were
-             * received at, so what the shelf is worth does not move on the
-             * strength of a note about it.
-             */
-            stockEntry.setUnitCost(normalizeUnitCost(request.unitCost()));
+            stockEntry.setUnitCost(unitCost);
             stockEntryRepository.saveAndFlush(stockEntry);
         } else if (incoming) {
-            // The cost is what was paid; with nothing typed the batch inherits
-            // what stock currently costs rather than pretending it was free.
-            BigDecimal unitCost = normalizeUnitCost(request.unitCost());
             if (unitCost == null) {
                 unitCost = currentUnitCost(businessId, target);
             }
@@ -132,6 +138,9 @@ public class StockEntryServiceImpl implements StockEntryService {
             stockEntryRepository.saveAndFlush(stockEntry);
             openLayer(stockEntry, unitCost, quantityChange, receivedAt(request));
         } else {
+            if (unitCost != null && entryType == StockEntryType.ADJUSTMENT) {
+                stockEntry.setUnitCost(unitCost);
+            }
             stockEntryRepository.saveAndFlush(stockEntry);
             consumeLayers(stockEntry, quantityChange.abs());
         }
@@ -299,7 +308,7 @@ public class StockEntryServiceImpl implements StockEntryService {
             boolean standing,
             CreateStockEntryRequest request
     ) {
-        if (!incoming && !standing && request.unitCost() != null) {
+        if (!incoming && !standing && entryType != StockEntryType.ADJUSTMENT && request.unitCost() != null) {
             throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST,
                     "Outgoing stock is costed from what it was bought for, so unitCost cannot be set"
@@ -788,7 +797,12 @@ public class StockEntryServiceImpl implements StockEntryService {
                 .stream()
                 .findFirst()
                 .map(StockLayer::getUnitCost)
-                .orElse(BigDecimal.ZERO.setScale(2));
+                .orElseGet(() -> stockEntryRepository.findAllByBusiness_IdAndItem_IdOrderByCreatedDateDescIdDesc(businessId, itemId)
+                        .stream()
+                        .map(StockEntry::getUnitCost)
+                        .filter(Objects::nonNull)
+                        .findFirst()
+                        .orElse(BigDecimal.ZERO.setScale(2)));
     }
 
     @Override
@@ -867,20 +881,29 @@ public class StockEntryServiceImpl implements StockEntryService {
         businessHelper.findOwnedBusiness(businessId);
         Map<StockEntry.TargetKey, StockValue> valueByTarget = openStockValues(businessId);
         Map<StockEntry.TargetKey, StockSummaryResponse> currentStockByTarget = new LinkedHashMap<>();
+        Map<StockEntry.TargetKey, BigDecimal> fallbackUnitCostByTarget = new LinkedHashMap<>();
 
         stockEntryRepository.findAllByBusiness_IdOrderByCreatedDateDescIdDesc(businessId)
-                .forEach(stockEntry -> currentStockByTarget.computeIfAbsent(
-                        stockEntry.getTargetKey(),
-                        key -> {
-                            StockValue value = valueByTarget.get(key);
+                .forEach(stockEntry -> {
+                    if (stockEntry.getUnitCost() != null) {
+                        fallbackUnitCostByTarget.putIfAbsent(stockEntry.getTargetKey(), stockEntry.getUnitCost());
+                    }
+                    currentStockByTarget.computeIfAbsent(
+                            stockEntry.getTargetKey(),
+                            key -> {
+                                StockValue value = valueByTarget.get(key);
+                                BigDecimal unitCost = (value != null && value.unitCost() != null)
+                                        ? value.unitCost()
+                                        : fallbackUnitCostByTarget.get(key);
 
-                            return stockEntryMapper.toSummary(
-                                    stockEntry,
-                                    value == null ? null : value.value(),
-                                    value == null ? null : value.unitCost()
-                            );
-                        }
-                ));
+                                return stockEntryMapper.toSummary(
+                                        stockEntry,
+                                        value == null ? null : value.value(),
+                                        unitCost
+                                );
+                            }
+                    );
+                });
 
         return List.copyOf(currentStockByTarget.values());
     }
@@ -1055,7 +1078,11 @@ public class StockEntryServiceImpl implements StockEntryService {
         BigDecimal unitCost = openLayers.stream()
                 .findFirst()
                 .map(StockLayer::getUnitCost)
-                .orElse(null);
+                .orElseGet(() -> entries.stream()
+                        .map(StockEntry::getUnitCost)
+                        .filter(Objects::nonNull)
+                        .findFirst()
+                        .orElse(null));
 
         return stockEntryMapper.itemTotal(
                 itemId, total, stockValue, unitCost, latest.getId(), latest.getCreatedDate());
