@@ -61,12 +61,18 @@ public interface OrderRepository extends JpaRepository<Order, UUID>, JpaSpecific
     );
 
 
+    // Pay Later never touches Bakong/KHQR, so an order sitting there waiting
+    // on the business to approve it must never count as an "open order" —
+    // that would block a shopper from paying (or Pay-Latering) anywhere
+    // else, at this shop or another, purely because a *different* shop
+    // hasn't reviewed an earlier Pay Later order yet.
     @Query("""
             SELECT DISTINCT o FROM Order o
             JOIN FETCH o.business
             WHERE o.customer.id IN :customerIds
               AND o.channel IN :channels
               AND o.status = :status
+              AND o.awaitingPayLaterApproval = false
             ORDER BY o.createdDate DESC
             """)
     List<Order> findOpenOrdersForShopper(
