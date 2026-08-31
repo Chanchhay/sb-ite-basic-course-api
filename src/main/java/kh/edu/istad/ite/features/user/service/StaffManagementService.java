@@ -1,5 +1,6 @@
 package kh.edu.istad.ite.features.user.service;
 
+import jakarta.ws.rs.NotFoundException;
 import jakarta.ws.rs.ProcessingException;
 import jakarta.ws.rs.WebApplicationException;
 import jakarta.ws.rs.core.Response;
@@ -28,6 +29,7 @@ import org.keycloak.representations.idm.RoleRepresentation;
 import org.keycloak.representations.idm.UserRepresentation;
 import org.springframework.dao.DataAccessException;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -37,6 +39,7 @@ import org.springframework.web.server.ResponseStatusException;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 
@@ -183,45 +186,80 @@ public class StaffManagementService {
     }
 
     public PageResponse<StaffResponse> getBusinessStaffList(UUID businessId, Pageable pageable) {
-        Page<StaffResponse> staffPage = userProfileRepository.findByBusinessId(businessId, pageable)
-                .map(this::mapToStaffResponse);
-        return PageResponse.from(staffPage);
+        Page<UserProfile> profiles = userProfileRepository.findByBusinessId(businessId, pageable);
+        List<StaffResponse> content = profiles.stream()
+                .map(this::mapToStaffResponseOrNull)
+                .filter(Objects::nonNull)
+                .toList();
+        return PageResponse.from(new PageImpl<>(content, pageable, profiles.getTotalElements()));
     }
 
     public List<StaffResponse> getPlatformStaffList() {
         return userProfileRepository.findByBusinessIdOrderByJoinedAtDesc(null).stream()
-                .map(this::mapToStaffResponse)
+                .map(this::mapToStaffResponseOrNull)
+                .filter(Objects::nonNull)
                 .toList();
     }
 
     public StaffResponse getBusinessStaffDetail(UUID businessId, UUID userId) {
         UserProfile profile = userProfileRepository.findByUserIdAndBusinessId(userId, businessId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Staff not found"));
-        return mapToStaffResponse(profile);
+        return mapToStaffResponseOrThrow404(profile);
     }
 
     public StaffResponse getPlatformStaffDetail(UUID userId) {
         UserProfile profile = userProfileRepository.findByUserIdAndBusinessId(userId, null)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Staff not found"));
-        return mapToStaffResponse(profile);
+        return mapToStaffResponseOrThrow404(profile);
+    }
+
+    /** List views: an orphaned profile shouldn't fail the whole page, so it's dropped (and logged). */
+    private StaffResponse mapToStaffResponseOrNull(UserProfile profile) {
+        try {
+            return mapToStaffResponse(profile);
+        } catch (OrphanedStaffProfileException e) {
+            log.warn(
+                    "UserProfile {} has no matching Keycloak user (deleted directly in Keycloak?) — " +
+                            "omitting from the staff list. Delete this orphaned profile to clear this warning.",
+                    profile.getUserId());
+            return null;
+        }
+    }
+
+    /** Detail views: the caller asked for exactly this one, so an orphaned profile is a 404, not a 500. */
+    private StaffResponse mapToStaffResponseOrThrow404(UserProfile profile) {
+        try {
+            return mapToStaffResponse(profile);
+        } catch (OrphanedStaffProfileException e) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Staff account no longer exists in the identity provider");
+        }
+    }
+
+    private static final class OrphanedStaffProfileException extends RuntimeException {
     }
 
     private StaffResponse mapToStaffResponse(UserProfile profile) {
-        try {
-            UserRepresentation keycloakUser = keycloak.realm(props.getTargetRealm()).users().get(profile.getUserId().toString()).toRepresentation();
-            
-            List<RoleRepresentation> roles = keycloak.realm(props.getTargetRealm()).users().get(profile.getUserId().toString()).roles().realmLevel().listAll();
-            String roleId = roles.stream()
-                    .filter(r -> r.getName().startsWith("biz_") || r.getName().startsWith("platform_"))
-                    .map(RoleRepresentation::getId)
-                    .findFirst()
-                    .orElse(null);
+        UserResource userResource = keycloak.realm(props.getTargetRealm()).users().get(profile.getUserId().toString());
+        UserRepresentation keycloakUser;
+        List<RoleRepresentation> roles;
 
-            return userProfileMapper.toStaffResponse(keycloakUser, profile, roleId);
+        try {
+            keycloakUser = userResource.toRepresentation();
+            roles = userResource.roles().realmLevel().listAll();
+        } catch (NotFoundException e) {
+            throw new OrphanedStaffProfileException();
         } catch (Exception e) {
             log.error("Failed to fetch Keycloak user for ID {}", profile.getUserId(), e);
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Error retrieving staff details");
         }
+
+        String roleId = roles.stream()
+                .filter(r -> r.getName().startsWith("biz_") || r.getName().startsWith("platform_"))
+                .map(RoleRepresentation::getId)
+                .findFirst()
+                .orElse(null);
+
+        return userProfileMapper.toStaffResponse(keycloakUser, profile, roleId);
     }
 
     @Transactional
