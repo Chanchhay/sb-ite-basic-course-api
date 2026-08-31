@@ -15,6 +15,7 @@ public record ItemVariantResponse(
         String barcode,
         String imageUrl,
         BigDecimal price,
+        BigDecimal compareAtPrice,
         /** The size half of the pair — "Large". */
         String optionName,
         /** Which of the item's colours this row is; null when sold by size alone. */
