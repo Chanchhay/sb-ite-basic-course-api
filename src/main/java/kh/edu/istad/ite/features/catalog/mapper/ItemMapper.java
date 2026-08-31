@@ -144,6 +144,7 @@ public class ItemMapper {
                 variant.getBarcode(),
                 variant.getImageUrl(),
                 variant.getPrice(),
+                null,
                 variant.getOptionName(),
                 variant.getColorValue(),
                 variant.getAvailable(),

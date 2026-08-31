@@ -262,44 +262,75 @@ public class StorefrontServiceImpl implements StorefrontService {
                             item,
                             business.getId());
 
-                    try {
-                        // Quantity 1, no order subtotal: browsing is a single
-                        // unit outside any cart, so a discount conditioned on
-                        // a quantity or order total it can't yet satisfy is
-                        // correctly absent here — see
-                        // DiscountApplicationService for why, and for why
-                        // this is the same lookup add-to-cart and checkout
-                        // use, rather than its own copy of the logic.
-                        if (base.price() != null) {
+                    List<ItemVariantResponse> discountedVariants = base.variants();
+                    String badge = base.badge();
+
+                    if (discountedVariants != null && !discountedVariants.isEmpty()) {
+                        List<ItemVariantResponse> updated = new ArrayList<>();
+                        for (ItemVariantResponse v : discountedVariants) {
+                            if (v.price() != null) {
+                                try {
+                                    Optional<LineDiscountApplication> applied = discountApplicationService.resolveLineDiscount(
+                                            business.getId(),
+                                            OrderChannel.WEB,
+                                            item.getId(),
+                                            item.getItemGroup() != null ? item.getItemGroup().getId() : null,
+                                            v.price(),
+                                            1,
+                                            null
+                                    );
+                                    if (applied.isPresent()) {
+                                        LineDiscountApplication discount = applied.get();
+                                        BigDecimal originalPrice = v.price();
+                                        BigDecimal newPrice = originalPrice.subtract(discount.amount()).max(BigDecimal.ZERO);
+                                        if (badge == null && discount.label() != null) {
+                                            badge = discount.label();
+                                        }
+                                        updated.add(v.toBuilder()
+                                                .price(newPrice)
+                                                .compareAtPrice(originalPrice)
+                                                .build());
+                                        continue;
+                                    }
+                                } catch (Exception ignored) {}
+                            }
+                            updated.add(v);
+                        }
+                        discountedVariants = updated;
+                    }
+
+                    BigDecimal itemPrice = base.price();
+                    BigDecimal itemCompareAt = base.compareAtPrice();
+                    if (itemPrice != null) {
+                        try {
                             Optional<LineDiscountApplication> applied = discountApplicationService.resolveLineDiscount(
                                     business.getId(),
                                     OrderChannel.WEB,
                                     item.getId(),
                                     item.getItemGroup() != null ? item.getItemGroup().getId() : null,
-                                    base.price(),
+                                    itemPrice,
                                     1,
                                     null
                             );
-
                             if (applied.isPresent()) {
                                 LineDiscountApplication discount = applied.get();
-                                BigDecimal originalPrice = base.price();
-                                BigDecimal newPrice = originalPrice.subtract(discount.amount());
-                                if (newPrice.compareTo(BigDecimal.ZERO) < 0) {
-                                    newPrice = BigDecimal.ZERO;
+                                BigDecimal originalPrice = itemPrice;
+                                BigDecimal newPrice = originalPrice.subtract(discount.amount()).max(BigDecimal.ZERO);
+                                if (badge == null && discount.label() != null) {
+                                    badge = discount.label();
                                 }
-
-                                return base.toBuilder()
-                                        .price(newPrice)
-                                        .compareAtPrice(originalPrice)
-                                        .badge(discount.label() != null ? discount.label() : base.badge())
-                                        .build();
+                                itemPrice = newPrice;
+                                itemCompareAt = originalPrice;
                             }
-                        }
-                    } catch (Exception e) {
-                        // Ignore discount errors for storefront display
+                        } catch (Exception ignored) {}
                     }
-                    return base;
+
+                    return base.toBuilder()
+                            .price(itemPrice)
+                            .compareAtPrice(itemCompareAt)
+                            .badge(badge)
+                            .variants(discountedVariants)
+                            .build();
                 })
                 .toList();
     }
