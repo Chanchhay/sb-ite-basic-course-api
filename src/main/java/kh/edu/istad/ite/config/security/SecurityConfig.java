@@ -81,7 +81,7 @@ public class SecurityConfig {
 
                         // Admin Dashboard
                         .requestMatchers(HttpMethod.GET, "/api/v1/admin/dashboard")
-                        .hasAuthority("SCOPE_admin-dashboard:read")
+                        .access(permissionOrSuperAdmin("admin-dashboard:read"))
 
                         // Admin Businesses
                         // Assisted migration works on a customer's catalogue on
@@ -89,44 +89,90 @@ public class SecurityConfig {
                         // a business rather than the one that merely reads one.
                         .requestMatchers("/api/v1/admin/businesses/*/assisted-migrations",
                                 "/api/v1/admin/businesses/*/assisted-migrations/**")
-                        .hasAuthority("SCOPE_admin-business:manage")
+                        .access(permissionOrSuperAdmin("admin-business:manage"))
                         .requestMatchers(HttpMethod.GET, "/api/v1/admin/businesses",
                                 "/api/v1/admin/businesses/**")
-                        .hasAuthority("SCOPE_admin-business:read")
+                        .access(permissionOrSuperAdmin("admin-business:read"))
                         .requestMatchers(HttpMethod.DELETE, "/api/v1/admin/businesses/**")
-                        .hasAuthority("SCOPE_admin-business:delete")
+                        .access(permissionOrSuperAdmin("admin-business:delete"))
                         .requestMatchers("/api/v1/admin/businesses", "/api/v1/admin/businesses/**")
-                        .hasAuthority("SCOPE_admin-business:manage")
+                        .access(permissionOrSuperAdmin("admin-business:manage"))
 
                         // Admin Business Categories
                         .requestMatchers(HttpMethod.GET, "/api/v1/admin/business-categories",
                                 "/api/v1/admin/business-categories/**")
                         .permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/v1/admin/business-categories")
-                        .hasAuthority("SCOPE_admin-category:create")
+                        .access(permissionOrSuperAdmin("admin-category:create"))
                         .requestMatchers(HttpMethod.PUT, "/api/v1/admin/business-categories/**")
-                        .hasAuthority("SCOPE_admin-category:update")
+                        .access(permissionOrSuperAdmin("admin-category:update"))
                         .requestMatchers(HttpMethod.PATCH, "/api/v1/admin/business-categories/**")
-                        .hasAuthority("SCOPE_admin-category:update")
+                        .access(permissionOrSuperAdmin("admin-category:update"))
                         .requestMatchers(HttpMethod.DELETE, "/api/v1/admin/business-categories/**")
-                        .hasAuthority("SCOPE_admin-category:delete")
+                        .access(permissionOrSuperAdmin("admin-category:delete"))
 
                         // Admin Units
                         .requestMatchers(HttpMethod.GET, "/api/v1/admin/units", "/api/v1/admin/units/**")
-                        .hasAuthority("SCOPE_admin-unit:read")
+                        .access(permissionOrSuperAdmin("admin-unit:read"))
                         .requestMatchers(HttpMethod.POST, "/api/v1/admin/units")
-                        .hasAuthority("SCOPE_admin-unit:create")
+                        .access(permissionOrSuperAdmin("admin-unit:create"))
                         .requestMatchers(HttpMethod.PUT, "/api/v1/admin/units/**")
-                        .hasAuthority("SCOPE_admin-unit:update")
+                        .access(permissionOrSuperAdmin("admin-unit:update"))
                         .requestMatchers(HttpMethod.PATCH, "/api/v1/admin/units/**")
-                        .hasAuthority("SCOPE_admin-unit:update")
+                        .access(permissionOrSuperAdmin("admin-unit:update"))
                         .requestMatchers(HttpMethod.DELETE, "/api/v1/admin/units/**")
-                        .hasAuthority("SCOPE_admin-unit:delete")
+                        .access(permissionOrSuperAdmin("admin-unit:delete"))
 
                         // Admin Audit Logs
                         .requestMatchers(HttpMethod.GET, "/api/v1/admin/audit-logs",
                                 "/api/v1/admin/audit-logs/**")
-                        .hasAuthority("SCOPE_admin-audit:read")
+                        .access(permissionOrSuperAdmin("admin-audit:read"))
+
+                        // Admin Channels (read-only list of businesses' channel adoption)
+                        .requestMatchers(HttpMethod.GET, "/api/v1/admin/channels")
+                        .access(permissionOrSuperAdmin("admin-channel:read"))
+
+                        // Sales Channels (the platform-wide channel catalog: Telegram, KHQR, ...)
+                        .requestMatchers(HttpMethod.GET, "/api/v1/sales-channels", "/api/v1/sales-channels/**")
+                        .access(permissionOrSuperAdmin("admin-channel:read"))
+                        .requestMatchers(HttpMethod.POST, "/api/v1/sales-channels")
+                        .access(permissionOrSuperAdmin("admin-channel:manage"))
+                        .requestMatchers(HttpMethod.PUT, "/api/v1/sales-channels/**")
+                        .access(permissionOrSuperAdmin("admin-channel:manage"))
+                        .requestMatchers(HttpMethod.DELETE, "/api/v1/sales-channels/**")
+                        .access(permissionOrSuperAdmin("admin-channel:manage"))
+
+                        // Admin Platform Features
+                        .requestMatchers(HttpMethod.GET, "/api/v1/admin/platform-features")
+                        .access(permissionOrSuperAdmin("admin-platform-feature:read"))
+                        .requestMatchers(HttpMethod.PATCH, "/api/v1/admin/platform-features/**")
+                        .access(permissionOrSuperAdmin("admin-platform-feature:update"))
+
+                        // Platform Roles
+                        .requestMatchers(HttpMethod.GET, "/api/v1/platform/roles", "/api/v1/platform/roles/**")
+                        .access(permissionOrSuperAdmin("role:read"))
+                        .requestMatchers(HttpMethod.POST, "/api/v1/platform/roles")
+                        .access(permissionOrSuperAdmin("role:create"))
+                        .requestMatchers(HttpMethod.PUT, "/api/v1/platform/roles/**")
+                        .access(permissionOrSuperAdmin("role:update"))
+                        .requestMatchers(HttpMethod.PATCH, "/api/v1/platform/roles/**")
+                        .access(permissionOrSuperAdmin("role:update"))
+                        .requestMatchers(HttpMethod.DELETE, "/api/v1/platform/roles/**")
+                        .access(permissionOrSuperAdmin("role:delete"))
+
+                        // Platform Staff. Creating/updating a staff member is how a role
+                        // gets handed to them, so these reuse role:assign rather than
+                        // introducing a staff-specific PermissionCode.
+                        .requestMatchers(HttpMethod.GET, "/api/v1/platform/staff", "/api/v1/platform/staff/**")
+                        .access(permissionOrSuperAdmin("role:read"))
+                        .requestMatchers(HttpMethod.POST, "/api/v1/platform/staff")
+                        .access(permissionOrSuperAdmin("role:assign"))
+                        .requestMatchers(HttpMethod.PUT, "/api/v1/platform/staff/**")
+                        .access(permissionOrSuperAdmin("role:assign"))
+                        .requestMatchers(HttpMethod.PATCH, "/api/v1/platform/staff/**")
+                        .access(permissionOrSuperAdmin("role:assign"))
+                        .requestMatchers(HttpMethod.DELETE, "/api/v1/platform/staff/**")
+                        .access(permissionOrSuperAdmin("role:assign"))
 
                         // User Profile
                         .requestMatchers(HttpMethod.GET, "/api/v1/user-profiles/me")
@@ -208,12 +254,6 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/v1/businesses")
                         .hasAuthority("SCOPE_business:create")
 
-                        // --- Everything below names a {businessId} ---
-                        // `scoped` pairs the permission with membership of that
-                        // business. The permission alone says the caller may read
-                        // items; it does not say whose. Every matcher here must
-                        // spell the variable {businessId}, not "*", or the
-                        // membership check has nothing to read and denies.
 
                         // Business
                         .requestMatchers(HttpMethod.GET, "/api/v1/businesses/{businessId}")
@@ -292,19 +332,6 @@ public class SecurityConfig {
                                 "/api/v1/businesses/{businessId}/items/*/stock-entries/*")
                         .access(scoped(tenant, "stock:write"))
 
-                        // Data migration
-                        //
-                        // Reading an import is reading the catalogue it describes, and
-                        // running one is creating catalogue entries — so both reuse the
-                        // item permissions rather than introducing codes that would have
-                        // to be provisioned as Keycloak roles before anyone could import
-                        // anything.
-                        //
-                        // Note that committing an item import may also post opening
-                        // balances, which `stock:write` would otherwise govern. Requiring
-                        // both here would block a perfectly ordinary items-only import by
-                        // someone who may create items but not adjust stock, so the
-                        // opening balance travels with the item it belongs to.
                         .requestMatchers(HttpMethod.GET, "/api/v1/businesses/{businessId}/imports",
                                 "/api/v1/businesses/{businessId}/imports/*",
                                 "/api/v1/businesses/{businessId}/imports/*/columns",
@@ -399,15 +426,6 @@ public class SecurityConfig {
                                 "/api/v1/businesses/{businessId}/staff/**")
                         .access(scoped(tenant, "member:manage"))
 
-                        // Anything else under a business. Discounts, coupons,
-                        // customers, membership types, add-ons, assets, sales
-                        // reports and channel pricing have no permission of
-                        // their own yet, so they were reaching
-                        // `anyRequest().authenticated()` — which any signed-in
-                        // stranger satisfies. Until each grows a PermissionCode
-                        // this at least confines them to the business's own
-                        // people. Keep it last: it matches everything the rules
-                        // above did not.
                         .requestMatchers("/api/v1/businesses/{businessId}/**")
                         .access(tenant)
 
@@ -427,6 +445,14 @@ public class SecurityConfig {
                                 AuthorityAuthorizationManager
                                                 .<RequestAuthorizationContext>hasAuthority("SCOPE_" + permission),
                                 tenant);
+        }
+
+        private static AuthorizationManager<RequestAuthorizationContext> permissionOrSuperAdmin(String permission) {
+                return AuthorizationManagers.anyOf(
+                                AuthorityAuthorizationManager
+                                                .<RequestAuthorizationContext>hasAuthority("SCOPE_" + permission),
+                                AuthorityAuthorizationManager
+                                                .<RequestAuthorizationContext>hasRole("SUPER_ADMIN"));
         }
 
         @Bean
