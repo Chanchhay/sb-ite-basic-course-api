@@ -195,7 +195,7 @@ public class StaffManagementService {
     }
 
     public List<StaffResponse> getPlatformStaffList() {
-        return userProfileRepository.findByBusinessIdOrderByJoinedAtDesc(null).stream()
+        return userProfileRepository.findByBusinessIdAndStaffStatusIsNotNullOrderByJoinedAtDesc(null).stream()
                 .map(this::mapToStaffResponseOrNull)
                 .filter(Objects::nonNull)
                 .toList();
@@ -208,7 +208,11 @@ public class StaffManagementService {
     }
 
     public StaffResponse getPlatformStaffDetail(UUID userId) {
+        // `business IS NULL` alone also matches a business owner's or a plain
+        // customer's own profile (see findByBusinessIdAndStaffStatusIsNotNullOrderByJoinedAtDesc) —
+        // require staffStatus too so this can't return one of those as "staff".
         UserProfile profile = userProfileRepository.findByUserIdAndBusinessId(userId, null)
+                .filter(candidate -> candidate.getStaffStatus() != null)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Staff not found"));
         return mapToStaffResponseOrThrow404(profile);
     }
@@ -275,6 +279,7 @@ public class StaffManagementService {
     @Transactional
     public void updatePlatformStaff(UUID userId, UpdateStaffRequest request) {
         UserProfile profile = userProfileRepository.findByUserIdAndBusinessId(userId, null)
+                .filter(candidate -> candidate.getStaffStatus() != null)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Staff not found"));
         if (request.roleId() != null) {
             validateRole(request.roleId(), "platform_");
@@ -318,6 +323,7 @@ public class StaffManagementService {
     @Transactional
     public void changePlatformStaffStatus(UUID userId, StaffStatusRequest request) {
         UserProfile profile = userProfileRepository.findByUserIdAndBusinessId(userId, null)
+                .filter(candidate -> candidate.getStaffStatus() != null)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Staff not found"));
         performChangeStatus(profile, request.status());
     }
@@ -342,6 +348,7 @@ public class StaffManagementService {
     @Transactional
     public void deletePlatformStaff(UUID userId) {
         UserProfile profile = userProfileRepository.findByUserIdAndBusinessId(userId, null)
+                .filter(candidate -> candidate.getStaffStatus() != null)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Staff not found"));
         performDelete(profile);
     }
