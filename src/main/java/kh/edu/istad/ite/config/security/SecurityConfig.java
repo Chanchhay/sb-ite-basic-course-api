@@ -132,9 +132,9 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/v1/admin/channels")
                         .access(permissionOrSuperAdmin("admin-channel:read"))
 
-                        // Sales Channels (the platform-wide channel catalog: Telegram, KHQR, ...)
+                        // Sales Channels (the platform-wide channel catalog: POS, WEB, Telegram, ...)
                         .requestMatchers(HttpMethod.GET, "/api/v1/sales-channels", "/api/v1/sales-channels/**")
-                        .access(permissionOrSuperAdmin("admin-channel:read"))
+                        .access(permissionOrBusinessRole("item:read"))
                         .requestMatchers(HttpMethod.POST, "/api/v1/sales-channels")
                         .access(permissionOrSuperAdmin("admin-channel:manage"))
                         .requestMatchers(HttpMethod.PUT, "/api/v1/sales-channels/**")
@@ -453,6 +453,22 @@ public class SecurityConfig {
                                                 .<RequestAuthorizationContext>hasAuthority("SCOPE_" + permission),
                                 AuthorityAuthorizationManager
                                                 .<RequestAuthorizationContext>hasRole("SUPER_ADMIN"));
+        }
+
+        private static AuthorizationManager<RequestAuthorizationContext> permissionOrBusinessRole(String permission) {
+                return AuthorizationManagers.anyOf(
+                                AuthorityAuthorizationManager
+                                                .<RequestAuthorizationContext>hasAuthority("SCOPE_" + permission),
+                                AuthorityAuthorizationManager
+                                                .<RequestAuthorizationContext>hasAuthority("SCOPE_admin-channel:read"),
+                                AuthorityAuthorizationManager
+                                                .<RequestAuthorizationContext>hasRole("SUPER_ADMIN"),
+                                AuthorityAuthorizationManager
+                                                .<RequestAuthorizationContext>hasRole("BUSINESS_OWNER"),
+                                AuthorityAuthorizationManager
+                                                .<RequestAuthorizationContext>hasRole("BUSINESS"),
+                                AuthorityAuthorizationManager
+                                                .<RequestAuthorizationContext>hasRole("ADMIN"));
         }
 
         @Bean
