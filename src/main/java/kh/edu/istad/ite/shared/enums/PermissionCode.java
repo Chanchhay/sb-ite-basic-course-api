@@ -10,7 +10,13 @@ public enum PermissionCode {
     ADMIN_BUSINESS_DELETE("admin-business:delete", "Admin Business Delete", PermissionGroup.PLATFORM_ADMIN, false, true),
     ADMIN_BUSINESS_MANAGE("admin-business:manage", "Admin Business Manage", PermissionGroup.PLATFORM_ADMIN, false, true),
     ADMIN_BUSINESS_READ("admin-business:read", "Admin Business Read", PermissionGroup.PLATFORM_ADMIN, false, true),
-    
+
+    ADMIN_CHANNEL_READ("admin-channel:read", "Admin Channel Read", PermissionGroup.PLATFORM_ADMIN, false, true),
+    ADMIN_CHANNEL_MANAGE("admin-channel:manage", "Admin Channel Manage", PermissionGroup.PLATFORM_ADMIN, false, true),
+
+    ADMIN_PLATFORM_FEATURE_READ("admin-platform-feature:read", "Admin Platform Feature Read", PermissionGroup.PLATFORM_ADMIN, false, true),
+    ADMIN_PLATFORM_FEATURE_UPDATE("admin-platform-feature:update", "Admin Platform Feature Update", PermissionGroup.PLATFORM_ADMIN, false, true),
+
     ADMIN_CATEGORY_CREATE("admin-category:create", "Admin Category Create", PermissionGroup.PLATFORM_ADMIN, false, true),
     ADMIN_CATEGORY_DELETE("admin-category:delete", "Admin Category Delete", PermissionGroup.PLATFORM_ADMIN, false, true),
     ADMIN_CATEGORY_READ("admin-category:read", "Admin Category Read", PermissionGroup.PLATFORM_ADMIN, false, true),
