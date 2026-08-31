@@ -80,7 +80,7 @@ keycloak:
     client-secret: ${KEYCLOAK_CLIENT_SECRET}
     realm: master
     target-realm: ${TARGET_REALM}
-    send-verification-email: false
+    send-verification-email: true
 
 app:
   cors:
@@ -149,7 +149,6 @@ management:
   endpoints:
     web:
       exposure:
-        # Health alone: the rest of actuator leaks build and env detail.
         include: health
   endpoint:
     health:

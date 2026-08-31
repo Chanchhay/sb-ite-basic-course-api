@@ -44,7 +44,7 @@ keycloak:
     client-secret: ${KEYCLOAK_CLIENT_SECRET}
     realm: master
     target-realm: ${TARGET_REALM}
-    send-verification-email: false
+    send-verification-email: true
 
 app:
   cors:
