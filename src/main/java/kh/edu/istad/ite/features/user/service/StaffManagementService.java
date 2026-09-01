@@ -61,13 +61,11 @@ public class StaffManagementService {
         Business business = businessRepository.findById(businessId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Business not found"));
 
-        if (request.roleId() != null) {
-            validateRole(request.roleId(), "biz_" + businessId + "_");
-        }
+        validateRoles(request.roleIds(), "biz_" + businessId + "_");
 
         String userId = provisionKeycloakUser(request);
         try {
-            assignRoles(userId, request.roleId());
+            assignRoles(userId, request.roleIds());
             saveUserProfile(userId, request, business);
         } catch (Exception e) {
             rollbackKeycloakUser(userId);
@@ -77,17 +75,22 @@ public class StaffManagementService {
 
     @Transactional
     public void createPlatformStaff(CreateStaffRequest request) {
-        if (request.roleId() != null) {
-            validateRole(request.roleId(), "platform_");
-        }
+        validateRoles(request.roleIds(), "platform_");
 
         String userId = provisionKeycloakUser(request);
         try {
-            assignRoles(userId, request.roleId());
+            assignRoles(userId, request.roleIds());
             saveUserProfile(userId, request, null);
         } catch (Exception e) {
             rollbackKeycloakUser(userId);
             throw e;
+        }
+    }
+
+    private void validateRoles(List<String> roleIds, String expectedPrefix) {
+        if (roleIds == null) return;
+        for (String roleId : roleIds) {
+            validateRole(roleId, expectedPrefix);
         }
     }
 
@@ -146,15 +149,17 @@ public class StaffManagementService {
         }
     }
 
-    private void assignRoles(String userId, String customRoleId) {
+    private void assignRoles(String userId, List<String> customRoleIds) {
         UserResource userResource = keycloak.realm(props.getTargetRealm()).users().get(userId);
         RolesResource rolesResource = keycloak.realm(props.getTargetRealm()).roles();
 
         Set<RoleRepresentation> rolesToAdd = new LinkedHashSet<>();
         rolesToAdd.add(rolesResource.get(RoleEnum.USER.name()).toRepresentation());
-        
-        if (customRoleId != null) {
-            rolesToAdd.add(keycloak.realm(props.getTargetRealm()).rolesById().getRole(customRoleId));
+
+        if (customRoleIds != null) {
+            for (String roleId : customRoleIds) {
+                rolesToAdd.add(keycloak.realm(props.getTargetRealm()).rolesById().getRole(roleId));
+            }
         }
 
         userResource.roles().realmLevel().add(rolesToAdd.stream().toList());
@@ -257,22 +262,19 @@ public class StaffManagementService {
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Error retrieving staff details");
         }
 
-        String roleId = roles.stream()
+        List<String> roleIds = roles.stream()
                 .filter(r -> r.getName().startsWith("biz_") || r.getName().startsWith("platform_"))
                 .map(RoleRepresentation::getId)
-                .findFirst()
-                .orElse(null);
+                .toList();
 
-        return userProfileMapper.toStaffResponse(keycloakUser, profile, roleId);
+        return userProfileMapper.toStaffResponse(keycloakUser, profile, roleIds);
     }
 
     @Transactional
     public void updateBusinessStaff(UUID businessId, UUID userId, UpdateStaffRequest request) {
         UserProfile profile = userProfileRepository.findByUserIdAndBusinessId(userId, businessId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Staff not found"));
-        if (request.roleId() != null) {
-            validateRole(request.roleId(), "biz_" + businessId + "_");
-        }
+        validateRoles(request.roleIds(), "biz_" + businessId + "_");
         performUpdate(profile, request);
     }
 
@@ -281,9 +283,7 @@ public class StaffManagementService {
         UserProfile profile = userProfileRepository.findByUserIdAndBusinessId(userId, null)
                 .filter(candidate -> candidate.getStaffStatus() != null)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Staff not found"));
-        if (request.roleId() != null) {
-            validateRole(request.roleId(), "platform_");
-        }
+        validateRoles(request.roleIds(), "platform_");
         performUpdate(profile, request);
     }
 
@@ -307,9 +307,11 @@ public class StaffManagementService {
             userResource.roles().realmLevel().remove(rolesToRemove);
         }
 
-        if (request.roleId() != null) {
-            RoleRepresentation roleToAdd = keycloak.realm(props.getTargetRealm()).rolesById().getRole(request.roleId());
-            userResource.roles().realmLevel().add(List.of(roleToAdd));
+        if (request.roleIds() != null && !request.roleIds().isEmpty()) {
+            List<RoleRepresentation> rolesToAdd = request.roleIds().stream()
+                    .map(roleId -> keycloak.realm(props.getTargetRealm()).rolesById().getRole(roleId))
+                    .toList();
+            userResource.roles().realmLevel().add(rolesToAdd);
         }
     }
 

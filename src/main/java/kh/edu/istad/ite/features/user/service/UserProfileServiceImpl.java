@@ -27,6 +27,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -240,17 +241,35 @@ public class UserProfileServiceImpl implements UserProfileService {
     }
 
     private String resolveRole(UserResource userResource) {
-        List<String> roleNames = userResource.roles()
-                .realmLevel()
-                .listEffective()
-                .stream()
-                .map(RoleRepresentation::getName)
-                .toList();
+        List<RoleRepresentation> effectiveRoles = userResource.roles().realmLevel().listEffective();
+        List<String> roleNames = effectiveRoles.stream().map(RoleRepresentation::getName).toList();
 
-        return APP_ROLE_PRIORITY.stream()
+        String priorityMatch = APP_ROLE_PRIORITY.stream()
+                .filter(name -> !name.equals("USER"))
                 .filter(roleNames::contains)
                 .findFirst()
                 .orElse(null);
+
+        if (priorityMatch != null) {
+            return priorityMatch;
+        }
+
+        // Platform/business staff carry only the generic "USER" base role plus
+        // a named custom role (platform_xxx / biz_<id>_xxx, added after this
+        // priority list was written) — show that role's readable name instead
+        // of the meaningless "USER" every account has.
+        Optional<RoleRepresentation> staffRole = effectiveRoles.stream()
+                .filter(role -> role.getName().startsWith("platform_") || role.getName().startsWith("biz_"))
+                .findFirst();
+
+        if (staffRole.isPresent()) {
+            RoleRepresentation role = staffRole.get();
+            return role.getDescription() != null && !role.getDescription().isBlank()
+                    ? role.getDescription()
+                    : role.getName();
+        }
+
+        return roleNames.contains("USER") ? "Staff" : null;
     }
 
     private void validateImage(MultipartFile file) {

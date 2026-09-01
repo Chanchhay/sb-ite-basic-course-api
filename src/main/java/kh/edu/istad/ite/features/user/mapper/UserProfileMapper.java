@@ -83,8 +83,8 @@ public abstract class UserProfileMapper {
     @Mapping(target = "phoneNumber", source = "userProfile.phoneNumber")
     @Mapping(target = "gender", source = "userProfile.gender")
     @Mapping(target = "status", source = "userProfile.staffStatus")
-    @Mapping(target = "roleId", source = "roleId")
-    public abstract StaffResponse toStaffResponse(UserRepresentation userRepresentation, UserProfile userProfile, String roleId);
+    @Mapping(target = "roleIds", source = "roleIds")
+    public abstract StaffResponse toStaffResponse(UserRepresentation userRepresentation, UserProfile userProfile, List<String> roleIds);
 
     private void putAttributeIfPresent(Map<String, List<String>> attributes, String name, String value) {
         if (value != null) {
