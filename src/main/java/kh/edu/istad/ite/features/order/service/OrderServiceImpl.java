@@ -1769,6 +1769,9 @@ public class OrderServiceImpl implements OrderService {
                         if (item == null) continue;
 
                         OrderItem orderItem = new OrderItem();
+                        // Same order as the online path: the extras are hung
+                        // on the line before anything reads it back.
+                        attachAddOns(orderItem, item, itemDto.addOnIds());
                         orderItem.setItem(item);
                         applySoldAs(item, itemDto, orderItem);
                         orderItem.setItemName(item.getName() != null ? item.getName() : "Item");
