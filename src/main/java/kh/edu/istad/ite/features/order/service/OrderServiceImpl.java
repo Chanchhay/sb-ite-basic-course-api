@@ -101,8 +101,10 @@ import kh.edu.istad.ite.shared.enums.DiscountScope;
 import kh.edu.istad.ite.shared.enums.DiscountType;
 import kh.edu.istad.ite.shared.enums.RecordStatus;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
 @Service
+@Slf4j
 @RequiredArgsConstructor
 public class OrderServiceImpl implements OrderService {
 
@@ -549,6 +551,68 @@ public class OrderServiceImpl implements OrderService {
      * is priced, and {@code settle} skips this entirely for an order that
      * arrives already {@link OrderStatus#CONFIRMED}.
      */
+    /**
+     * Rebuilds what an offline line was sold as, so the stock it moves is the
+     * stock it actually took.
+     *
+     * `consumeStockForOrder` already deducts `baseQuantity()`, which is the
+     * quantity times the pack's factor — it only ever read one because nothing
+     * here set a unit on the line.
+     *
+     * A shape the shop no longer has is logged and left off rather than thrown:
+     * the cash was taken hours ago and refusing the sale now would lose the
+     * only record of it. The count is wrong either way; a sale that never
+     * arrives is worse.
+     */
+    private void applySoldAs(Item item, OfflineOrderItemDto itemDto, OrderItem orderItem) {
+        ItemVariant variant = null;
+
+        if (itemDto.variantId() != null) {
+            variant = item.getVariants().stream()
+                    .filter(candidate -> candidate.getId().equals(itemDto.variantId()))
+                    .findFirst()
+                    .orElse(null);
+
+            if (variant == null) {
+                log.warn("Offline sale named option {} that item {} no longer has;"
+                        + " its stock will move against the item's own total",
+                        itemDto.variantId(), item.getId());
+            }
+        }
+
+        orderItem.setVariant(variant);
+        orderItem.setUnitFactor(BigDecimal.ONE);
+
+        if (itemDto.unitId() == null || itemDto.unitId().equals(baseUnitId(item))) {
+            orderItem.setUnit(item.getUnit());
+            return;
+        }
+
+        // A pack belongs to one option: the case defined for Large is not the
+        // one defined for Small, so the line's option is part of finding it.
+        final UUID lineVariantId = variant == null ? null : variant.getId();
+
+        ItemUomConversion conversion = item.getUomConversions().stream()
+                .filter(candidate -> candidate.getUnit() != null
+                        && candidate.getUnit().getId().equals(itemDto.unitId()))
+                .filter(candidate -> java.util.Objects.equals(
+                        candidate.getVariant() == null ? null : candidate.getVariant().getId(),
+                        lineVariantId))
+                .findFirst()
+                .orElse(null);
+
+        if (conversion == null) {
+            log.warn("Offline sale named pack {} that item {} no longer sells;"
+                    + " its stock will move one base unit per line",
+                    itemDto.unitId(), item.getId());
+            orderItem.setUnit(item.getUnit());
+            return;
+        }
+
+        orderItem.setUnit(conversion.getUnit());
+        orderItem.setUnitFactor(conversion.getFactor());
+    }
+
     private void consumeStockForOrder(Business business, Order order) {
         // Nothing has been written yet, so a line that would sell past this
         // channel's share stops the whole sale here rather than halfway
@@ -1706,6 +1770,7 @@ public class OrderServiceImpl implements OrderService {
 
                         OrderItem orderItem = new OrderItem();
                         orderItem.setItem(item);
+                        applySoldAs(item, itemDto, orderItem);
                         orderItem.setItemName(item.getName() != null ? item.getName() : "Item");
                         orderItem.setQuantity(itemDto.quantity() != null ? itemDto.quantity() : 1);
                         orderItem.setUnitPrice(itemDto.unitPrice() != null ? itemDto.unitPrice() : BigDecimal.ZERO);
