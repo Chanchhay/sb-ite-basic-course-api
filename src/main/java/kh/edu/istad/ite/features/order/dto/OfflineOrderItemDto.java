@@ -2,6 +2,7 @@ package kh.edu.istad.ite.features.order.dto;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.UUID;
 
 public record OfflineOrderItemDto(
@@ -25,6 +26,16 @@ public record OfflineOrderItemDto(
 
         @JsonProperty("unit_id")
         UUID unitId,
+
+        /**
+         * The extras rung up on this line.
+         *
+         * They come off the shelf like anything else — a tub of pearls empties
+         * whether it was scooped into one drink or ten — and an offline sale
+         * that arrives without them leaves that stock uncounted.
+         */
+        @JsonProperty("add_on_ids")
+        List<UUID> addOnIds,
 
         Integer quantity,
 
