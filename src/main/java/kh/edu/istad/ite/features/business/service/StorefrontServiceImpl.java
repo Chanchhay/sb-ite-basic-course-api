@@ -263,7 +263,13 @@ public class StorefrontServiceImpl implements StorefrontService {
                             business.getId());
 
                     List<ItemVariantResponse> discountedVariants = base.variants();
-                    String badge = base.badge();
+                    // Kept separate from `badge` (a business's own manual
+                    // "New Arrival"/"Anniversary Sale" ribbon) on purpose —
+                    // the two used to share one field with badge winning,
+                    // which silently hid the discount's own label ("Buy 2
+                    // Get 1", "20% OFF") on any item that already had a
+                    // manual badge set.
+                    String itemDiscountLabel = null;
 
                     if (discountedVariants != null && !discountedVariants.isEmpty()) {
                         List<ItemVariantResponse> updated = new ArrayList<>();
@@ -283,12 +289,13 @@ public class StorefrontServiceImpl implements StorefrontService {
                                         LineDiscountApplication discount = applied.get();
                                         BigDecimal originalPrice = v.price();
                                         BigDecimal newPrice = originalPrice.subtract(discount.amount()).max(BigDecimal.ZERO);
-                                        if (badge == null && discount.label() != null) {
-                                            badge = discount.label();
+                                        if (itemDiscountLabel == null) {
+                                            itemDiscountLabel = discount.label();
                                         }
                                         updated.add(v.toBuilder()
                                                 .price(newPrice)
                                                 .compareAtPrice(originalPrice)
+                                                .discountLabel(discount.label())
                                                 .build());
                                         continue;
                                     }
@@ -316,8 +323,8 @@ public class StorefrontServiceImpl implements StorefrontService {
                                 LineDiscountApplication discount = applied.get();
                                 BigDecimal originalPrice = itemPrice;
                                 BigDecimal newPrice = originalPrice.subtract(discount.amount()).max(BigDecimal.ZERO);
-                                if (badge == null && discount.label() != null) {
-                                    badge = discount.label();
+                                if (itemDiscountLabel == null) {
+                                    itemDiscountLabel = discount.label();
                                 }
                                 itemPrice = newPrice;
                                 itemCompareAt = originalPrice;
@@ -328,7 +335,7 @@ public class StorefrontServiceImpl implements StorefrontService {
                     return base.toBuilder()
                             .price(itemPrice)
                             .compareAtPrice(itemCompareAt)
-                            .badge(badge)
+                            .discountLabel(itemDiscountLabel)
                             .variants(discountedVariants)
                             .build();
                 })
