@@ -92,13 +92,24 @@ public class DiscountApplicationServiceImpl implements DiscountApplicationServic
                 .filter(application -> application.amount().compareTo(BigDecimal.ZERO) > 0);
     }
 
-    /**
-     * "Buy 2 get 1 free, any item" spread across a real order: every unit in
-     * the order is one entry, cheapest first, and every complete bundle's
-     * free slots come off the cheapest units still left — the same rule a
-     * single repeated item already gets for free from the bundle math, made
-     * to work when the order mixes different items at different prices too.
-     */
+    @Override
+    public Optional<String> previewDiscountLabel(
+            UUID businessId,
+            OrderChannel channel,
+            UUID itemId,
+            UUID itemGroupId
+    ) {
+
+        List<DiscountResponse> candidates = discountService
+                .findApplicableDiscounts(businessId, channel, itemId, itemGroupId)
+                .stream()
+                .filter(d -> !Boolean.TRUE.equals(d.requiresCoupon()))
+                .toList();
+
+        return pickBest(candidates).map(this::labelFor);
+    }
+
+
     private BigDecimal computeOrderBundleAmount(DiscountResponse discount, List<OrderLineUnits> lines) {
         int bundle = bundleSize(discount);
         int get = discount.getQuantity() != null && discount.getQuantity() > 0 ? discount.getQuantity() : 1;
