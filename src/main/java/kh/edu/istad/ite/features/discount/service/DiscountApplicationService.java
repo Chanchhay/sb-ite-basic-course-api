@@ -60,4 +60,20 @@ public interface DiscountApplicationService {
             OrderChannel channel,
             List<OrderLineUnits> lines
     );
+
+    /**
+     * The name of the best discount that could apply to this item — a Buy 2
+     * Get 1 shown on a product card while the shopper still has only one in
+     * their cart, say — regardless of whether its condition (a minimum
+     * quantity, a bundle size) is actually met right now. This is for
+     * enticing a browsing shopper with what's on offer, never for pricing:
+     * the amount only ever comes from {@link #resolveLineDiscount}, which
+     * still refuses to grant anything whose condition isn't genuinely met.
+     */
+    Optional<String> previewDiscountLabel(
+            UUID businessId,
+            OrderChannel channel,
+            UUID itemId,
+            UUID itemGroupId
+    );
 }

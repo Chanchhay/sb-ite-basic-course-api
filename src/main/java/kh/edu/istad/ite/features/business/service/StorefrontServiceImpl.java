@@ -65,7 +65,6 @@ public class StorefrontServiceImpl implements StorefrontService {
 
     private static final Pattern DNS_LABEL = Pattern.compile("^[a-z0-9]([a-z0-9-]{1,61}[a-z0-9])?$");
 
-    /** The seeded channel the online store trades as. Matches {@link OrderChannel#WEB}. */
     private static final String WEB_CHANNEL_CODE = OrderChannel.WEB.name();
 
     private final BusinessRepository businessRepository;
@@ -171,19 +170,9 @@ public class StorefrontServiceImpl implements StorefrontService {
             return businessRepository.findAll(spec, pageable).map(storefrontMapper::toPublicResponse);
         }
 
-        // Distance ranks the whole filtered set, so it has to be sorted before
-        // paging — there's nowhere in the DB query to compute it yet, and
-        // paging first would only sort each page instead of the results. Fine
-        // at today's store counts; a count large enough for this full scan to
-        // matter is the cue to move it into a native Haversine query instead.
+
         List<Business> matches = businessRepository.findAll(spec);
-        // java.util.Map.entry(k, v) — unlike AbstractMap.SimpleEntry — throws
-        // NPE on a null value via an internal Objects.requireNonNull, and
-        // distanceKm() returns null for any business with no saved
-        // coordinates. SimpleEntry holds it fine. The sort itself uses
-        // nullsLast rather than a ternary sentinel for the same reason: a
-        // primitive/boxed-Double ternary forces an unconditional unbox and
-        // throws on null regardless of which branch is picked.
+
         List<java.util.Map.Entry<Business, Double>> ranked = matches.stream()
                 .map(business -> (java.util.Map.Entry<Business, Double>)
                         new java.util.AbstractMap.SimpleEntry<>(business, distanceKm(business, lat, lng)))
@@ -242,20 +231,14 @@ public class StorefrontServiceImpl implements StorefrontService {
         org.springframework.data.jpa.domain.Specification<Item> specItems = org.springframework.data.jpa.domain.Specification
                 .where(kh.edu.istad.ite.features.catalog.specification.ItemSpecifications.hasBusinessId(business.getId()))
                 .and(kh.edu.istad.ite.features.catalog.specification.ItemSpecifications.hasStatus(ItemStatus.ACTIVE))
-                // What the shop published to its Online Store, and nothing
-                // else. WEB is seeded like every other channel, so the toggle
-                // in the back office is what decides this — listing the till's
-                // items instead made that toggle decoration and let a shop's
-                // counter-only lines leak onto the web.
+
                 .and(kh.edu.istad.ite.features.catalog.specification.ItemSpecifications
                         .isEnabledInChannelCodes(List.of(WEB_CHANNEL_CODE)));
 
         List<Item> items = itemRepository.findAll(specItems);
         return items.stream()
                 .map(item -> {
-                    // What the web charges, not what the business charges: the
-                    // checkout prices every line the same way, and quoting one
-                    // number while billing another is the bug this avoids.
+
                     ItemResponse base = withWebAvailability(
                             channelPriceResolver.atChannelPrices(
                                     itemMapper.toResponse(item), business.getId(), WEB_CHANNEL_CODE),
@@ -263,12 +246,7 @@ public class StorefrontServiceImpl implements StorefrontService {
                             business.getId());
 
                     List<ItemVariantResponse> discountedVariants = base.variants();
-                    // Kept separate from `badge` (a business's own manual
-                    // "New Arrival"/"Anniversary Sale" ribbon) on purpose —
-                    // the two used to share one field with badge winning,
-                    // which silently hid the discount's own label ("Buy 2
-                    // Get 1", "20% OFF") on any item that already had a
-                    // manual badge set.
+
                     String itemDiscountLabel = null;
 
                     if (discountedVariants != null && !discountedVariants.isEmpty()) {
@@ -329,6 +307,18 @@ public class StorefrontServiceImpl implements StorefrontService {
                                 itemPrice = newPrice;
                                 itemCompareAt = originalPrice;
                             }
+                        } catch (Exception ignored) {}
+                    }
+
+
+                    if (itemDiscountLabel == null) {
+                        try {
+                            itemDiscountLabel = discountApplicationService.previewDiscountLabel(
+                                    business.getId(),
+                                    OrderChannel.WEB,
+                                    item.getId(),
+                                    item.getItemGroup() != null ? item.getItemGroup().getId() : null
+                            ).orElse(null);
                         } catch (Exception ignored) {}
                     }
 
@@ -401,18 +391,7 @@ public class StorefrontServiceImpl implements StorefrontService {
         return businessRepository.findDistinctProvinceNames();
     }
 
-    /**
-     * How many of each thing the web may still sell.
-     *
-     * Counted per option, because that is how stock is counted: ten Smalls on
-     * the shelf says nothing about the Large. The item's own figure is the sum
-     * of its options, so a shopper looking at the card sees what the whole
-     * listing can supply and the picker inside it sees which sizes are gone.
-     *
-     * Left null when there is nothing to report — a service the shop does not
-     * count, or an item it records no stock for. Zero means sold out, and the
-     * two must stay distinguishable or every untracked item reads as empty.
-     */
+
     private ItemResponse withWebAvailability(ItemResponse response, Item item, UUID businessId) {
         if (!ItemType.PHYSICAL.equals(item.getItemType())) {
             return response;
