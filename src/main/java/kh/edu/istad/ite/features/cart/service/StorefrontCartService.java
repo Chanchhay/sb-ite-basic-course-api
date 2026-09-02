@@ -51,6 +51,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 import kh.edu.istad.ite.features.discount.dto.LineDiscountApplication;
 import kh.edu.istad.ite.features.discount.dto.OrderLineUnits;
+import kh.edu.istad.ite.features.discount.service.DiscountApplicationService.BundleOffer;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -169,10 +170,22 @@ public class StorefrontCartService {
                 .orElse(null);
 
         // What the line would hold once this is added, so that adding one at a
-        // time cannot creep past what the web may sell.
+        // time cannot creep past what the web may sell. Counted in *paid*
+        // units so a line that already carries a previous bundle's free
+        // units isn't mistaken for extra demand on top of them.
         int alreadyHeld = line == null || line.getQuantity() == null ? 0 : line.getQuantity();
+        int alreadyFree = line == null || line.getFreeQuantity() == null ? 0 : line.getFreeQuantity();
+        int currentPaid = alreadyHeld - alreadyFree;
+        int newPaid = currentPaid + request.quantity();
+
+        Optional<BundleOffer> offer = discountApplicationService.resolveBundleOffer(
+                business.getId(), OrderChannel.WEB, item.getId(),
+                item.getItemGroup() == null ? null : item.getItemGroup().getId());
+        int newTotal = offer.isEmpty() ? Math.max(0, newPaid) : offer.get().totalForPaidUnits(newPaid);
+        int newFree = newTotal - newPaid;
+
         requireStock(business, item, variant,
-                priced.unitFactor().multiply(BigDecimal.valueOf(alreadyHeld + request.quantity())));
+                priced.unitFactor().multiply(BigDecimal.valueOf(newTotal)));
 
         if (line == null) {
             line = CartItem.builder()
@@ -181,7 +194,8 @@ public class StorefrontCartService {
                     .variant(variant)
                     .unit(priced.unit())
                     .unitFactor(priced.unitFactor())
-                    .quantity(request.quantity())
+                    .quantity(newTotal)
+                    .freeQuantity(newFree)
                     .priceSnapshot(priced.unitPrice())
                     .basePrice(priced.channelPrice())
                     .build();
@@ -190,7 +204,8 @@ public class StorefrontCartService {
             addOns.forEach(line::addAddOn);
             cart.getItems().add(line);
         } else {
-            line.setQuantity(line.getQuantity() + request.quantity());
+            line.setQuantity(newTotal);
+            line.setFreeQuantity(newFree);
             line.setPriceSnapshot(priced.unitPrice());
             line.setBasePrice(priced.channelPrice());
         }
@@ -200,6 +215,14 @@ public class StorefrontCartService {
         return findMyCart();
     }
 
+    /**
+     * @param quantity The *paid* quantity the shopper now wants on this line
+     *                 — typing "2" always means two they are paying for,
+     *                 never a raw total that might already have a free unit
+     *                 folded into it. Exactly the total for a line under no
+     *                 Buy X Get Y offer; the free portion is layered on top
+     *                 automatically for one that is.
+     */
     @Transactional
     public CartSummaryResponse updateItem(UUID cartItemId, int quantity) {
         CartItem line = requireOwnedLine(cartItemId);
@@ -216,12 +239,20 @@ public class StorefrontCartService {
                     ? BigDecimal.ONE
                     : line.getUnitFactor();
 
+            Item item = line.getItem();
+            Optional<BundleOffer> offer = discountApplicationService.resolveBundleOffer(
+                    line.getCart().getBusiness().getId(), OrderChannel.WEB, item.getId(),
+                    item.getItemGroup() == null ? null : item.getItemGroup().getId());
+            int newTotal = offer.isEmpty() ? quantity : offer.get().totalForPaidUnits(quantity);
+            int newFree = newTotal - quantity;
+
             requireStock(
                     line.getCart().getBusiness(),
-                    line.getItem(),
+                    item,
                     line.getVariant(),
-                    factor.multiply(BigDecimal.valueOf(quantity)));
-            line.setQuantity(quantity);
+                    factor.multiply(BigDecimal.valueOf(newTotal)));
+            line.setQuantity(newTotal);
+            line.setFreeQuantity(newFree);
             cartItemRepository.save(line);
         }
 
@@ -345,20 +376,7 @@ public class StorefrontCartService {
                 .filter(line -> line.addOnKey().equals(addOnKey))
                 .findFirst();
     }
-
-    /**
-     * Turns what the shopper picked into what the line will carry.
-     *
-     * Checked against the item rather than trusted, for the ordinary reason:
-     * this arrives from a browser. An attribute the item does not have, or a
-     * value it does not offer, is a line the shop cannot make — and a value the
-     * seller switched off is one they said they would not make today.
-     *
-     * Only {@code OPTION} attributes are choices. The rest are copy: a
-     * HIGHLIGHT is a delivery promise, a SPECIFICATION is a fact about the
-     * item, and a HIDDEN one was never meant to leave the back office.
-     */
-    /** Absent placement means OPTION — that is what an attribute was before the field existed. */
+    
     private boolean isOption(ItemAttribute attribute) {
         return attribute.getPlacement() == null
                 || AttributePlacement.OPTION.equals(attribute.getPlacement());
@@ -785,6 +803,7 @@ public class StorefrontCartService {
                     line.unitName(),
                     line.unitFactor(),
                     line.quantity(),
+                    line.freeQuantity(),
                     line.unitPrice(),
                     line.unitPriceWithAddOns(),
                     newSubtotal,
@@ -827,24 +846,15 @@ public class StorefrontCartService {
         Unit unit = line.getUnit();
         BigDecimal factor = line.getUnitFactor() == null ? BigDecimal.ONE : line.getUnitFactor();
 
-        // Only worth a chip when it is a pack. "per Bottle" on every single
-        // line is noise the shopper already knows.
         if (unit != null && factor.compareTo(BigDecimal.ONE) > 0) {
             badges.add(unit.getName());
         }
 
         List<CartItemAddOn> extras = line.getAddOns() == null ? List.of() : line.getAddOns();
 
-        // "+ Extra shot" reads as an addition rather than as another option,
-        // which is what it is — and what the counter's ticket says too.
         extras.forEach(addOn -> badges.add("+ " + addOn.getAddOnName()));
 
-        // basePrice (falling back to priceSnapshot for older rows) is the
-        // undiscounted unit price — the discount itself is always computed
-        // fresh here, from the line's current quantity, the same way
-        // checkout will, rather than trusted from anything stored on the
-        // line at add-time (quantity can change afterwards — see
-        // updateItem — without ever recomputing a stored snapshot).
+
         BigDecimal basePrice = line.getBasePrice() != null ? line.getBasePrice() : line.getPriceSnapshot();
         int quantity = line.getQuantity() == null ? 0 : line.getQuantity();
 
@@ -901,6 +911,7 @@ public class StorefrontCartService {
                 unit == null ? null : unit.getName(),
                 factor,
                 line.getQuantity(),
+                line.getFreeQuantity() == null ? 0 : line.getFreeQuantity(),
                 basePrice,
                 unitPriceWithAddOns,
                 lineSubtotal,
@@ -912,16 +923,7 @@ public class StorefrontCartService {
     }
 
 
-    /**
-     * The picture a cart line shows — the first of the same gallery the back
-     * office builds for the item.
-     *
-     * The item's own `imageUrl` comes first and is the only one that can be a
-     * plain link: uploaded images are keys into our asset store, but an item
-     * imported from another system has never been near it and its photograph
-     * sits in `imageUrl` alone. Reading only `images` left every imported
-     * item in the cart with no picture at all.
-     */
+
     private String coverImageOf(Item item) {
         if (StringUtils.hasText(item.getImageUrl())) {
             return item.getImageUrl();

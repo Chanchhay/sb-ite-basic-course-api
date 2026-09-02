@@ -16,6 +16,8 @@ public record OrderItemResponse(
         String unitName,
         BigDecimal unitFactor,
         Integer quantity,
+        /** How many of {@code quantity} a Buy X Get Y offer gave away — zero for an ordinary line. */
+        Integer freeQuantity,
         BigDecimal unitPrice,
         BigDecimal discountAmount,
         /** Name of the discount that produced discountAmount for this line, if any. */

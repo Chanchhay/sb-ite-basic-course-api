@@ -30,6 +30,7 @@ public interface OrderService {
     OrderResponse removeOrderItem(UUID businessId, UUID orderId, UUID orderItemId);
     
     OrderResponse updateOrderNote(UUID businessId, UUID orderId, UpdateOrderNoteRequest request);
+    OrderResponse updateOrderCustomer(UUID businessId, UUID orderId, UpdateOrderCustomerRequest request);
     OrderResponse updateOrderDiscount(UUID businessId, UUID orderId, UpdateOrderDiscountRequest request);
     
     PageResponse<OrderResponse> filterOrders(UUID businessId, kh.edu.istad.ite.config.filter.RequestDto requestDto, Pageable pageable);

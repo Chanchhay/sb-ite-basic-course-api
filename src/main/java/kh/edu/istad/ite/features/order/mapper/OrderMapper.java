@@ -127,16 +127,32 @@ public class OrderMapper {
     }
 
     public OrderItemResponse toItemResponse(OrderItem item) {
+        // The line's own unit is only worth reporting when it is a real
+        // upsell (a case sold instead of a can) — a line rung up in the
+        // item's own default unit gets that unit assigned internally for
+        // pricing (see OrderServiceImpl.buildItem), but every caller that
+        // placed the line asked for no unit at all and still expects null
+        // back. The till in particular re-derives an item+variant+unit key
+        // to match this line up with the one it holds locally; reporting the
+        // base unit's real id here where the till sent none breaks that key
+        // silently, which drops any free units a Buy X Get Y bundle grants
+        // back for that line since they never get read into the local cart.
+        boolean isBaseUnit = item.getUnit() != null
+                && item.getItem() != null
+                && item.getItem().getUnit() != null
+                && item.getItem().getUnit().getId().equals(item.getUnit().getId());
+
         return new OrderItemResponse(
                 item.getId(),
                 item.getItem().getId(),
                 item.getVariant() == null ? null : item.getVariant().getId(),
                 item.getVariant() == null ? null : item.getVariant().getVariantName(),
                 item.getItemName(),
-                item.getUnit() == null ? null : item.getUnit().getId(),
-                item.getUnit() == null ? null : item.getUnit().getName(),
+                isBaseUnit || item.getUnit() == null ? null : item.getUnit().getId(),
+                isBaseUnit || item.getUnit() == null ? null : item.getUnit().getName(),
                 item.getUnitFactor(),
                 item.getQuantity(),
+                item.getFreeQuantity() == null ? 0 : item.getFreeQuantity(),
                 item.getUnitPrice(),
                 item.getDiscountAmount(),
                 item.getDiscountLabel(),
