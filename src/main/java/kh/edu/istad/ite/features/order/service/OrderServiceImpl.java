@@ -897,6 +897,13 @@ public class OrderServiceImpl implements OrderService {
      */
     private static boolean sameLine(
             OrderItem line, UUID itemId, UUID variantId, UUID unitId, List<UUID> addOnIds) {
+        // A permanently-deleted item detaches its old lines (item goes null)
+        // rather than losing the receipt; such a line can no longer be "the
+        // same" as a catalog item someone is adding right now.
+        if (line.getItem() == null) {
+            return false;
+        }
+
         boolean sameItem = line.getItem().getId().equals(itemId);
         boolean sameVariant = line.getVariant() == null
                 ? variantId == null
@@ -1648,13 +1655,20 @@ public class OrderServiceImpl implements OrderService {
         for (OrderItem item : order.getItems()) {
             BigDecimal unitPrice = item.priceWithAddOns();
             int quantity = item.getQuantity() == null ? 0 : item.getQuantity();
-            UUID itemId = item.getItem().getId();
-            UUID itemGroupId = item.getItem().getItemGroup() != null ? item.getItem().getItemGroup().getId() : null;
 
-            BigDecimal amount = discountApplicationService.resolveLineDiscount(
-                            businessId, channel, itemId, itemGroupId, unitPrice, quantity, grossOrderSubtotal)
-                    .map(LineDiscountApplication::amount)
-                    .orElse(BigDecimal.ZERO);
+            // A permanently-deleted item detaches its old lines rather than
+            // losing the receipt — such a line no longer names a catalog item
+            // a discount could be resolved against, so it takes none.
+            BigDecimal amount = BigDecimal.ZERO;
+            if (item.getItem() != null) {
+                UUID itemId = item.getItem().getId();
+                UUID itemGroupId = item.getItem().getItemGroup() != null ? item.getItem().getItemGroup().getId() : null;
+
+                amount = discountApplicationService.resolveLineDiscount(
+                                businessId, channel, itemId, itemGroupId, unitPrice, quantity, grossOrderSubtotal)
+                        .map(LineDiscountApplication::amount)
+                        .orElse(BigDecimal.ZERO);
+            }
 
             item.setDiscountAmount(amount);
             item.setLineTotal(unitPrice.multiply(BigDecimal.valueOf(quantity)).subtract(amount));

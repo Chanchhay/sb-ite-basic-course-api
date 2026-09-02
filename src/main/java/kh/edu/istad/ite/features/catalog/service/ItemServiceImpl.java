@@ -25,6 +25,16 @@ import kh.edu.istad.ite.features.catalog.entity.ItemImage;
 import kh.edu.istad.ite.features.minio.MinioService;
 import kh.edu.istad.ite.features.channel.repository.ItemChannelRepository;
 import kh.edu.istad.ite.features.channel.entity.ItemChannel;
+import kh.edu.istad.ite.features.order.repository.OrderItemRepository;
+import kh.edu.istad.ite.features.discount.repository.DiscountTargetRepository;
+import kh.edu.istad.ite.features.discount.entity.DiscountTarget;
+import kh.edu.istad.ite.features.channel.repository.ItemChannelStockRepository;
+import kh.edu.istad.ite.features.channel.repository.ItemChannelPriceRepository;
+import kh.edu.istad.ite.features.channel.entity.ItemChannelPrice;
+import kh.edu.istad.ite.features.cart.repository.CartItemRepository;
+import kh.edu.istad.ite.features.cart.entity.CartItem;
+import kh.edu.istad.ite.features.catalog.specification.ItemSpecifications;
+import java.time.LocalDateTime;
 import org.springframework.web.multipart.MultipartFile;
 import kh.edu.istad.ite.shared.dto.PageResponse;
 import kh.edu.istad.ite.shared.enums.ItemStatus;
@@ -52,6 +62,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
+import jakarta.persistence.EntityManager;
 
 import java.util.ArrayList;
 
@@ -83,6 +94,10 @@ public class ItemServiceImpl implements ItemService {
     private static final String SLUG_FALLBACK = "item";
     private static final String VARIANT_SLUG_FALLBACK = "variant";
     private static final int DEFAULT_LOW_STOCK = 20;
+    private static final List<kh.edu.istad.ite.shared.enums.OrderStatus> OPEN_ORDER_STATUSES = List.of(
+            kh.edu.istad.ite.shared.enums.OrderStatus.PENDING,
+            kh.edu.istad.ite.shared.enums.OrderStatus.CONFIRMED
+    );
 
     private final BusinessHelper businessHelper;
     private final ItemGroupRepository itemGroupRepository;
@@ -96,6 +111,12 @@ public class ItemServiceImpl implements ItemService {
     private final StockEntryRepository stockEntryRepository;
     private final StockLayerRepository stockLayerRepository;
     private final StockConsumptionRepository stockConsumptionRepository;
+    private final OrderItemRepository orderItemRepository;
+    private final DiscountTargetRepository discountTargetRepository;
+    private final ItemChannelStockRepository itemChannelStockRepository;
+    private final ItemChannelPriceRepository itemChannelPriceRepository;
+    private final CartItemRepository cartItemRepository;
+    private final EntityManager entityManager;
 
     @Override
     @Transactional
@@ -164,14 +185,14 @@ public class ItemServiceImpl implements ItemService {
     @Transactional(readOnly = true)
     public ItemResponse findItemById(UUID businessId, UUID itemId) {
         businessHelper.findOwnedBusiness(businessId);
-        return itemMapper.toResponse(findItem(itemId, businessId));
+        return itemMapper.toResponse(findActiveItem(itemId, businessId));
     }
 
     @Override
     @Transactional
     public ItemResponse updateItem(UUID businessId, UUID itemId, UpdateItemRequest request, List<MultipartFile> files) {
         businessHelper.findOwnedBusiness(businessId);
-        Item item = findItem(itemId, businessId);
+        Item item = findActiveItem(itemId, businessId);
 
         if (request.itemGroupId() != null) {
             item.setItemGroup(findItemGroup(request.itemGroupId(), businessId));
@@ -279,7 +300,7 @@ public class ItemServiceImpl implements ItemService {
     @Transactional
     public ItemResponse updateItemAddOns(UUID businessId, UUID itemId, List<UUID> addOnIds) {
         businessHelper.findOwnedBusiness(businessId);
-        Item item = findItem(itemId, businessId);
+        Item item = findActiveItem(itemId, businessId);
 
         replaceAddOns(item, businessId, addOnIds);
 
@@ -294,55 +315,128 @@ public class ItemServiceImpl implements ItemService {
     @Transactional
     public void deleteItem(UUID businessId, UUID itemId) {
         businessHelper.findOwnedBusiness(businessId);
+        Item item = findActiveItem(itemId, businessId);
+
+        item.setIsDeleted(true);
+        item.setDeletedAt(LocalDateTime.now());
+        item.setStatus(ItemStatus.INACTIVE);
+        itemRepository.save(item);
+    }
+
+    @Override
+    @Transactional
+    public ItemResponse restoreItem(UUID businessId, UUID itemId) {
+        businessHelper.findOwnedBusiness(businessId);
         Item item = findItem(itemId, businessId);
 
-        List<ItemChannel> itemChannels = itemChannelRepository.findByItemId(itemId);
-        itemChannelRepository.deleteAll(itemChannels);
+        item.setIsDeleted(false);
+        item.setDeletedAt(null);
+        item.setStatus(ItemStatus.ACTIVE);
+        return itemMapper.toResponse(itemRepository.save(item));
+    }
 
-        for (ItemImage image : item.getImages()) {
-            minioService.deleteAsset(image.getImageKey());
+    @Override
+    @Transactional
+    public void hardDeleteItem(UUID businessId, UUID itemId) {
+        businessHelper.findOwnedBusiness(businessId);
+        Item item = findItem(itemId, businessId);
+
+        // An order still being worked on (not yet paid, cancelled, or
+        // failed) needs this item to stay resolvable — pricing, discounts,
+        // and stock at checkout all reach back into the catalog through it.
+        // Detaching it out from under a live order is a different failure
+        // for each of those, not one clear error; a closed order has none of
+        // that ahead of it; it is pure history, so it does not block this.
+        if (orderItemRepository.existsByItem_IdAndOrder_StatusIn(itemId, OPEN_ORDER_STATUSES)) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "This item is on an order that hasn't been paid or cancelled yet. "
+                            + "Wait for it to finish, or cancel it, before deleting the item forever.");
         }
 
-        /*
-         * The stock ledger goes with the item it counts. Nothing cascades from
-         * Item to StockEntry, so an item that was ever counted — including one
-         * that only ever received an opening balance from an import — could not
-         * be deleted at all, and reported that it "has been ordered" when
-         * nothing had been ordered at all.
-         *
-         * A genuinely sold item is still refused: the order lines point at it
-         * too, and that constraint is untouched. Removing the ledger first only
-         * means the refusal, when it comes, is about the sales it is actually
-         * about. Both happen in one transaction, so a refusal takes the ledger
-         * deletion down with it.
-         */
-        /*
-         * In dependency order, because each points at the one before it: what
-         * drew stock down, then the batches it drew from, then the entries that
-         * made those batches. Clearing only the entries left the FIFO layers
-         * pointing at rows that were about to go, so the item's own delete
-         * failed on a constraint nobody could see — and reported itself as
-         * "has been ordered" when nothing had been.
-         */
-        stockConsumptionRepository.deleteByItemId(itemId);
-        stockLayerRepository.deleteByItemId(itemId);
-        stockEntryRepository.deleteAll(
-                stockEntryRepository.findAllByBusiness_IdAndItem_IdOrderByCreatedDateDescIdDesc(
-                        businessId, itemId));
-
-        try {
-            itemRepository.delete(item);
-            itemRepository.flush();
-        } catch (DataIntegrityViolationException e) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "Cannot delete item because it has been ordered or is in use", e);
+        // 1. Remove images from MinIO
+        if (item.getImages() != null) {
+            for (ItemImage image : item.getImages()) {
+                try {
+                    minioService.deleteAsset(image.getImageKey());
+                } catch (Exception e) {
+                    log.warn("Failed to delete MinIO image: {}", image.getImageKey(), e);
+                }
+            }
         }
+
+        // 2. Detach from historical order lines so receipts/orders stay intact
+        entityManager.createNativeQuery("UPDATE order_items SET item_id = null, variant_id = null WHERE item_id = :itemId")
+                .setParameter("itemId", itemId)
+                .executeUpdate();
+
+        // 3. Remove storefront/draft cart items
+        entityManager.createNativeQuery("DELETE FROM cart_items WHERE item_id = :itemId")
+                .setParameter("itemId", itemId)
+                .executeUpdate();
+
+        // 4. Remove discount targets for this item
+        entityManager.createNativeQuery("DELETE FROM discount_targets WHERE item_id = :itemId")
+                .setParameter("itemId", itemId)
+                .executeUpdate();
+
+        // 5. Remove sales channel links, stock allocations, and custom channel prices
+        entityManager.createNativeQuery("DELETE FROM item_channel_stocks WHERE item_id = :itemId")
+                .setParameter("itemId", itemId)
+                .executeUpdate();
+
+        entityManager.createNativeQuery("DELETE FROM item_channel_prices WHERE item_id = :itemId")
+                .setParameter("itemId", itemId)
+                .executeUpdate();
+
+        entityManager.createNativeQuery("DELETE FROM item_channels WHERE item_id = :itemId")
+                .setParameter("itemId", itemId)
+                .executeUpdate();
+
+        // 6. Remove stock ledger entries in dependency order (consumptions -> layers -> entries)
+        entityManager.createNativeQuery("""
+            DELETE FROM stock_consumptions 
+            WHERE stock_layer_id IN (SELECT id FROM stock_layers WHERE item_id = :itemId) 
+               OR stock_entry_id IN (SELECT id FROM stock_entries WHERE item_id = :itemId)
+            """).setParameter("itemId", itemId).executeUpdate();
+
+        entityManager.createNativeQuery("""
+            DELETE FROM stock_layers 
+            WHERE item_id = :itemId 
+               OR source_entry_id IN (SELECT id FROM stock_entries WHERE item_id = :itemId)
+            """).setParameter("itemId", itemId).executeUpdate();
+
+        entityManager.createNativeQuery("DELETE FROM stock_entries WHERE item_id = :itemId")
+                .setParameter("itemId", itemId)
+                .executeUpdate();
+
+        // 7. Remove item child tables and entity
+        entityManager.createNativeQuery("DELETE FROM item_images WHERE item_id = :itemId")
+                .setParameter("itemId", itemId)
+                .executeUpdate();
+
+        entityManager.createNativeQuery("DELETE FROM item_add_ons WHERE item_id = :itemId")
+                .setParameter("itemId", itemId)
+                .executeUpdate();
+
+        entityManager.createNativeQuery("DELETE FROM item_uom_conversions WHERE item_id = :itemId")
+                .setParameter("itemId", itemId)
+                .executeUpdate();
+
+        entityManager.createNativeQuery("DELETE FROM item_variants WHERE item_id = :itemId")
+                .setParameter("itemId", itemId)
+                .executeUpdate();
+
+        entityManager.createNativeQuery("DELETE FROM items WHERE id = :itemId")
+                .setParameter("itemId", itemId)
+                .executeUpdate();
     }
 
     @Override
     @Transactional
     public ItemResponse deleteItemImage(UUID businessId, UUID itemId, UUID imageId) {
         businessHelper.findOwnedBusiness(businessId);
-        Item item = findItem(itemId, businessId);
+        Item item = findActiveItem(itemId, businessId);
         ItemImage imageToRemove = item.getImages().stream()
                 .filter(img -> img.getId().equals(imageId))
                 .findFirst()
@@ -361,7 +455,7 @@ public class ItemServiceImpl implements ItemService {
     @Transactional
     public ItemResponse uploadItemImages(UUID businessId, UUID itemId, kh.edu.istad.ite.features.catalog.dto.UploadItemImagesRequest request) {
         businessHelper.findOwnedBusiness(businessId);
-        Item item = findItem(itemId, businessId);
+        Item item = findActiveItem(itemId, businessId);
         if (request.files() != null && !request.files().isEmpty()) {
             for (MultipartFile file : request.files()) {
                 String imageKey = minioService.uploadAsset(file);
@@ -380,8 +474,8 @@ public class ItemServiceImpl implements ItemService {
     @Transactional
     public ItemResponse reorderItemImages(UUID businessId, UUID itemId, kh.edu.istad.ite.features.catalog.dto.ReorderItemImagesRequest request) {
         businessHelper.findOwnedBusiness(businessId);
-        Item item = findItem(itemId, businessId);
-        
+        Item item = findActiveItem(itemId, businessId);
+
         List<UUID> orderedIds = request.imageIds();
         for (int i = 0; i < orderedIds.size(); i++) {
             UUID id = orderedIds.get(i);
@@ -408,21 +502,41 @@ public class ItemServiceImpl implements ItemService {
         org.springframework.data.jpa.domain.Specification<Item> businessSpec = (root, query, cb) ->
                 cb.equal(root.get("business").get("id"), businessId);
 
-        Page<Item> items = itemRepository.findAll(businessSpec.and(spec), pageable);
+        boolean isTrashSearch = requestDto.getSearchRequestDto() != null &&
+                requestDto.getSearchRequestDto().stream().anyMatch(s -> "isDeleted".equalsIgnoreCase(s.getColumn()) && Boolean.parseBoolean(String.valueOf(s.getValue())));
+
+        org.springframework.data.jpa.domain.Specification<Item> deletedSpec = isTrashSearch
+                ? ItemSpecifications.isDeleted()
+                : ItemSpecifications.isNotDeleted();
+
+        Page<Item> items = itemRepository.findAll(businessSpec.and(deletedSpec).and(spec), pageable);
         return PageResponse.from(items.map(itemMapper::toResponse));
     }
 
     @Override
     public ItemResponse findItemByBarcode(UUID businessId, String barcode) {
         businessHelper.findOwnedBusiness(businessId);
-        Item item = itemRepository.findByBusinessIdAndBarcode(businessId, barcode.trim())
+        Item item = itemRepository.findByBusinessIdAndBarcodeAndIsDeletedFalse(businessId, barcode.trim())
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND, "Item not found with barcode: " + barcode));
         return itemMapper.toResponse(item);
     }
 
+    /**
+     * Looks an item up regardless of whether it is in the trash.
+     *
+     * Only {@link #restoreItem} and {@link #hardDeleteItem} may reach a
+     * trashed item this way — every other operation goes through
+     * {@link #findActiveItem}, which a deleted item is invisible to.
+     */
     private Item findItem(UUID itemId, UUID businessId) {
         return itemRepository.findByIdAndBusinessId(itemId, businessId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Item has not been found"));
+    }
+
+    /** The same lookup, but a trashed item is reported not found — it is hidden from everything but the bin itself. */
+    private Item findActiveItem(UUID itemId, UUID businessId) {
+        return itemRepository.findByIdAndBusinessIdAndIsDeletedFalse(itemId, businessId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Item has not been found"));
     }
 
@@ -448,11 +562,7 @@ public class ItemServiceImpl implements ItemService {
         return itemGroup;
     }
 
-    /**
-     * A business may measure an item in a platform unit or in one of its own,
-     * and in nothing else — resolving globally would let it borrow another
-     * business's "Sack" and silently change meaning.
-     */
+
     private Unit findUnit(UUID unitId, UUID businessId) {
         if (unitId == null) {
             return null;
@@ -499,15 +609,6 @@ public class ItemServiceImpl implements ItemService {
         return colors;
     }
 
-    /**
-     * Every variant's colour has to be one the item declares.
-     *
-     * A variant pointing at a colour the item does not list is a row nothing
-     * can reach: the swatches are drawn from the item's colours, so no click
-     * would ever select it — and it would sit there holding stock nobody can
-     * sell. Two variants on the same size and colour are refused for the same
-     * reason: the picker would resolve to whichever came first, silently.
-     */
     private void requireDeclaredColors(Item item) {
         Set<String> declared = (item.getColors() == null ? List.<ItemColor>of() : item.getColors())
                 .stream()
@@ -799,7 +900,7 @@ public class ItemServiceImpl implements ItemService {
     public ItemResponse updateItemAddOnAvailability(
             UUID businessId, UUID itemId, UUID addOnId, boolean available) {
         businessHelper.findOwnedBusiness(businessId);
-        Item item = findItem(itemId, businessId);
+        Item item = findActiveItem(itemId, businessId);
 
         ItemAddOn link = item.getAddOns().stream()
                 .filter(candidate -> candidate.getAddOn().getId().equals(addOnId))
@@ -812,21 +913,7 @@ public class ItemServiceImpl implements ItemService {
         return itemMapper.toResponse(itemRepository.saveAndFlush(item));
     }
 
-    /**
-     * Brings the item's conversions in line with what was sent.
-     *
-     * The base unit is rejected rather than ignored: "1 g = 5 g" is not a
-     * conversion anyone meant to type, and storing it would make every amount
-     * on the item ambiguous.
-     *
-     * A conversion already on the item is edited where it stands rather than
-     * dropped and written again. Only one row may exist per (item, unit,
-     * option), and
-     * Hibernate flushes its inserts before its deletes — so re-saving an item
-     * with the same conversions would collide with the very rows it was about
-     * to remove, and surface as "Item already exists". Keeping the rows also
-     * keeps their ids stable for anything holding a reference to them.
-     */
+
     private void replaceUomConversions(
             Item item,
             UUID businessId,
@@ -920,16 +1007,7 @@ public class ItemServiceImpl implements ItemService {
 
             ItemUomConversion conversion = byKey.get(key);
 
-            /*
-             * Failing that, any row still going spare on the same unit is
-             * this one under a different option — a case that used to be for
-             * nothing in particular and is now for Small.
-             *
-             * Reusing it is what keeps that an UPDATE. Written as a delete and
-             * an insert it would collide with itself: Hibernate flushes inserts
-             * before deletes, and the row it was about to remove still holds
-             * this item and unit.
-             */
+
             if (conversion == null) {
                 conversion = byUnit.getOrDefault(unitId, List.of()).stream()
                         .filter(candidate -> !kept.contains(candidate))
@@ -960,13 +1038,7 @@ public class ItemServiceImpl implements ItemService {
                 + (conversion.getVariant() == null ? "" : optionKey(conversion.getVariant()));
     }
 
-    /**
-     * How an option is told apart within its item.
-     *
-     * By name, because an option created in this same request has no id until
-     * the flush — and because renaming one makes a new option rather than
-     * editing this one, so the name is the identity either way.
-     */
+
     private static String optionKey(ItemVariant variant) {
         if (variant.getVariantName() != null) {
             return variant.getVariantName().toLowerCase();
@@ -1002,14 +1074,7 @@ public class ItemServiceImpl implements ItemService {
         return candidate;
     }
 
-    /**
-     * What actually clashed, rather than "Item already exists" over everything.
-     *
-     * Only two of this table's constraints are about an item's identity; the
-     * rest — a duplicate conversion, a variant — say nothing about the name,
-     * and reporting them as a name clash sends people renaming an item that
-     * was never the problem.
-     */
+
     private ResponseStatusException itemConflict(DataIntegrityViolationException e) {
         String detail = String.valueOf(e.getMostSpecificCause().getMessage()).toLowerCase();
 
@@ -1055,9 +1120,7 @@ public class ItemServiceImpl implements ItemService {
                     HttpStatus.CONFLICT, "That barcode is already used by something else.", e);
         }
 
-        // Nothing recognised. Say so honestly and log what the database
-        // actually complained about, rather than inventing a reason the shop
-        // would go and act on.
+
         log.error("Item save rejected by the database", e);
 
         return new ResponseStatusException(

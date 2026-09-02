@@ -25,6 +25,9 @@ public interface ItemRepository extends JpaRepository<Item, UUID>, JpaSpecificat
 
         Optional<Item> findByIdAndBusinessId(UUID id, UUID businessId);
 
+        /** Same lookup, but blind to anything sitting in the trash. */
+        Optional<Item> findByIdAndBusinessIdAndIsDeletedFalse(UUID id, UUID businessId);
+
         boolean existsByBusinessIdAndNameIgnoreCase(UUID businessId, String name);
 
         boolean existsByBusinessIdAndNameIgnoreCaseAndIdNot(UUID businessId, String name, UUID id);
@@ -40,6 +43,17 @@ public interface ItemRepository extends JpaRepository<Item, UUID>, JpaSpecificat
         boolean existsByBusiness_Id(UUID businessId);
 
         Optional<Item> findByBusinessIdAndBarcode(UUID businessId, String barcode);
+
+        /**
+         * The live item this barcode belongs to.
+         *
+         * Barcodes carry no unique constraint, so a scan can land on more than
+         * one row once a trashed item and a newer one happen to share a code —
+         * {@link #findByBusinessIdAndBarcode} would then blow up with a
+         * non-unique result. Trash is invisible to POS anyway, so it is
+         * excluded here rather than left to collide.
+         */
+        Optional<Item> findByBusinessIdAndBarcodeAndIsDeletedFalse(UUID businessId, String barcode);
 
         /**
          * Items matching a SKU, ignoring case.

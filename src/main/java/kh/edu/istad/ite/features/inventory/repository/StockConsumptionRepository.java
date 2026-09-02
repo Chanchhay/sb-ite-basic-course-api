@@ -19,7 +19,7 @@ public interface StockConsumptionRepository extends JpaRepository<StockConsumpti
      * order, because each points at the one before it.
      */
     @Modifying
-    @Query("delete from StockConsumption c where c.stockLayer.item.id = :itemId")
+    @Query("delete from StockConsumption c where (c.stockLayer is not null and c.stockLayer.item.id = :itemId) or (c.stockEntry is not null and c.stockEntry.item.id = :itemId)")
     void deleteByItemId(@Param("itemId") UUID itemId);
 
     List<StockConsumption> findByStockEntry_IdOrderByCreatedDateAsc(UUID stockEntryId);

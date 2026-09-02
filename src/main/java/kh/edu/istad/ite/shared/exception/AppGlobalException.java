@@ -141,12 +141,14 @@ public class AppGlobalException {
     @ResponseStatus(HttpStatus.CONFLICT)
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ErrorResponse handleDataIntegrityViolation(DataIntegrityViolationException e) {
-        log.error("Data integrity violation", e);
+        String detail = e.getMostSpecificCause() != null ? e.getMostSpecificCause().getMessage() : e.getMessage();
+        log.error("Data integrity violation: {}", detail, e);
         return ErrorResponse.builder()
                 .status(HttpStatus.CONFLICT.getReasonPhrase())
                 .code(HttpStatus.CONFLICT.value())
-                .message("That change conflicts with something already saved. Please check the"
-                        + " details and try again.")
+                .message(detail != null && !detail.isBlank()
+                        ? detail
+                        : "That change conflicts with something already saved. Please check the details and try again.")
                 .timestamp(Instant.now())
                 .build();
     }

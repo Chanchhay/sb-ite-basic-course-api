@@ -93,7 +93,9 @@ public class ItemMapper {
                 item.getStatus(),
                 // Left to whoever is asking on behalf of a channel; the
                 // catalogue itself has no channel to answer for.
-                null
+                null,
+                item.getIsDeleted(),
+                item.getDeletedAt()
         );
     }
 
