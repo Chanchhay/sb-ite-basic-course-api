@@ -79,6 +79,10 @@ app:
     payment-poll-interval-ms: 10000
     payment-poll-initial-delay-ms: 10000
 
+  push:
+    dashboard-base-url: ${PUSH_DASHBOARD_BASE_URL:}
+    internal-secret: ${PUSH_INTERNAL_SECRET:}
+
   facebook:
     app-id: ${FACEBOOK_APP_ID:2213406572840514}
     app-secret: ${FACEBOOK_APP_SECRET:89267cfc5597509ef386d3bd59b10090}
