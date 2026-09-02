@@ -62,6 +62,29 @@ public interface DiscountApplicationService {
     );
 
     /**
+     * What one unit of this item is worth off while it is merely being
+     * browsed — a listing price, with no cart and no quantity to check a
+     * condition against.
+     *
+     * {@link #resolveLineDiscount} answers this for an item- or
+     * category-scoped discount and is tried first, so a targeted promotion
+     * still beats a storewide one. Beyond that, a storewide discount is
+     * admitted here only when spreading it over a single unit gives exactly
+     * the answer the order will: an unconditional percentage with no
+     * maximum. A flat "$5 off the order" or a Buy X Get Y cannot be divided
+     * into a per-unit price without lying about it, and a capped percentage
+     * stops being uniform the moment the cap bites — those return empty, and
+     * {@link #previewDiscountLabel} is what tells the shopper they exist.
+     */
+    Optional<LineDiscountApplication> resolveDisplayUnitDiscount(
+            UUID businessId,
+            OrderChannel channel,
+            UUID itemId,
+            UUID itemGroupId,
+            BigDecimal unitPrice
+    );
+
+    /**
      * The name of the best discount that could apply to this item — a Buy 2
      * Get 1 shown on a product card while the shopper still has only one in
      * their cart, say — regardless of whether its condition (a minimum

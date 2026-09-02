@@ -254,14 +254,12 @@ public class StorefrontServiceImpl implements StorefrontService {
                         for (ItemVariantResponse v : discountedVariants) {
                             if (v.price() != null) {
                                 try {
-                                    Optional<LineDiscountApplication> applied = discountApplicationService.resolveLineDiscount(
+                                    Optional<LineDiscountApplication> applied = discountApplicationService.resolveDisplayUnitDiscount(
                                             business.getId(),
                                             OrderChannel.WEB,
                                             item.getId(),
                                             item.getItemGroup() != null ? item.getItemGroup().getId() : null,
-                                            v.price(),
-                                            1,
-                                            null
+                                            v.price()
                                     );
                                     if (applied.isPresent()) {
                                         LineDiscountApplication discount = applied.get();
@@ -288,14 +286,12 @@ public class StorefrontServiceImpl implements StorefrontService {
                     BigDecimal itemCompareAt = base.compareAtPrice();
                     if (itemPrice != null) {
                         try {
-                            Optional<LineDiscountApplication> applied = discountApplicationService.resolveLineDiscount(
+                            Optional<LineDiscountApplication> applied = discountApplicationService.resolveDisplayUnitDiscount(
                                     business.getId(),
                                     OrderChannel.WEB,
                                     item.getId(),
                                     item.getItemGroup() != null ? item.getItemGroup().getId() : null,
-                                    itemPrice,
-                                    1,
-                                    null
+                                    itemPrice
                             );
                             if (applied.isPresent()) {
                                 LineDiscountApplication discount = applied.get();

@@ -1590,10 +1590,14 @@ public class OrderServiceImpl implements OrderService {
     private void syncOrderDiscount(UUID businessId, Order order) {
         if (order.getDiscountId() != null || StringUtils.hasText(order.getDiscountCode())) {
             BigDecimal discountableSubtotal = grossSubtotal(order).subtract(itemDiscountTotal(order));
-            BigDecimal orderLevelDiscount = BigDecimal.ZERO;
+            // resolveOrderDiscountAmount already returns the order's FULL
+            // discount — the per-item attributed portion plus any order-wide
+            // portion — so it is stored as-is. Adding itemDiscountTotal on
+            // top of it double-counted every item-scoped discount.
+            BigDecimal totalDiscount = itemDiscountTotal(order);
             if (discountableSubtotal.compareTo(BigDecimal.ZERO) > 0) {
                 try {
-                    orderLevelDiscount = resolveOrderDiscountAmount(businessId, order, order.getCustomer(),
+                    totalDiscount = resolveOrderDiscountAmount(businessId, order, order.getCustomer(),
                             order.getDiscountId(), order.getDiscountCode(), null, false);
                 } catch (ResponseStatusException e) {
                     // The discount/coupon that was explicitly chosen earlier
@@ -1603,9 +1607,10 @@ public class OrderServiceImpl implements OrderService {
                     // re-throwing, the same way an item mutation has never
                     // failed on other pricing edge cases.
                     clearOrderDiscountSource(order);
+                    totalDiscount = itemDiscountTotal(order);
                 }
             }
-            order.setDiscountAmount(itemDiscountTotal(order).add(orderLevelDiscount));
+            order.setDiscountAmount(totalDiscount);
             return;
         }
 
@@ -1759,6 +1764,24 @@ public class OrderServiceImpl implements OrderService {
                 order.setStatus(dto.status() != null ? dto.status() : OrderStatus.PAID);
                 order.setSubtotal(dto.subtotal() != null ? dto.subtotal() : BigDecimal.ZERO);
                 order.setDiscountAmount(dto.discountAmount() != null ? dto.discountAmount() : BigDecimal.ZERO);
+                /*
+                 * Only where the till sent a figure.
+                 *
+                 * These columns are NOT NULL and the entity already starts
+                 * them at zero, so writing the DTO's value straight through
+                 * replaced that default with null for every sale taken with
+                 * tax switched off — and the insert was refused, taking the
+                 * whole sync with it.
+                 */
+                if (dto.taxRate() != null) {
+                    order.setTaxRate(dto.taxRate());
+                }
+                if (dto.taxAmount() != null) {
+                    order.setTaxAmount(dto.taxAmount());
+                }
+                if (dto.taxInclusionType() != null) {
+                    order.setTaxInclusionType(dto.taxInclusionType());
+                }
                 order.setTotal(dto.total() != null ? dto.total() : BigDecimal.ZERO);
 
                 if (dto.items() != null) {
@@ -1785,6 +1808,23 @@ public class OrderServiceImpl implements OrderService {
             }
 
             Order savedOrder = orderRepository.save(order);
+
+            /*
+             * The sale happened when the till took the cash, not when the
+             * connection came back.
+             *
+             * `createdDate` is @CreatedDate, so Spring stamps it at persist
+             * time — which for a queued sale is whenever it managed to sync.
+             * A shift's takings all landed at 4:07pm, and the Orders and
+             * Receipts lists showed them that way. The stamp is corrected
+             * after the insert, because the auditing listener would overwrite
+             * anything set before it.
+             */
+            if (isNewOrder && dto.createdAt() != null) {
+                savedOrder.setCreatedDate(
+                        LocalDateTime.ofInstant(dto.createdAt(), ZoneId.systemDefault()));
+                savedOrder = orderRepository.save(savedOrder);
+            }
 
             // Create Sale entity if not already present
             if (saleRepository.findByOrderId(savedOrder.getId()).isEmpty()) {
