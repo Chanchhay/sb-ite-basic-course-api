@@ -50,8 +50,13 @@ public class PushNotificationClient {
     }
 
     public void notifyOwner(UUID keycloakUserId, String title, String body, String url, String tag) {
-        if (keycloakUserId == null || !StringUtils.hasText(props.getDashboardBaseUrl())
-                || !StringUtils.hasText(props.getInternalSecret())) {
+        if (keycloakUserId == null) {
+            log.warn("Push notification skipped: business has no keycloakUserId");
+            return;
+        }
+        if (!StringUtils.hasText(props.getDashboardBaseUrl()) || !StringUtils.hasText(props.getInternalSecret())) {
+            log.warn("Push notification to owner {} skipped: app.push.dashboard-base-url / app.push.internal-secret not configured",
+                    keycloakUserId);
             return;
         }
 
@@ -74,6 +79,8 @@ public class PushNotificationClient {
                     .body(requestBody)
                     .retrieve()
                     .toBodilessEntity();
+
+            log.info("Push notification sent to owner {}: {}", keycloakUserId, title);
         } catch (HttpStatusCodeException exception) {
             log.warn("Push notification to owner {} failed: {} -> {}",
                     keycloakUserId, exception.getStatusCode(), exception.getResponseBodyAsString());
