@@ -1,5 +1,6 @@
 package kh.edu.istad.ite.features.business.service;
 
+import kh.edu.istad.ite.config.CacheNames;
 import kh.edu.istad.ite.config.props.StorefrontProps;
 import kh.edu.istad.ite.config.security.SecurityUtils;
 import kh.edu.istad.ite.features.business.dto.PublicFacebookPageResponse;
@@ -18,7 +19,9 @@ import kh.edu.istad.ite.features.catalog.repository.ItemRepository;
 import kh.edu.istad.ite.shared.enums.BusinessFeature;
 import kh.edu.istad.ite.shared.enums.BusinessOwnerStatus;
 import kh.edu.istad.ite.shared.helper.GeoDistanceHelper;
+import kh.edu.istad.ite.shared.cache.BusinessCacheEvictor;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
@@ -65,7 +68,6 @@ public class StorefrontServiceImpl implements StorefrontService {
 
     private static final Pattern DNS_LABEL = Pattern.compile("^[a-z0-9]([a-z0-9-]{1,61}[a-z0-9])?$");
 
-    /** The seeded channel the online store trades as. Matches {@link OrderChannel#WEB}. */
     private static final String WEB_CHANNEL_CODE = OrderChannel.WEB.name();
 
     private final BusinessRepository businessRepository;
@@ -80,6 +82,7 @@ public class StorefrontServiceImpl implements StorefrontService {
     private final StockEntryService stockEntryService;
     private final ItemGroupService itemGroupService;
     private final BusinessFacebookPageRepository businessFacebookPageRepository;
+    private final BusinessCacheEvictor businessCacheEvictor;
 
     @Override
     @Transactional(readOnly = true)
@@ -91,6 +94,7 @@ public class StorefrontServiceImpl implements StorefrontService {
     @Transactional
     public StorefrontStatusResponse enableStorefront() {
         Business business = findMyBusiness();
+        businessCacheEvictor.evictStorefront(business.getId());
 
         // The platform can withhold the storefront entirely; the owner's own
         // checklist below only governs whether they are ready for it.
@@ -116,6 +120,7 @@ public class StorefrontServiceImpl implements StorefrontService {
     @Transactional
     public StorefrontStatusResponse disableStorefront() {
         Business business = findMyBusiness();
+        businessCacheEvictor.evictStorefront(business.getId());
         business.setIsListing(false);
         return toStatusResponse(businessRepository.save(business));
     }
@@ -124,6 +129,7 @@ public class StorefrontServiceImpl implements StorefrontService {
     @Transactional
     public StorefrontStatusResponse changeSlug(StorefrontSlugRequest request) {
         Business business = findMyBusiness();
+        businessCacheEvictor.evictStorefront(business.getId());
         String normalized = normalizeSlug(request.slug());
 
         String rejection = rejectionReason(normalized, business.getId());
@@ -171,19 +177,9 @@ public class StorefrontServiceImpl implements StorefrontService {
             return businessRepository.findAll(spec, pageable).map(storefrontMapper::toPublicResponse);
         }
 
-        // Distance ranks the whole filtered set, so it has to be sorted before
-        // paging — there's nowhere in the DB query to compute it yet, and
-        // paging first would only sort each page instead of the results. Fine
-        // at today's store counts; a count large enough for this full scan to
-        // matter is the cue to move it into a native Haversine query instead.
+
         List<Business> matches = businessRepository.findAll(spec);
-        // java.util.Map.entry(k, v) — unlike AbstractMap.SimpleEntry — throws
-        // NPE on a null value via an internal Objects.requireNonNull, and
-        // distanceKm() returns null for any business with no saved
-        // coordinates. SimpleEntry holds it fine. The sort itself uses
-        // nullsLast rather than a ternary sentinel for the same reason: a
-        // primitive/boxed-Double ternary forces an unconditional unbox and
-        // throws on null regardless of which branch is picked.
+
         List<java.util.Map.Entry<Business, Double>> ranked = matches.stream()
                 .map(business -> (java.util.Map.Entry<Business, Double>)
                         new java.util.AbstractMap.SimpleEntry<>(business, distanceKm(business, lat, lng)))
@@ -236,76 +232,113 @@ public class StorefrontServiceImpl implements StorefrontService {
 
     @Override
     @Transactional(readOnly = true)
+    @Cacheable(cacheNames = CacheNames.PUBLIC_STORE_ITEMS, key = "T(kh.edu.istad.ite.config.CacheKeys).store(#p0)")
     public List<ItemResponse> getPublicStoreItems(String slugOrId) {
         Business business = resolvePublicBusiness(slugOrId);
 
         org.springframework.data.jpa.domain.Specification<Item> specItems = org.springframework.data.jpa.domain.Specification
                 .where(kh.edu.istad.ite.features.catalog.specification.ItemSpecifications.hasBusinessId(business.getId()))
                 .and(kh.edu.istad.ite.features.catalog.specification.ItemSpecifications.hasStatus(ItemStatus.ACTIVE))
-                // What the shop published to its Online Store, and nothing
-                // else. WEB is seeded like every other channel, so the toggle
-                // in the back office is what decides this — listing the till's
-                // items instead made that toggle decoration and let a shop's
-                // counter-only lines leak onto the web.
+
                 .and(kh.edu.istad.ite.features.catalog.specification.ItemSpecifications
                         .isEnabledInChannelCodes(List.of(WEB_CHANNEL_CODE)));
 
         List<Item> items = itemRepository.findAll(specItems);
         return items.stream()
                 .map(item -> {
-                    // What the web charges, not what the business charges: the
-                    // checkout prices every line the same way, and quoting one
-                    // number while billing another is the bug this avoids.
+
                     ItemResponse base = withWebAvailability(
                             channelPriceResolver.atChannelPrices(
                                     itemMapper.toResponse(item), business.getId(), WEB_CHANNEL_CODE),
                             item,
                             business.getId());
 
-                    try {
-                        // Quantity 1, no order subtotal: browsing is a single
-                        // unit outside any cart, so a discount conditioned on
-                        // a quantity or order total it can't yet satisfy is
-                        // correctly absent here — see
-                        // DiscountApplicationService for why, and for why
-                        // this is the same lookup add-to-cart and checkout
-                        // use, rather than its own copy of the logic.
-                        if (base.price() != null) {
-                            Optional<LineDiscountApplication> applied = discountApplicationService.resolveLineDiscount(
+                    List<ItemVariantResponse> discountedVariants = base.variants();
+
+                    String itemDiscountLabel = null;
+
+                    if (discountedVariants != null && !discountedVariants.isEmpty()) {
+                        List<ItemVariantResponse> updated = new ArrayList<>();
+                        for (ItemVariantResponse v : discountedVariants) {
+                            if (v.price() != null) {
+                                try {
+                                    Optional<LineDiscountApplication> applied = discountApplicationService.resolveDisplayUnitDiscount(
+                                            business.getId(),
+                                            OrderChannel.WEB,
+                                            item.getId(),
+                                            item.getItemGroup() != null ? item.getItemGroup().getId() : null,
+                                            v.price()
+                                    );
+                                    if (applied.isPresent()) {
+                                        LineDiscountApplication discount = applied.get();
+                                        BigDecimal originalPrice = v.price();
+                                        BigDecimal newPrice = originalPrice.subtract(discount.amount()).max(BigDecimal.ZERO);
+                                        if (itemDiscountLabel == null) {
+                                            itemDiscountLabel = discount.label();
+                                        }
+                                        updated.add(v.toBuilder()
+                                                .price(newPrice)
+                                                .compareAtPrice(originalPrice)
+                                                .discountLabel(discount.label())
+                                                .build());
+                                        continue;
+                                    }
+                                } catch (Exception ignored) {}
+                            }
+                            updated.add(v);
+                        }
+                        discountedVariants = updated;
+                    }
+
+                    BigDecimal itemPrice = base.price();
+                    BigDecimal itemCompareAt = base.compareAtPrice();
+                    if (itemPrice != null) {
+                        try {
+                            Optional<LineDiscountApplication> applied = discountApplicationService.resolveDisplayUnitDiscount(
                                     business.getId(),
                                     OrderChannel.WEB,
                                     item.getId(),
                                     item.getItemGroup() != null ? item.getItemGroup().getId() : null,
-                                    base.price(),
-                                    1,
-                                    null
+                                    itemPrice
                             );
-
                             if (applied.isPresent()) {
                                 LineDiscountApplication discount = applied.get();
-                                BigDecimal originalPrice = base.price();
-                                BigDecimal newPrice = originalPrice.subtract(discount.amount());
-                                if (newPrice.compareTo(BigDecimal.ZERO) < 0) {
-                                    newPrice = BigDecimal.ZERO;
+                                BigDecimal originalPrice = itemPrice;
+                                BigDecimal newPrice = originalPrice.subtract(discount.amount()).max(BigDecimal.ZERO);
+                                if (itemDiscountLabel == null) {
+                                    itemDiscountLabel = discount.label();
                                 }
-
-                                return base.toBuilder()
-                                        .price(newPrice)
-                                        .compareAtPrice(originalPrice)
-                                        .badge(discount.label() != null ? discount.label() : base.badge())
-                                        .build();
+                                itemPrice = newPrice;
+                                itemCompareAt = originalPrice;
                             }
-                        }
-                    } catch (Exception e) {
-                        // Ignore discount errors for storefront display
+                        } catch (Exception ignored) {}
                     }
-                    return base;
+
+
+                    if (itemDiscountLabel == null) {
+                        try {
+                            itemDiscountLabel = discountApplicationService.previewDiscountLabel(
+                                    business.getId(),
+                                    OrderChannel.WEB,
+                                    item.getId(),
+                                    item.getItemGroup() != null ? item.getItemGroup().getId() : null
+                            ).orElse(null);
+                        } catch (Exception ignored) {}
+                    }
+
+                    return base.toBuilder()
+                            .price(itemPrice)
+                            .compareAtPrice(itemCompareAt)
+                            .discountLabel(itemDiscountLabel)
+                            .variants(discountedVariants)
+                            .build();
                 })
                 .toList();
     }
 
     @Override
     @Transactional(readOnly = true)
+    @Cacheable(cacheNames = CacheNames.PUBLIC_STORE_ITEM_GROUPS, key = "T(kh.edu.istad.ite.config.CacheKeys).store(#p0)")
     public List<ItemGroupResponse> getPublicStoreItemGroups(String slugOrId) {
         Business business = resolvePublicBusiness(slugOrId);
         return itemGroupService.findAllItemGroupsPublic(business.getId());
@@ -363,18 +396,7 @@ public class StorefrontServiceImpl implements StorefrontService {
         return businessRepository.findDistinctProvinceNames();
     }
 
-    /**
-     * How many of each thing the web may still sell.
-     *
-     * Counted per option, because that is how stock is counted: ten Smalls on
-     * the shelf says nothing about the Large. The item's own figure is the sum
-     * of its options, so a shopper looking at the card sees what the whole
-     * listing can supply and the picker inside it sees which sizes are gone.
-     *
-     * Left null when there is nothing to report — a service the shop does not
-     * count, or an item it records no stock for. Zero means sold out, and the
-     * two must stay distinguishable or every untracked item reads as empty.
-     */
+
     private ItemResponse withWebAvailability(ItemResponse response, Item item, UUID businessId) {
         if (!ItemType.PHYSICAL.equals(item.getItemType())) {
             return response;

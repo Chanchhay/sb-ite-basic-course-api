@@ -834,7 +834,21 @@ public class StorefrontCartService {
     }
 
 
+    /**
+     * The picture a cart line shows — the first of the same gallery the back
+     * office builds for the item.
+     *
+     * The item's own `imageUrl` comes first and is the only one that can be a
+     * plain link: uploaded images are keys into our asset store, but an item
+     * imported from another system has never been near it and its photograph
+     * sits in `imageUrl` alone. Reading only `images` left every imported
+     * item in the cart with no picture at all.
+     */
     private String coverImageOf(Item item) {
+        if (StringUtils.hasText(item.getImageUrl())) {
+            return item.getImageUrl();
+        }
+
         if (item.getImages() == null || item.getImages().isEmpty()) {
             return null;
         }

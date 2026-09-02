@@ -12,12 +12,12 @@ import java.util.List;
 public interface RoleMapper {
 
     @Mapping(target = "id", source = "role.id")
-    @Mapping(target = "name", expression = "java(role.getDescription() != null ? role.getDescription() : role.getName())")
+    @Mapping(target = "name", expression = "java(role.getDescription() != null && !role.getDescription().isBlank() ? role.getDescription() : role.getName())")
     @Mapping(target = "permissions", source = "permissions")
     BusinessRoleResponse toBusinessRoleResponse(RoleRepresentation role, List<String> permissions);
 
     @Mapping(target = "id", source = "role.id")
-    @Mapping(target = "name", expression = "java(role.getDescription() != null ? role.getDescription() : role.getName())")
+    @Mapping(target = "name", expression = "java(role.getDescription() != null && !role.getDescription().isBlank() ? role.getDescription() : role.getName())")
     @Mapping(target = "permissions", source = "permissions")
     PlatformRoleResponse toPlatformRoleResponse(RoleRepresentation role, List<String> permissions);
 }

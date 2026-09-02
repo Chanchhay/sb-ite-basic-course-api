@@ -253,4 +253,56 @@ public interface SaleRepository extends JpaRepository<Sale, UUID> {
         long getOrders();
         long getItemsSold();
     }
+
+    @Query(value = """
+            select cast(oi.item_id as varchar) as itemId,
+                   min(oi.item_name) as itemName,
+                   coalesce(sum(case when s.sold_at >= cast(:now as timestamp) - (:windowDays * interval '1 day') then oi.quantity else 0 end), 0) as windowQty,
+                   coalesce(sum(case when s.sold_at >= cast(:now as timestamp) - (:prevWindowDays * interval '1 day') and s.sold_at < cast(:now as timestamp) - (:windowDays * interval '1 day') then oi.quantity else 0 end), 0) as prevWindowQty,
+                   coalesce(sum(case when s.sold_at >= cast(:now as timestamp) - interval '30 days' then oi.quantity else 0 end), 0) as last30Qty,
+                   coalesce(sum(case when s.sold_at >= cast(:now as timestamp) - (:windowDays * interval '1 day') then oi.line_total else 0 end), 0) as windowRevenue,
+                   coalesce(sum(case when s.sold_at >= cast(:now as timestamp) - (:prevWindowDays * interval '1 day') and s.sold_at < cast(:now as timestamp) - (:windowDays * interval '1 day') then oi.line_total else 0 end), 0) as prevWindowRevenue
+            from order_items oi
+            join sales s on s.order_id = oi.order_id
+            where s.business_owner_id = :businessId
+              and s.sold_at >= cast(:now as timestamp) - (:maxDays * interval '1 day')
+            group by oi.item_id
+            """, nativeQuery = true)
+    List<ItemPredictionBucketProjection> findItemPredictionBuckets(
+            @Param("businessId") UUID businessId,
+            @Param("now") LocalDateTime now,
+            @Param("windowDays") int windowDays,
+            @Param("prevWindowDays") int prevWindowDays,
+            @Param("maxDays") int maxDays
+    );
+
+    interface ItemPredictionBucketProjection {
+        String getItemId();
+        String getItemName();
+        long getWindowQty();
+        long getPrevWindowQty();
+        long getLast30Qty();
+        java.math.BigDecimal getWindowRevenue();
+        java.math.BigDecimal getPrevWindowRevenue();
+    }
+
+    @Query(value = """
+            select coalesce(sum(case when s.sold_at >= cast(:now as timestamp) - (:windowDays * interval '1 day') then s.total_amount else 0 end), 0) as windowRevenue,
+                   coalesce(sum(case when s.sold_at >= cast(:now as timestamp) - (:prevWindowDays * interval '1 day') and s.sold_at < cast(:now as timestamp) - (:windowDays * interval '1 day') then s.total_amount else 0 end), 0) as prevWindowRevenue
+            from sales s
+            where s.business_owner_id = :businessId
+              and s.sold_at >= cast(:now as timestamp) - (:prevWindowDays * interval '1 day')
+            """, nativeQuery = true)
+    BusinessRevenueTrendProjection findBusinessRevenueTrend(
+            @Param("businessId") UUID businessId,
+            @Param("now") LocalDateTime now,
+            @Param("windowDays") int windowDays,
+            @Param("prevWindowDays") int prevWindowDays
+    );
+
+    interface BusinessRevenueTrendProjection {
+        java.math.BigDecimal getWindowRevenue();
+        java.math.BigDecimal getPrevWindowRevenue();
+    }
 }
+

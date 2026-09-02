@@ -35,6 +35,15 @@ public record ItemResponse(
          * price rather than a number somebody typed to look generous.
          */
         BigDecimal compareAtPrice,
+        /**
+         * What kind of discount produced {@link #compareAtPrice} — "Buy 2 Get
+         * 1", "20% OFF", a coupon's own name — so the storefront can show the
+         * shopper what deal they're actually getting instead of just a
+         * struck-through price. Independent of {@link #badge}: a business's
+         * own manually-set promotional badge ("New Arrival") is a different
+         * concept and must never suppress this or be suppressed by it.
+         */
+        String discountLabel,
         ItemType itemType,
         Boolean trackInventory,
         List<ItemAttributeResponse> attributes,

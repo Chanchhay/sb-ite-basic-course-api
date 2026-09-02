@@ -62,6 +62,10 @@ public class ItemMapper {
                 item.getPrice(),
                 // Only a discount can say what an item used to cost.
                 null,
+                // Filled in later by whichever storefront listing actually
+                // resolved a discount for this item — this base mapping has
+                // no notion of channel/discount rules to fill it with.
+                null,
                 item.getItemType(),
                 item.getTrackInventory(),
                 item.getAttributes() == null ? null : item.getAttributes().stream()
@@ -144,6 +148,8 @@ public class ItemMapper {
                 variant.getBarcode(),
                 variant.getImageUrl(),
                 variant.getPrice(),
+                null,
+                null,
                 variant.getOptionName(),
                 variant.getColorValue(),
                 variant.getAvailable(),

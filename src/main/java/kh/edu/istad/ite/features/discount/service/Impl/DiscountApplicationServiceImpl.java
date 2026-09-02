@@ -92,13 +92,82 @@ public class DiscountApplicationServiceImpl implements DiscountApplicationServic
                 .filter(application -> application.amount().compareTo(BigDecimal.ZERO) > 0);
     }
 
+    @Override
+    public Optional<LineDiscountApplication> resolveDisplayUnitDiscount(
+            UUID businessId,
+            OrderChannel channel,
+            UUID itemId,
+            UUID itemGroupId,
+            BigDecimal unitPrice
+    ) {
+        if (unitPrice == null || unitPrice.compareTo(BigDecimal.ZERO) <= 0) {
+            return Optional.empty();
+        }
+
+        // A discount aimed at this item (or its category) is the more
+        // specific offer and is what the order will actually apply, so it
+        // wins outright over any storewide one.
+        Optional<LineDiscountApplication> targeted =
+                resolveLineDiscount(businessId, channel, itemId, itemGroupId, unitPrice, 1, null);
+        if (targeted.isPresent()) {
+            return targeted;
+        }
+
+        List<DiscountResponse> candidates = discountService
+                .findApplicableDiscounts(businessId, channel, itemId, itemGroupId)
+                .stream()
+                .filter(d -> !Boolean.TRUE.equals(d.requiresCoupon()))
+                .filter(this::isOrderScoped)
+                .filter(this::isUniformPerUnit)
+                .toList();
+
+        return pickBest(candidates)
+                .map(discount -> new LineDiscountApplication(
+                        discount.id(),
+                        labelFor(discount),
+                        computeAmount(discount, unitPrice, 1, unitPrice)))
+                .filter(application -> application.amount().compareTo(BigDecimal.ZERO) > 0);
+    }
+
     /**
-     * "Buy 2 get 1 free, any item" spread across a real order: every unit in
-     * the order is one entry, cheapest first, and every complete bundle's
-     * free slots come off the cheapest units still left — the same rule a
-     * single repeated item already gets for free from the bundle math, made
-     * to work when the order mixes different items at different prices too.
+     * Whether an order-wide discount comes to the same thing taken one unit
+     * at a time as it does taken over the whole order — the only case a
+     * listing may show it as a reduced per-item price.
+     *
+     * A percentage does, since a tenth off every line is a tenth off their
+     * sum. A flat amount does not: "$5 off the order" is not $5 off each
+     * item. Neither does a bundle, whose free unit depends on what else is
+     * in the basket. Nor a capped percentage, which stops being proportional
+     * as soon as the cap is reached. And a condition that can only be judged
+     * against a real cart (a minimum spend, a minimum quantity) is not met
+     * by one browsed unit, so it is no basis for a price either.
      */
+    private boolean isUniformPerUnit(DiscountResponse discount) {
+        return discount.type() == DiscountType.PERCENTAGE
+                && discount.value() != null
+                && discount.value().compareTo(BigDecimal.ZERO) > 0
+                && discount.maxDiscountAmount() == null
+                && (discount.ruleType() == null || discount.ruleType() == DiscountRuleType.NO_CONDITION);
+    }
+
+    @Override
+    public Optional<String> previewDiscountLabel(
+            UUID businessId,
+            OrderChannel channel,
+            UUID itemId,
+            UUID itemGroupId
+    ) {
+
+        List<DiscountResponse> candidates = discountService
+                .findApplicableDiscounts(businessId, channel, itemId, itemGroupId)
+                .stream()
+                .filter(d -> !Boolean.TRUE.equals(d.requiresCoupon()))
+                .toList();
+
+        return pickBest(candidates).map(this::labelFor);
+    }
+
+
     private BigDecimal computeOrderBundleAmount(DiscountResponse discount, List<OrderLineUnits> lines) {
         int bundle = bundleSize(discount);
         int get = discount.getQuantity() != null && discount.getQuantity() > 0 ? discount.getQuantity() : 1;

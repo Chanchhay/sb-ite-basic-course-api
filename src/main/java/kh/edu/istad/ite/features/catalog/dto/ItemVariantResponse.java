@@ -15,6 +15,9 @@ public record ItemVariantResponse(
         String barcode,
         String imageUrl,
         BigDecimal price,
+        BigDecimal compareAtPrice,
+        /** What kind of discount produced {@link #compareAtPrice} — see {@link ItemResponse#discountLabel()}. */
+        String discountLabel,
         /** The size half of the pair — "Large". */
         String optionName,
         /** Which of the item's colours this row is; null when sold by size alone. */

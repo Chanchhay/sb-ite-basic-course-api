@@ -4,6 +4,8 @@ import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 
+import java.util.List;
+
 public record CreateStaffRequest(
         @NotBlank(message = "Username is required")
         String username,
@@ -28,5 +30,5 @@ public record CreateStaffRequest(
         @NotBlank(message = "Gender is required")
         String gender,
 
-        String roleId // optional
+        List<String> roleIds // optional
 ) {}
