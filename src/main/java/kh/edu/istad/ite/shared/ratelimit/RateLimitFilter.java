@@ -86,16 +86,31 @@ public class RateLimitFilter extends OncePerRequestFilter {
     /**
      * Who to count this request against.
      * <p>
-     * Every request arrives through Traefik, which appends the address it saw to
-     * {@code X-Forwarded-For}, so the last entry is the real caller. The earlier
-     * entries are whatever the caller chose to send and must never be trusted —
-     * reading the first entry, which is what {@code getRemoteAddr()} reports once
-     * Spring's forwarded-header handling is active, would let anyone dodge every
-     * limit here by inventing a new address per request.
+     * The storefront reaches this API through its own Next.js proxy, so for browser
+     * traffic the connection is always from that proxy and never from the shopper.
+     * Counting what the connection reports would put every shopper on the site into
+     * one bucket and let ordinary traffic lock everybody out at once, so the proxy
+     * forwards the address it saw as {@code X-Client-IP} and that is preferred here.
+     * <p>
+     * Failing that, Traefik appends the address it saw to {@code X-Forwarded-For},
+     * so the last entry is the real caller — the earlier entries are whatever the
+     * caller chose to send. Reading the first entry, which is what
+     * {@code getRemoteAddr()} reports once Spring's forwarded-header handling is
+     * active, would let anyone dodge every limit here by inventing an address per
+     * request.
+     * <p>
+     * None of this is proof of identity: a caller reaching the API directly can put
+     * anything in these headers. It is enough to keep honest traffic counted
+     * correctly and to make casual flooding expensive, which is what these limits
+     * are for — it is not an access control.
      */
     private String callerOf(HttpServletRequest request) {
-        String forwardedFor = request.getHeader("X-Forwarded-For");
+        String forwardedClient = request.getHeader("X-Client-IP");
+        if (StringUtils.hasText(forwardedClient)) {
+            return forwardedClient.trim();
+        }
 
+        String forwardedFor = request.getHeader("X-Forwarded-For");
         if (StringUtils.hasText(forwardedFor)) {
             String[] hops = forwardedFor.split(",");
             String nearest = hops[hops.length - 1].trim();
