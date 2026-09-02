@@ -88,6 +88,7 @@ public class FacebookCheckoutService {
     private final FacebookGraphClient graphClient;
     private final StorefrontProps storefrontProps;
     private final kh.edu.istad.ite.features.business.service.TaxCalculator taxCalculator;
+    private final kh.edu.istad.ite.features.notification.push.PushNotificationClient pushNotificationClient;
 
     public record CheckoutDraft(
             java.util.UUID orderId,
@@ -184,6 +185,13 @@ public class FacebookCheckoutService {
 
         orderItems.forEach(order::addItem);
         orderRepository.save(order);
+
+        pushNotificationClient.notifyOwner(
+                business.getKeycloakUserId(),
+                "New order from Messenger",
+                "Order " + order.getInvoiceNumber() + " — " + order.getTotal() + " " + order.getCurrency(),
+                "/sales/orders",
+                "channel-order");
 
         return new DraftOrder(business, order, orderItems.size());
     }

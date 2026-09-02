@@ -116,6 +116,7 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
     private final kh.edu.istad.ite.features.business.service.TaxCalculator taxCalculator;
     private final kh.edu.istad.ite.features.customer.repository.CustomerChannelIdentityRepository customerChannelIdentityRepository;
     private final DiscountService discountService;
+    private final kh.edu.istad.ite.features.notification.push.PushNotificationClient pushNotificationClient;
 
 
     @Override
@@ -337,6 +338,13 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
         log.info("Storefront checkout opened: order {} ({}) at business {} for {} {}",
                 saved.getId(), saved.getInvoiceNumber(), business.getId(),
                 saved.getTotal(), saved.getCurrency());
+
+        pushNotificationClient.notifyOwner(
+                business.getKeycloakUserId(),
+                "New order from your online store",
+                "Order " + saved.getInvoiceNumber() + " — " + saved.getTotal() + " " + saved.getCurrency(),
+                "/sales/orders",
+                "channel-order");
 
         return payLater ? requestPayLaterApproval(business, saved) : issueQrFor(business, saved);
     }

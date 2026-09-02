@@ -90,6 +90,7 @@ public class TelegramCheckoutServiceImpl implements TelegramCheckoutService {
     private final ApplicationEventPublisher eventPublisher;
     private final DiscountService discountService;
     private final kh.edu.istad.ite.features.business.service.TaxCalculator taxCalculator;
+    private final kh.edu.istad.ite.features.notification.push.PushNotificationClient pushNotificationClient;
 
     @Override
     @Transactional
@@ -198,6 +199,13 @@ public class TelegramCheckoutServiceImpl implements TelegramCheckoutService {
         order.setTotal(taxResult.total());
 
         Order savedOrder = orderRepository.save(order);
+
+        pushNotificationClient.notifyOwner(
+                business.getKeycloakUserId(),
+                "New order from Telegram",
+                "Order " + savedOrder.getInvoiceNumber() + " — " + savedOrder.getTotal() + " " + savedOrder.getCurrency(),
+                "/sales/orders",
+                "channel-order");
 
         // 2. Issue the KHQR through the official NBC generator (not a hand-rolled EMVCo string).
         Instant expiresAt = Instant.now().plusSeconds(QR_VALIDITY_MINUTES * 60L);
