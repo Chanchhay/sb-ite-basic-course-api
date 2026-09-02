@@ -50,6 +50,20 @@ public class RedisCacheConfig implements CachingConfigurer {
                         Map.entry(CacheNames.PUBLIC_STORE_RECOMMENDED, cacheConfiguration(Duration.ofMinutes(1))),
                         Map.entry(CacheNames.PUBLIC_STORE_PROVINCES, cacheConfiguration(Duration.ofHours(1)))
                 ))
+                // Without this a RedisCache keeps no tally, and `cache.gets` in the
+                // metrics reads zero for everything — which looks exactly like a
+                // cache nobody is using. The counters are per instance and in
+                // memory; the cost is a few longs per cache.
+                //
+                // Reading them, bear in mind that Spring Data Redis writes cache
+                // entries asynchronously whenever the connection factory is Lettuce:
+                // a put returns before the value has reached Redis, and a read
+                // arriving in that window misses and recomputes. Measured here at
+                // roughly one in six for back-to-back put/get. It costs a little
+                // repeated work on a hot key and nothing in correctness — a miss
+                // just reads the database — so the default stands; it only means a
+                // hit rate will never quite reach what the key pattern suggests.
+                .enableStatistics()
                 .transactionAware()
                 .build();
     }
