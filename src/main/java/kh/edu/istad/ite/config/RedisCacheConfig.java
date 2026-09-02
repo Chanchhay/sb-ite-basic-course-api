@@ -38,6 +38,13 @@ public class RedisCacheConfig implements CachingConfigurer {
                         Map.entry(CacheNames.CATALOG_ITEM_GROUPS, cacheConfiguration(Duration.ofMinutes(10))),
                         Map.entry(CacheNames.PUBLIC_STORE_ITEMS, cacheConfiguration(Duration.ofSeconds(30))),
                         Map.entry(CacheNames.PUBLIC_STORE_ITEM_GROUPS, cacheConfiguration(Duration.ofMinutes(5))),
+                        // Long enough to spare the database the same two queries on
+                        // every dashboard request, short enough that a change made by
+                        // someone else — an admin, or a colleague editing the shop —
+                        // reaches this user without anyone having to think about it.
+                        // Whoever makes the change evicts their own entry and sees it
+                        // immediately; see BusinessServiceImpl.
+                        Map.entry(CacheNames.BUSINESS_ME, cacheConfiguration(Duration.ofMinutes(5))),
                         Map.entry(CacheNames.PUBLIC_STORE_DETAIL, cacheConfiguration(Duration.ofMinutes(5))),
                         Map.entry(CacheNames.PUBLIC_STORE_FACEBOOK, cacheConfiguration(Duration.ofMinutes(5))),
 
