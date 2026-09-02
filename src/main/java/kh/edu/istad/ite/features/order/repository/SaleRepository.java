@@ -142,7 +142,7 @@ public interface SaleRepository extends JpaRepository<Sale, UUID> {
                    coalesce(sum(subtotal), 0) as grossSales,
                    coalesce(sum(discount_amount), 0) as discounts,
                    coalesce(sum(tax_amount), 0) as tax,
-                   coalesce(sum(total_amount - tax_amount), 0) as revenue,
+                   coalesce(sum(total_amount), 0) as revenue,
                    coalesce(sum(total_cost), 0) as cost
             from sales
             where business_owner_id = :businessId
