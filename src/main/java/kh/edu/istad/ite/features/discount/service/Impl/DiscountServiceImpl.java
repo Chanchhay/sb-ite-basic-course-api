@@ -1,6 +1,5 @@
 package kh.edu.istad.ite.features.discount.service.Impl;
 
-import kh.edu.istad.ite.config.CacheNames;
 import kh.edu.istad.ite.config.props.KeycloakAdminClientProps;
 import kh.edu.istad.ite.config.security.SecurityUtils;
 import kh.edu.istad.ite.features.business.entity.Business;
@@ -27,11 +26,11 @@ import kh.edu.istad.ite.features.user.repository.UserProfileRepository;
 import kh.edu.istad.ite.shared.enums.*;
 import kh.edu.istad.ite.shared.helper.BusinessHelper;
 import kh.edu.istad.ite.shared.helper.TextHelper;
+import kh.edu.istad.ite.shared.cache.BusinessCacheEvictor;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.keycloak.admin.client.Keycloak;
 import org.keycloak.representations.idm.UserRepresentation;
-import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -68,12 +67,13 @@ public class DiscountServiceImpl implements DiscountService {
     private final NotificationCommandService notificationCommandService;
     private final Keycloak keycloak;
     private final KeycloakAdminClientProps props;
+    private final BusinessCacheEvictor businessCacheEvictor;
 
     @Override
     @Transactional
-    @CacheEvict(cacheNames = CacheNames.PUBLIC_STORE_ITEMS, allEntries = true)
     public DiscountResponse createDiscount(UUID businessId, CreateDiscountRequest request) {
         Business business = businessHelper.findOwnedBusiness(businessId);
+        businessCacheEvictor.evictStorefront(businessId);
 
         String name = TextHelper.trimRequired(request.name(), "Discount name cannot be empty");
         if (discountRepository.existsByBusinessIdAndNameIgnoreCase(businessId, name)) {
@@ -156,9 +156,9 @@ public class DiscountServiceImpl implements DiscountService {
 
     @Override
     @Transactional
-    @CacheEvict(cacheNames = CacheNames.PUBLIC_STORE_ITEMS, allEntries = true)
     public DiscountResponse updateDiscount(UUID businessId, UUID discountId, UpdateDiscountRequest request) {
         businessHelper.findOwnedBusiness(businessId);
+        businessCacheEvictor.evictStorefront(businessId);
         Discount discount = findDiscount(discountId, businessId);
 
         if (request.name() != null) {
@@ -249,9 +249,9 @@ public class DiscountServiceImpl implements DiscountService {
 
     @Override
     @Transactional
-    @CacheEvict(cacheNames = CacheNames.PUBLIC_STORE_ITEMS, allEntries = true)
     public DiscountResponse activateDiscount(UUID businessId, UUID discountId) {
         businessHelper.findOwnedBusiness(businessId);
+        businessCacheEvictor.evictStorefront(businessId);
         Discount discount = findDiscount(discountId, businessId);
 
         if (discount.getScope() == DiscountScope.SPECIFIC_ITEMS) {
@@ -273,9 +273,9 @@ public class DiscountServiceImpl implements DiscountService {
 
     @Override
     @Transactional
-    @CacheEvict(cacheNames = CacheNames.PUBLIC_STORE_ITEMS, allEntries = true)
     public DiscountResponse deactivateDiscount(UUID businessId, UUID discountId) {
         businessHelper.findOwnedBusiness(businessId);
+        businessCacheEvictor.evictStorefront(businessId);
         Discount discount = findDiscount(discountId, businessId);
 
         discount.setStatus(RecordStatus.INACTIVE);
@@ -288,9 +288,9 @@ public class DiscountServiceImpl implements DiscountService {
 
     @Override
     @Transactional
-    @CacheEvict(cacheNames = CacheNames.PUBLIC_STORE_ITEMS, allEntries = true)
     public void deleteDiscount(UUID businessId, UUID discountId) {
         businessHelper.findOwnedBusiness(businessId);
+        businessCacheEvictor.evictStorefront(businessId);
         Discount discount = findDiscount(discountId, businessId);
 
         if (couponRepository.existsByDiscount_Id(discountId)) {

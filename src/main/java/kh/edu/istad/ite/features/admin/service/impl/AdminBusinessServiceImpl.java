@@ -1,6 +1,5 @@
 package kh.edu.istad.ite.features.admin.service.impl;
 
-import kh.edu.istad.ite.config.CacheNames;
 import kh.edu.istad.ite.features.admin.dto.request.BusinessStatusActionRequest;
 import kh.edu.istad.ite.features.admin.dto.response.ProvinceBackfillResponse;
 import kh.edu.istad.ite.features.admin.service.AdminAuditLogService;
@@ -14,10 +13,9 @@ import kh.edu.istad.ite.shared.enums.AdminActionType;
 import kh.edu.istad.ite.shared.enums.AuditTargetType;
 import kh.edu.istad.ite.shared.enums.BusinessOwnerStatus;
 import kh.edu.istad.ite.shared.helper.CambodiaProvinceMatcher;
+import kh.edu.istad.ite.shared.cache.BusinessCacheEvictor;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.cache.annotation.CacheEvict;
-import org.springframework.cache.annotation.Caching;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
@@ -42,6 +40,7 @@ public class AdminBusinessServiceImpl implements AdminBusinessService {
     private final BusinessRepository businessRepository;
     private final BusinessMapper businessMapper;
     private final AdminAuditLogService adminAuditLogService;
+    private final BusinessCacheEvictor businessCacheEvictor;
 
     @Override
     @Transactional(readOnly = true)
@@ -65,11 +64,8 @@ public class AdminBusinessServiceImpl implements AdminBusinessService {
 
     @Override
     @Transactional
-    @Caching(evict = {
-            @CacheEvict(cacheNames = CacheNames.PUBLIC_STORE_ITEMS, allEntries = true),
-            @CacheEvict(cacheNames = CacheNames.PUBLIC_STORE_ITEM_GROUPS, allEntries = true)
-    })
     public BusinessResponse activate(UUID businessId) {
+        businessCacheEvictor.evictStorefront(businessId);
         Business business = findBusiness(businessId);
         String previousState = statusName(business);
 
@@ -85,11 +81,8 @@ public class AdminBusinessServiceImpl implements AdminBusinessService {
 
     @Override
     @Transactional
-    @Caching(evict = {
-            @CacheEvict(cacheNames = CacheNames.PUBLIC_STORE_ITEMS, allEntries = true),
-            @CacheEvict(cacheNames = CacheNames.PUBLIC_STORE_ITEM_GROUPS, allEntries = true)
-    })
     public BusinessResponse suspend(UUID businessId, BusinessStatusActionRequest request) {
+        businessCacheEvictor.evictStorefront(businessId);
         Business business = findBusiness(businessId);
         String previousState = statusName(business);
 
@@ -105,11 +98,8 @@ public class AdminBusinessServiceImpl implements AdminBusinessService {
 
     @Override
     @Transactional
-    @Caching(evict = {
-            @CacheEvict(cacheNames = CacheNames.PUBLIC_STORE_ITEMS, allEntries = true),
-            @CacheEvict(cacheNames = CacheNames.PUBLIC_STORE_ITEM_GROUPS, allEntries = true)
-    })
     public BusinessResponse enable(UUID businessId) {
+        businessCacheEvictor.evictStorefront(businessId);
         Business business = findBusiness(businessId);
         String previousState = enabledState(business);
 
@@ -124,11 +114,8 @@ public class AdminBusinessServiceImpl implements AdminBusinessService {
 
     @Override
     @Transactional
-    @Caching(evict = {
-            @CacheEvict(cacheNames = CacheNames.PUBLIC_STORE_ITEMS, allEntries = true),
-            @CacheEvict(cacheNames = CacheNames.PUBLIC_STORE_ITEM_GROUPS, allEntries = true)
-    })
     public BusinessResponse disable(UUID businessId, BusinessStatusActionRequest request) {
+        businessCacheEvictor.evictStorefront(businessId);
         Business business = findBusiness(businessId);
         String previousState = enabledState(business);
 
@@ -143,11 +130,8 @@ public class AdminBusinessServiceImpl implements AdminBusinessService {
 
     @Override
     @Transactional
-    @Caching(evict = {
-            @CacheEvict(cacheNames = CacheNames.PUBLIC_STORE_ITEMS, allEntries = true),
-            @CacheEvict(cacheNames = CacheNames.PUBLIC_STORE_ITEM_GROUPS, allEntries = true)
-    })
     public BusinessResponse close(UUID businessId, BusinessStatusActionRequest request) {
+        businessCacheEvictor.evictStorefront(businessId);
         Business business = findBusiness(businessId);
         String previousState = closedState(business);
 
@@ -163,11 +147,8 @@ public class AdminBusinessServiceImpl implements AdminBusinessService {
 
     @Override
     @Transactional
-    @Caching(evict = {
-            @CacheEvict(cacheNames = CacheNames.PUBLIC_STORE_ITEMS, allEntries = true),
-            @CacheEvict(cacheNames = CacheNames.PUBLIC_STORE_ITEM_GROUPS, allEntries = true)
-    })
     public BusinessResponse reopen(UUID businessId) {
+        businessCacheEvictor.evictStorefront(businessId);
         Business business = findBusiness(businessId);
         String previousState = closedState(business);
 
@@ -182,11 +163,8 @@ public class AdminBusinessServiceImpl implements AdminBusinessService {
 
     @Override
     @Transactional
-    @Caching(evict = {
-            @CacheEvict(cacheNames = CacheNames.PUBLIC_STORE_ITEMS, allEntries = true),
-            @CacheEvict(cacheNames = CacheNames.PUBLIC_STORE_ITEM_GROUPS, allEntries = true)
-    })
     public BusinessResponse delete(UUID businessId) {
+        businessCacheEvictor.evictStorefront(businessId);
         Business business = findBusiness(businessId);
         String previousState = statusName(business);
 

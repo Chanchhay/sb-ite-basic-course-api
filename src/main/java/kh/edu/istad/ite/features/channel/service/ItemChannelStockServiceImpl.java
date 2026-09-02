@@ -1,6 +1,5 @@
 package kh.edu.istad.ite.features.channel.service;
 
-import kh.edu.istad.ite.config.CacheNames;
 import kh.edu.istad.ite.features.catalog.entity.Item;
 import kh.edu.istad.ite.features.catalog.entity.ItemVariant;
 import kh.edu.istad.ite.features.catalog.repository.ItemRepository;
@@ -18,8 +17,8 @@ import kh.edu.istad.ite.features.inventory.dto.StockSummaryResponse;
 import kh.edu.istad.ite.features.inventory.service.StockEntryService;
 import kh.edu.istad.ite.shared.enums.ChannelStockMode;
 import kh.edu.istad.ite.shared.enums.OrderChannel;
+import kh.edu.istad.ite.shared.cache.BusinessCacheEvictor;
 import lombok.RequiredArgsConstructor;
-import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -50,6 +49,8 @@ public class ItemChannelStockServiceImpl implements ItemChannelStockService {
 
     private final StockEntryService stockEntryService;
 
+    private final BusinessCacheEvictor businessCacheEvictor;
+
     @Override
     @Transactional(readOnly = true)
     public ItemChannelStockResponse findSplit(UUID businessId, UUID itemId) {
@@ -64,10 +65,10 @@ public class ItemChannelStockServiceImpl implements ItemChannelStockService {
     }
 
     @Override
-    @CacheEvict(cacheNames = CacheNames.PUBLIC_STORE_ITEMS, allEntries = true)
     public ItemChannelStockResponse saveSplit(
             UUID businessId, UUID itemId, SaveItemChannelStockRequest request) {
         Item item = requireItem(businessId, itemId);
+        businessCacheEvictor.evictStorefront(businessId);
         List<ChannelStockAllocationRequest> requested =
                 request.allocations() == null ? List.of() : request.allocations();
 
@@ -250,7 +251,6 @@ public class ItemChannelStockServiceImpl implements ItemChannelStockService {
     }
 
     @Override
-    @CacheEvict(cacheNames = CacheNames.PUBLIC_STORE_ITEMS, allEntries = true)
     public void consume(
             Item item, ItemVariant variant, OrderChannel channel, BigDecimal baseQuantity) {
         if (item != null && !item.isStockTracked()) {
@@ -270,6 +270,7 @@ public class ItemChannelStockServiceImpl implements ItemChannelStockService {
 
             allocation.setSoldQuantity(sold.add(baseQuantity));
             itemChannelStockRepository.save(allocation);
+            businessCacheEvictor.evictStorefront(item.getBusiness().getId());
         });
     }
 

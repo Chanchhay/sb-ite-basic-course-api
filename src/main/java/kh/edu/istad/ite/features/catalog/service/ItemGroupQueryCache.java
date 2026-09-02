@@ -39,8 +39,13 @@ class ItemGroupQueryCache {
                 )));
     }
 
+    /**
+     * Deliberately uncached. {@code StorefrontServiceImpl#getPublicStoreItemGroups} is
+     * the only caller and already caches this under {@code PUBLIC_STORE_ITEM_GROUPS},
+     * keyed by storefront slug. Caching here too filed a second copy of the same menu
+     * in the same cache under a business id, so every entry was stored twice.
+     */
     @Transactional(readOnly = true)
-    @Cacheable(cacheNames = CacheNames.PUBLIC_STORE_ITEM_GROUPS, key = "#p0")
     public List<ItemGroupResponse> findAllItemGroupsPublic(UUID businessId) {
         Map<UUID, List<ItemGroup>> subGroupsByParentId =
                 itemGroupRepository.findByBusinessIdAndParentIsNotNullOrderByNameAsc(businessId)

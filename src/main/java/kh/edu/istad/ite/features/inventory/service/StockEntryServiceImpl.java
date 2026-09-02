@@ -1,7 +1,6 @@
 package kh.edu.istad.ite.features.inventory.service;
 
 import jakarta.persistence.criteria.Predicate;
-import kh.edu.istad.ite.config.CacheNames;
 import kh.edu.istad.ite.features.business.entity.Business;
 import kh.edu.istad.ite.features.catalog.entity.Item;
 import kh.edu.istad.ite.features.catalog.entity.ItemVariant;
@@ -25,8 +24,8 @@ import kh.edu.istad.ite.features.inventory.repository.StockLayerRepository;
 import kh.edu.istad.ite.shared.enums.StockEntryType;
 import kh.edu.istad.ite.shared.helper.BusinessHelper;
 import kh.edu.istad.ite.shared.helper.TextHelper;
+import kh.edu.istad.ite.shared.cache.BusinessCacheEvictor;
 import lombok.RequiredArgsConstructor;
-import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.http.HttpStatus;
@@ -60,12 +59,13 @@ public class StockEntryServiceImpl implements StockEntryService {
     private final StockLayerRepository stockLayerRepository;
     private final StockConsumptionRepository stockConsumptionRepository;
     private final StockEntryMapper stockEntryMapper;
+    private final BusinessCacheEvictor businessCacheEvictor;
 
     @Override
     @Transactional
-    @CacheEvict(cacheNames = CacheNames.PUBLIC_STORE_ITEMS, allEntries = true)
     public StockEntryResponse createStockEntry(UUID businessId, CreateStockEntryRequest request) {
         Business business = businessHelper.findOwnedBusiness(businessId);
+        businessCacheEvictor.evictStorefront(businessId);
         StockTarget target = resolveTarget(
                 businessId, request.itemId(), request.variantId(), request.addOnId());
 

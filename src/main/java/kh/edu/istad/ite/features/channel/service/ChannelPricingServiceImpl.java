@@ -1,6 +1,5 @@
 package kh.edu.istad.ite.features.channel.service;
 
-import kh.edu.istad.ite.config.CacheNames;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import kh.edu.istad.ite.features.business.entity.Business;
@@ -24,9 +23,9 @@ import kh.edu.istad.ite.features.channel.repository.ItemChannelRepository;
 import kh.edu.istad.ite.features.channel.repository.SalesChannelRepository;
 import kh.edu.istad.ite.shared.enums.PriceOverrideKind;
 import kh.edu.istad.ite.shared.helper.BusinessHelper;
+import kh.edu.istad.ite.shared.cache.BusinessCacheEvictor;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -64,6 +63,7 @@ public class ChannelPricingServiceImpl implements ChannelPricingService {
     private final BusinessChannelSettingsRepository settingsRepository;
     private final ItemRepository itemRepository;
     private final UnitRepository unitRepository;
+    private final BusinessCacheEvictor businessCacheEvictor;
 
     /** Its own, like every other JSON reader here — the app publishes no bean. */
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -85,10 +85,10 @@ public class ChannelPricingServiceImpl implements ChannelPricingService {
 
     @Override
     @Transactional
-    @CacheEvict(cacheNames = CacheNames.PUBLIC_STORE_ITEMS, allEntries = true)
     public ChannelListingResponse saveListing(
             UUID businessId, UUID channelId, SaveChannelListingRequest request) {
         Business business = businessHelper.findOwnedBusiness(businessId);
+        businessCacheEvictor.evictStorefront(businessId);
         SalesChannel channel = findChannel(channelId);
 
         BusinessChannelSettings settings = settingsRepository
