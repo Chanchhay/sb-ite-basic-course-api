@@ -113,3 +113,11 @@ minio:
     # by the import that owns them, never linked to, so they are kept out of
     # the asset bucket whose objects are served straight to browsers.
     imports: fluxibiz-imports
+
+# Same endpoints as production, so a cache that misbehaves can be looked at here
+# before it is looked at there.
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,metrics

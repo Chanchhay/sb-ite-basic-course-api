@@ -72,6 +72,12 @@ public class SecurityConfig {
                         // only /health is exposed, so nothing else is reachable.
                         .requestMatchers("/api/v1/telegram/webhook/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/actuator/health", "/actuator/health/**").permitAll()
+
+                        // Cache hit rates and request timings. Operational detail
+                        // about the running system, so it is read by the people who
+                        // run it and by nobody else.
+                        .requestMatchers(HttpMethod.GET, "/actuator/metrics", "/actuator/metrics/**")
+                        .access(permissionOrSuperAdmin("admin-dashboard:read"))
                         .requestMatchers(HttpMethod.GET, "/api/v1/storefronts/*").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/storefronts/*/items").permitAll()
                         .requestMatchers(
