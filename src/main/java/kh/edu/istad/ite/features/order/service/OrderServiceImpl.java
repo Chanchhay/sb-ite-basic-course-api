@@ -48,8 +48,11 @@ import kh.edu.istad.ite.features.discount.repository.CouponRepository;
 import kh.edu.istad.ite.features.discount.repository.DiscountRepository;
 import kh.edu.istad.ite.features.discount.repository.DiscountTargetRepository;
 import kh.edu.istad.ite.features.discount.service.DiscountApplicationService;
+import kh.edu.istad.ite.features.discount.service.DiscountApplicationService.BundleOffer;
 import kh.edu.istad.ite.features.channel.service.ItemChannelStockService;
+import kh.edu.istad.ite.features.inventory.dto.StockSummaryResponse;
 import kh.edu.istad.ite.features.inventory.service.StockEntryService;
+import kh.edu.istad.ite.shared.enums.ItemType;
 import kh.edu.istad.ite.features.order.dto.OfflineOrderDto;
 import kh.edu.istad.ite.features.order.dto.OfflineOrderItemDto;
 import kh.edu.istad.ite.features.order.dto.SyncOfflineOrdersRequest;
@@ -62,6 +65,7 @@ import kh.edu.istad.ite.features.order.dto.PayOrderRequest;
 import kh.edu.istad.ite.features.order.dto.PaymentStatusResponse;
 import kh.edu.istad.ite.features.order.dto.SaleResponse;
 import kh.edu.istad.ite.features.order.dto.UpdateOrderItemRequest;
+import kh.edu.istad.ite.features.order.dto.UpdateOrderCustomerRequest;
 import kh.edu.istad.ite.features.order.dto.UpdateOrderDiscountRequest;
 import kh.edu.istad.ite.features.order.dto.UpdateOrderNoteRequest;
 import kh.edu.istad.ite.features.order.entity.Order;
@@ -1064,6 +1068,87 @@ public class OrderServiceImpl implements OrderService {
         }));
     }
 
+    /**
+     * The line's real total once a Buy X Get Y offer it qualifies for is
+     * folded in — the free units a completed bundle owes the customer, added
+     * on their own rather than left for the customer to ask for by name.
+     *
+     * {@code newPaidQuantity} is always the *paid* count this edit wants:
+     * for an add, that is the line's current paid units (backed out of its
+     * current total) plus however many more were just requested; for an
+     * absolute quantity edit, it is exactly the number requested — a cashier
+     * typing "2" means two they are paying for, never two total once a free
+     * one is mixed in. Everything downstream (this order's own discount sync)
+     * still does the actual pricing; this only ever decides the quantity.
+     *
+     * Refuses the whole edit — not just the free portion — when the shelf
+     * cannot cover the bundle it is about to create. A promotion is not a
+     * reason to oversell stock nobody has.
+     */
+    private int applyBundleQuantity(
+            UUID businessId,
+            Business business,
+            Item item,
+            ItemVariant variant,
+            OrderChannel channel,
+            int currentTotalQuantity,
+            int newPaidQuantity,
+            BigDecimal unitFactor
+    ) {
+        UUID itemGroupId = item.getItemGroup() != null ? item.getItemGroup().getId() : null;
+        Optional<BundleOffer> offer = discountApplicationService.resolveBundleOffer(
+                businessId, channel, item.getId(), itemGroupId);
+
+        int newTotal = offer.isEmpty()
+                ? Math.max(0, newPaidQuantity)
+                : offer.get().totalForPaidUnits(newPaidQuantity);
+
+        if (newTotal > currentTotalQuantity) {
+            requireStockForBundle(business, item, variant, newTotal, unitFactor);
+        }
+
+        return newTotal;
+    }
+
+    /**
+     * Refuses a line whose Buy X Get Y bundle the shelf cannot cover.
+     *
+     * Checked against the line's whole new total (paid units and free units
+     * together), not just the increment a tap asked for — "cannot supply the
+     * total" is the actual promise a completed bundle makes to the shelf.
+     * Mirrors {@code StorefrontCartService.requireStock}, so the till and the
+     * storefront refuse the same way for the same reason.
+     */
+    private void requireStockForBundle(
+            Business business, Item item, ItemVariant variant, int totalQuantity, BigDecimal unitFactor) {
+        if (!ItemType.PHYSICAL.equals(item.getItemType())) {
+            return;
+        }
+
+        StockSummaryResponse summary = stockEntryService.findAvailableStock(
+                business.getId(), item.getId(), variant == null ? null : variant.getId());
+
+        // No entries at all means the shop is not tracking this item, which is
+        // not the same as it having none.
+        if (summary == null || summary.lastEntryId() == null) {
+            return;
+        }
+
+        BigDecimal onHand = summary.quantityOnHand() == null ? BigDecimal.ZERO : summary.quantityOnHand();
+        BigDecimal available = itemChannelStockService.availableFor(item, variant, OrderChannel.POS, onHand);
+        BigDecimal factor = unitFactor == null ? BigDecimal.ONE : unitFactor;
+        BigDecimal totalBaseQuantity = factor.multiply(BigDecimal.valueOf(totalQuantity));
+
+        if (available.compareTo(totalBaseQuantity) < 0) {
+            String optionSuffix = variant == null ? "" : " (" + variant.getVariantName() + ")";
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "\"" + item.getName() + optionSuffix + "\" only has "
+                            + available.stripTrailingZeros().toPlainString()
+                            + " left — not enough to include the free item this offer gives.");
+        }
+    }
+
     @Override
     @Transactional
     public OrderResponse addOrderItem(UUID businessId, UUID orderId, AddOrderItemRequest request) {
@@ -1076,7 +1161,16 @@ public class OrderServiceImpl implements OrderService {
 
         if (existingOpt.isPresent()) {
             OrderItem existing = existingOpt.get();
-            existing.setQuantity(existing.getQuantity() + request.quantity());
+            int currentFree = existing.getFreeQuantity() == null ? 0 : existing.getFreeQuantity();
+            int currentPaid = existing.getQuantity() - currentFree;
+            int newPaid = currentPaid + request.quantity();
+            int newTotal = applyBundleQuantity(
+                    businessId, order.getBusiness(), existing.getItem(), existing.getVariant(),
+                    order.getChannel(), existing.getQuantity(), newPaid, existing.getUnitFactor());
+
+            existing.setQuantity(newTotal);
+            existing.setFreeQuantity(newTotal - newPaid);
+
             BigDecimal itemDiscount = existing.getDiscountAmount() != null ? existing.getDiscountAmount() : BigDecimal.ZERO;
             if (request.discountAmount() != null) {
                 itemDiscount = itemDiscount.add(request.discountAmount());
@@ -1089,10 +1183,19 @@ public class OrderServiceImpl implements OrderService {
                     request.addOnIds(), request.quantity());
 
             OrderItem item = buildItem(businessId, channelCodeOf(order), createReq);
+            int newTotal = applyBundleQuantity(
+                    businessId, order.getBusiness(), item.getItem(), item.getVariant(),
+                    order.getChannel(), 0, request.quantity(), item.getUnitFactor());
+
+            item.setQuantity(newTotal);
+            item.setFreeQuantity(newTotal - request.quantity());
+
             if (request.discountAmount() != null) {
                 item.setDiscountAmount(request.discountAmount());
-                item.setLineTotal(item.priceWithAddOns().multiply(BigDecimal.valueOf(item.getQuantity())).subtract(request.discountAmount()));
             }
+            BigDecimal manualDiscount = item.getDiscountAmount() != null ? item.getDiscountAmount() : BigDecimal.ZERO;
+            item.setLineTotal(item.priceWithAddOns().multiply(BigDecimal.valueOf(item.getQuantity())).subtract(manualDiscount));
+
             int maxLine = order.getItems().stream()
                     .mapToInt(i -> i.getLineNumber() == null ? 0 : i.getLineNumber())
                     .max()
@@ -1117,7 +1220,11 @@ public class OrderServiceImpl implements OrderService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Order item not found"));
 
         if (request.quantity() != null) {
-            item.setQuantity(request.quantity());
+            int newTotal = applyBundleQuantity(
+                    businessId, order.getBusiness(), item.getItem(), item.getVariant(),
+                    order.getChannel(), item.getQuantity(), request.quantity(), item.getUnitFactor());
+            item.setQuantity(newTotal);
+            item.setFreeQuantity(newTotal - request.quantity());
         }
 
         if (request.discountAmount() != null) {
@@ -1153,6 +1260,25 @@ public class OrderServiceImpl implements OrderService {
     public OrderResponse updateOrderNote(UUID businessId, UUID orderId, UpdateOrderNoteRequest request) {
         Order order = validateOrderModification(businessId, orderId);
         order.setNote(request.note());
+        return orderMapper.toResponse(orderRepository.save(order));
+    }
+
+
+    @Override
+    @Transactional
+    public OrderResponse updateOrderCustomer(UUID businessId, UUID orderId, UpdateOrderCustomerRequest request) {
+        Order order = validateOrderModification(businessId, orderId);
+
+        if (request.customerId() == null) {
+            order.setCustomer(null);
+        } else {
+            Customer customer = customerRepository.findByIdAndBusinessId(request.customerId(), businessId)
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Customer has not been found"));
+            order.setCustomer(customer);
+        }
+
+        syncOrderDiscount(businessId, order);
+        recalculateOrderTotals(order);
         return orderMapper.toResponse(orderRepository.save(order));
     }
 
@@ -1259,14 +1385,7 @@ public class OrderServiceImpl implements OrderService {
         return itemDiscountTotal(order).add(manual);
     }
 
-    /**
-     * Applies several simultaneously-active catalog discounts in one pass
-     * (e.g. two item-scoped promos each auto-matched to a different line,
-     * with no single one explicitly picked by the cashier). Each is resolved
-     * and attributed independently; a discount that no longer qualifies
-     * (expired, wrong channel, below its own minimum) is skipped rather than
-     * failing the whole batch, since the others may still be valid.
-     */
+
     private BigDecimal resolveMultipleOrderDiscounts(
             UUID businessId, Order order, Customer customer, List<UUID> discountIds
     ) {
@@ -1310,13 +1429,7 @@ public class OrderServiceImpl implements OrderService {
         return itemDiscountTotal(order).add(orderLevelPortion);
     }
 
-    /**
-     * The order's full discount total after a discount has just been
-     * distributed: per-item-attributed scopes (SPECIFIC_ITEMS/CATEGORIES)
-     * are already reflected in itemDiscountTotal, so adding the calculated
-     * amount again would double-count it; order-wide scopes aren't attributed
-     * to any line, so their amount has to be added on top.
-     */
+
     private BigDecimal totalDiscountAfterDistribution(Order order, Discount discount, BigDecimal amount) {
         DiscountScope scope = normalizeScope(discount.getScope());
         boolean itemAttributed = scope == DiscountScope.SPECIFIC_ITEMS || scope == DiscountScope.SPECIFIC_CATEGORIES;
@@ -1324,10 +1437,7 @@ public class OrderServiceImpl implements OrderService {
         return itemAttributed ? itemLevelTotal : itemLevelTotal.add(amount);
     }
 
-    /** Removes any per-item discount amount/label left by a catalog discount
-     *  that no longer applies (e.g. the cashier switched to a different
-     *  promo). A manual, cashier-typed per-item discount never carries a
-     *  label, so this can't touch one. */
+
     private void clearCatalogAttributedItemDiscounts(Order order) {
         for (OrderItem item : order.getItems()) {
             if (item.getDiscountLabel() != null) {
@@ -1337,13 +1447,7 @@ public class OrderServiceImpl implements OrderService {
         }
     }
 
-    /**
-     * Records which line(s) an item/category-scoped discount actually
-     * applied to, so receipts can name the promo per item instead of only
-     * showing one lump discount on the whole order. Order-wide discounts
-     * (ALL_ITEMS/ORDER/SPECIFIC_MEMBERSHIP) aren't attributed to specific
-     * lines — the order-level discountLabel already names those.
-     */
+
     private void distributeItemLevelDiscount(Discount discount, Order order, BigDecimal calculatedAmount) {
         DiscountScope scope = normalizeScope(discount.getScope());
         if (scope != DiscountScope.SPECIFIC_ITEMS && scope != DiscountScope.SPECIFIC_CATEGORIES) {
@@ -1596,30 +1700,7 @@ public class OrderServiceImpl implements OrderService {
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 
-    /**
-     * Keeps the order's discount atomically correct for its current items,
-     * inside the very same transaction as the item mutation that just
-     * changed them.
-     *
-     * This replaces carrying the order-level discount forward as a frozen
-     * dollar amount while a
-     * separate client-triggered {@code PATCH /discount} request was relied
-     * on to recompute it whenever a promotion's condition newly became met
-     * (e.g. a 3rd unit completing a Buy 2 Get 1 bundle). That second request
-     * raced this one on an {@code Order} row with no optimistic-locking
-     * {@code @Version} column: whichever save landed last silently overwrote
-     * the other's total, with no error on either side — the item mutation
-     * would win by reverting the discount right back to zero if its own
-     * (slower) transaction happened to commit after the discount PATCH's.
-     * Resolving the discount here, in the same transaction, removes the
-     * second request — and the race — entirely.
-     *
-     * An explicitly chosen discount or coupon (via {@link #updateOrderDiscount})
-     * is kept exactly as chosen, just re-priced against the item set as it
-     * now stands. Only when nothing has been explicitly chosen does this
-     * auto-detect the best currently-applicable catalog discount, the same
-     * way the storefront cart already does via {@link DiscountApplicationService}.
-     */
+
     private void syncOrderDiscount(UUID businessId, Order order) {
         if (order.getDiscountId() != null || StringUtils.hasText(order.getDiscountCode())) {
             BigDecimal discountableSubtotal = grossSubtotal(order).subtract(itemDiscountTotal(order));
@@ -1633,12 +1714,7 @@ public class OrderServiceImpl implements OrderService {
                     totalDiscount = resolveOrderDiscountAmount(businessId, order, order.getCustomer(),
                             order.getDiscountId(), order.getDiscountCode(), null, false);
                 } catch (ResponseStatusException e) {
-                    // The discount/coupon that was explicitly chosen earlier
-                    // is no longer valid (expired, day/schedule changed,
-                    // deactivated) — an item edit as ordinary as a quantity
-                    // change must not be blocked by that; drop it instead of
-                    // re-throwing, the same way an item mutation has never
-                    // failed on other pricing edge cases.
+
                     clearOrderDiscountSource(order);
                     totalDiscount = itemDiscountTotal(order);
                 }
@@ -1746,10 +1822,7 @@ public class OrderServiceImpl implements OrderService {
             netSubtotal = BigDecimal.ZERO;
         }
 
-        // The order was first priced (possibly against an empty $0 cart) back
-        // in createOrder; every item/discount edit since has to re-run the
-        // same calculator against the new net amount, or tax stays frozen at
-        // whatever it was on that first, often-empty, cart.
+
         TaxCalculator.Result taxResult = taxCalculator.apply(order.getBusiness(), netSubtotal, scale);
         order.setTaxInclusionType(taxResult.inclusionType());
         order.setTaxRate(taxResult.taxRate());
@@ -1804,15 +1877,7 @@ public class OrderServiceImpl implements OrderService {
                 order.setStatus(dto.status() != null ? dto.status() : OrderStatus.PAID);
                 order.setSubtotal(dto.subtotal() != null ? dto.subtotal() : BigDecimal.ZERO);
                 order.setDiscountAmount(dto.discountAmount() != null ? dto.discountAmount() : BigDecimal.ZERO);
-                /*
-                 * Only where the till sent a figure.
-                 *
-                 * These columns are NOT NULL and the entity already starts
-                 * them at zero, so writing the DTO's value straight through
-                 * replaced that default with null for every sale taken with
-                 * tax switched off — and the insert was refused, taking the
-                 * whole sync with it.
-                 */
+
                 if (dto.taxRate() != null) {
                     order.setTaxRate(dto.taxRate());
                 }
@@ -1832,8 +1897,7 @@ public class OrderServiceImpl implements OrderService {
                         if (item == null) continue;
 
                         OrderItem orderItem = new OrderItem();
-                        // Same order as the online path: the extras are hung
-                        // on the line before anything reads it back.
+
                         attachAddOns(orderItem, item, itemDto.addOnIds());
                         orderItem.setItem(item);
                         applySoldAs(item, itemDto, orderItem);
@@ -1849,24 +1913,13 @@ public class OrderServiceImpl implements OrderService {
 
             Order savedOrder = orderRepository.save(order);
 
-            /*
-             * The sale happened when the till took the cash, not when the
-             * connection came back.
-             *
-             * `createdDate` is @CreatedDate, so Spring stamps it at persist
-             * time — which for a queued sale is whenever it managed to sync.
-             * A shift's takings all landed at 4:07pm, and the Orders and
-             * Receipts lists showed them that way. The stamp is corrected
-             * after the insert, because the auditing listener would overwrite
-             * anything set before it.
-             */
+
             if (isNewOrder && dto.createdAt() != null) {
                 savedOrder.setCreatedDate(
                         LocalDateTime.ofInstant(dto.createdAt(), ZoneId.systemDefault()));
                 savedOrder = orderRepository.save(savedOrder);
             }
 
-            // Create Sale entity if not already present
             if (saleRepository.findByOrderId(savedOrder.getId()).isEmpty()) {
                 Sale sale = new Sale();
                 sale.setBusiness(business);

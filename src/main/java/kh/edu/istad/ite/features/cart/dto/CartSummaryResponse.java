@@ -54,6 +54,8 @@ public record CartSummaryResponse(
             String unitName,
             BigDecimal unitFactor,
             int quantity,
+            /** How many of {@code quantity} a Buy X Get Y offer gave away — zero for an ordinary line. */
+            int freeQuantity,
             /** The thing itself, without its extras. */
             BigDecimal unitPrice,
             /**

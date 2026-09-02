@@ -47,6 +47,17 @@ public class OrderItem {
     @Column(nullable = false)
     private Integer quantity;
 
+    /**
+     * How many of {@link #quantity} a BUY_X_GET_Y offer gave away, folded in
+     * automatically rather than left for the customer to ask for by name.
+     *
+     * A subset of {@code quantity}, not additional to it: stock and the base
+     * quantity still move for every unit here, since a free unit still comes
+     * off the shelf. Zero for an ordinary line.
+     */
+    @Column(name = "free_quantity", nullable = false)
+    private Integer freeQuantity = 0;
+
     @Column(name = "unit_price", nullable = false, precision = 12, scale = 2)
     private BigDecimal unitPrice = BigDecimal.ZERO;
 

@@ -3,6 +3,7 @@ package kh.edu.istad.ite.features.cart.service;
 import kh.edu.istad.ite.config.security.CredentialCipher;
 import kh.edu.istad.ite.features.business.entity.Business;
 import kh.edu.istad.ite.features.business.repository.BusinessRepository;
+import kh.edu.istad.ite.features.business.service.TaxCalculator;
 import kh.edu.istad.ite.features.cart.dto.ActiveCheckoutResponse;
 import kh.edu.istad.ite.features.cart.dto.StorefrontCheckoutRequest;
 import kh.edu.istad.ite.features.cart.dto.StorefrontCheckoutResponse;
@@ -13,22 +14,27 @@ import kh.edu.istad.ite.features.cart.entity.CartItem;
 import kh.edu.istad.ite.features.cart.repository.CartRepository;
 import kh.edu.istad.ite.features.catalog.entity.Item;
 import kh.edu.istad.ite.features.catalog.entity.ItemVariant;
+import kh.edu.istad.ite.features.channel.service.ChannelPriceResolver;
 import kh.edu.istad.ite.features.customer.entity.Customer;
 import kh.edu.istad.ite.features.customer.entity.GlobalCustomer;
+import kh.edu.istad.ite.features.customer.repository.CustomerChannelIdentityRepository;
 import kh.edu.istad.ite.features.customer.repository.CustomerRepository;
 import kh.edu.istad.ite.features.customer.service.CustomerIdentityService;
 import kh.edu.istad.ite.features.discount.entity.Discount;
 import kh.edu.istad.ite.features.discount.repository.DiscountRepository;
+import kh.edu.istad.ite.features.discount.service.DiscountApplicationService;
 import kh.edu.istad.ite.features.discount.service.DiscountService;
 import kh.edu.istad.ite.features.inventory.dto.StockSummaryResponse;
 import kh.edu.istad.ite.features.channel.service.ItemChannelStockService;
 import kh.edu.istad.ite.features.inventory.service.StockEntryService;
+import kh.edu.istad.ite.features.notification.push.PushNotificationClient;
 import kh.edu.istad.ite.features.order.dto.OrderResponse;
 import kh.edu.istad.ite.features.order.entity.Order;
 import kh.edu.istad.ite.features.order.entity.OrderItem;
 import kh.edu.istad.ite.features.order.entity.OrderItemAddOn;
 import kh.edu.istad.ite.features.order.entity.OrderItemSelection;
 import kh.edu.istad.ite.features.order.entity.Sale;
+import kh.edu.istad.ite.features.order.mapper.OrderMapper;
 import kh.edu.istad.ite.features.order.repository.OrderRepository;
 import kh.edu.istad.ite.features.order.repository.SaleRepository;
 import kh.edu.istad.ite.features.payment.bakong.BakongCheckResult;
@@ -99,8 +105,8 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
     private final OrderRepository orderRepository;
     private final SaleRepository saleRepository;
     private final DiscountRepository discountRepository;
-    private final kh.edu.istad.ite.features.discount.service.DiscountApplicationService discountApplicationService;
-    private final kh.edu.istad.ite.features.order.mapper.OrderMapper orderMapper;
+    private final DiscountApplicationService discountApplicationService;
+    private final OrderMapper orderMapper;
     private final BusinessPaymentSettingRepository paymentSettingRepository;
     private final PaymentQrCodeRepository paymentQrCodeRepository;
     private final KhqrGenerator khqrGenerator;
@@ -110,13 +116,13 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
     private final StockEntryService stockEntryService;
 
     private final ItemChannelStockService itemChannelStockService;
-    private final kh.edu.istad.ite.features.channel.service.ChannelPriceResolver channelPriceResolver;
+    private final ChannelPriceResolver channelPriceResolver;
     private final ReceiptService receiptService;
     private final TelegramAlertService telegramAlertService;
-    private final kh.edu.istad.ite.features.business.service.TaxCalculator taxCalculator;
-    private final kh.edu.istad.ite.features.customer.repository.CustomerChannelIdentityRepository customerChannelIdentityRepository;
+    private final TaxCalculator taxCalculator;
+    private final CustomerChannelIdentityRepository customerChannelIdentityRepository;
     private final DiscountService discountService;
-    private final kh.edu.istad.ite.features.notification.push.PushNotificationClient pushNotificationClient;
+    private final PushNotificationClient pushNotificationClient;
 
 
     @Override
@@ -134,14 +140,6 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
             businessHelper.requireFeature(business.getId(), BusinessFeature.KHQR_PAYMENT);
         }
 
-
-        // The "one open order at a time" rule exists for Bakong: two live
-        // QR codes for the same shopper would be confusing and could race
-        // on payment. Pay Later never touches Bakong, so a shopper choosing
-        // it should never be blocked by — or silently merged into — an
-        // order still waiting on the business to approve, whether that
-        // wait is at this shop or another one. Each Pay Later checkout
-        // gets its own order and its own approval.
         Order openOrder = payLater ? null : findOpenOrder(shopper).orElse(null);
 
         if (openOrder != null && !openOrder.getBusiness().getId().equals(business.getId())) {
@@ -151,8 +149,6 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
                             + ". Finish or cancel it before paying another shop.");
         }
 
-        // Same store, still pending: settle it the way this request asks for,
-        // rather than stacking orders.
         if (openOrder != null) {
             return issueQrFor(business, openOrder);
         }
@@ -222,11 +218,6 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
 
         int scale = scaleFor(order.getCurrency());
 
-        // Computed upfront, from the cart's own base prices, so every
-        // line's MIN_ORDER_AMOUNT condition — and the order-level discount
-        // below — see the same total regardless of which line is evaluated
-        // first, and so this always matches what the cart page just showed
-        // (StorefrontCartService.toStoreCart computes it the same way).
         BigDecimal rawSubtotal = cart.getItems().stream()
                 .map(this::rawCartLineSubtotal)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
@@ -234,14 +225,6 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
         BigDecimal totalDiscount = BigDecimal.ZERO;
         UUID appliedDiscountId = null;
 
-        // Delegates to the exact same DiscountApplicationService.resolveLineDiscount()
-        // the cart page reads (StorefrontCartService.toLine()) — this used to
-        // reimplement discount selection inline, its own copy missing the
-        // isOrderScoped/meetsCondition filters resolveLineDiscount applies,
-        // which let a storewide discount get treated as this line's own and
-        // then wrongly suppress it for every OTHER line's chance to earn it
-        // for real via resolveOrderDiscount below. Two separate item-scoped
-        // discounts on two different lines must both apply independently.
         for (CartItem line : cart.getItems()) {
             OrderItem orderItem = toOrderItem(line);
 
@@ -289,13 +272,6 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
             totalDiscount = totalDiscount.add(lineDiscount);
         }
 
-        // ALL_ITEMS/ORDER-scoped discounts are deliberately never evaluated
-        // per line (see DiscountApplicationService) — only here, against
-        // the real subtotal, and only when nothing item-level already
-        // applied: a storewide promo and a targeted item promo don't stack.
-        // totalDiscount above is now provably free of any order-scoped
-        // contribution — resolveLineDiscount() structurally excludes it —
-        // so this gate means what the comment always claimed it meant.
         if (totalDiscount.compareTo(BigDecimal.ZERO) == 0) {
             List<kh.edu.istad.ite.features.discount.dto.OrderLineUnits> lineUnits = cart.getItems().stream()
                     .map(l -> new kh.edu.istad.ite.features.discount.dto.OrderLineUnits(
@@ -401,9 +377,7 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND, "No KHQR is waiting for this order"));
 
-        // A lapsed QR is still worth checking. Banks can accept a scan a little
-        // past our 5-minute window, and if the money did arrive we must honour
-        // it rather than stranding a real payment behind an expiry check.
+
         boolean lapsed = qrCode.getExpiresAt().isBefore(LocalDateTime.now());
 
         BusinessPaymentSetting setting = requireActiveBakongSetting(business.getId());
@@ -872,6 +846,11 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
                 ? item.getName() + " (" + variant.getVariantName() + ")"
                 : item.getName());
         orderItem.setQuantity(quantity);
+        // The basket already decided how much of this line a Buy X Get Y
+        // offer gave away — checkout prices from the order's own items
+        // (never re-derives it), so that decision has to travel with the
+        // quantity rather than being re-guessed here.
+        orderItem.setFreeQuantity(cartItem.getFreeQuantity() == null ? 0 : cartItem.getFreeQuantity());
         // The basket already agreed which unit it was buying, and at what
         // factor; the order keeps both rather than working them out again.
         orderItem.setUnit(cartItem.getUnit());
