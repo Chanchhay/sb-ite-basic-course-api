@@ -41,6 +41,10 @@ public interface ItemService {
 
     void deleteItem(UUID businessId, UUID itemId);
 
+    ItemResponse restoreItem(UUID businessId, UUID itemId);
+
+    void hardDeleteItem(UUID businessId, UUID itemId);
+
     ItemResponse findItemByBarcode(UUID businessId, String barcode);
     
     PageResponse<ItemResponse> filterItems(UUID businessId, kh.edu.istad.ite.config.filter.RequestDto requestDto, org.springframework.data.domain.Pageable pageable);

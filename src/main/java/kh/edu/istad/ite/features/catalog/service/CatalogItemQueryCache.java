@@ -17,6 +17,15 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.util.UUID;
 
+/**
+ * The cached read side of the catalogue.
+ *
+ * Every lookup here is blind to the recycle bin. The filter belongs on this
+ * side of the cache rather than above it: what gets stored under a key has to
+ * already be the answer, or a trashed item stays served from Redis long after
+ * it was deleted. {@link kh.edu.istad.ite.shared.cache.BusinessCacheEvictor}
+ * is what puts a delete, a restore, or a purge through to these keys.
+ */
 @Component
 @RequiredArgsConstructor
 class CatalogItemQueryCache {
@@ -27,21 +36,21 @@ class CatalogItemQueryCache {
     @Transactional(readOnly = true)
     @Cacheable(cacheNames = CacheNames.CATALOG_ITEMS, key = "T(kh.edu.istad.ite.config.CacheKeys).page(#p0, #p1)")
     public PageResponse<ItemResponse> findAllItems(UUID businessId, Pageable pageable) {
-        Page<Item> items = itemRepository.findAllByBusinessId(businessId, pageable);
+        Page<Item> items = itemRepository.findAllByBusinessIdAndIsDeletedFalse(businessId, pageable);
         return PageResponse.from(items.map(itemMapper::toResponse));
     }
 
     @Transactional(readOnly = true)
     @Cacheable(cacheNames = CacheNames.CATALOG_ITEM_BY_ID, key = "T(kh.edu.istad.ite.config.CacheKeys).item(#p0, #p1)")
     public ItemResponse findItemById(UUID businessId, UUID itemId) {
-        return itemMapper.toResponse(itemRepository.findByIdAndBusinessId(itemId, businessId)
+        return itemMapper.toResponse(itemRepository.findByIdAndBusinessIdAndIsDeletedFalse(itemId, businessId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Item has not been found")));
     }
 
     @Transactional(readOnly = true)
     @Cacheable(cacheNames = CacheNames.CATALOG_ITEM_BY_BARCODE, key = "T(kh.edu.istad.ite.config.CacheKeys).barcode(#p0, #p1)")
     public ItemResponse findItemByBarcode(UUID businessId, String barcode) {
-        return itemRepository.findByBusinessIdAndBarcode(businessId, barcode.trim())
+        return itemRepository.findByBusinessIdAndBarcodeAndIsDeletedFalse(businessId, barcode.trim())
                 .map(itemMapper::toResponse)
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND, "Item not found with barcode: " + barcode));
