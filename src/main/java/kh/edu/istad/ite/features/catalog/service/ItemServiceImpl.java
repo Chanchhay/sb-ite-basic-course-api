@@ -32,6 +32,7 @@ import kh.edu.istad.ite.shared.enums.ItemType;
 import kh.edu.istad.ite.shared.helper.BusinessHelper;
 import kh.edu.istad.ite.shared.helper.SlugHelper;
 import kh.edu.istad.ite.shared.helper.TextHelper;
+import kh.edu.istad.ite.shared.cache.BusinessCacheEvictor;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import kh.edu.istad.ite.features.catalog.dto.DescriptionBlockRequest;
@@ -96,11 +97,14 @@ public class ItemServiceImpl implements ItemService {
     private final StockEntryRepository stockEntryRepository;
     private final StockLayerRepository stockLayerRepository;
     private final StockConsumptionRepository stockConsumptionRepository;
+    private final CatalogItemQueryCache catalogItemQueryCache;
+    private final BusinessCacheEvictor businessCacheEvictor;
 
     @Override
     @Transactional
     public ItemResponse createItem(UUID businessId, CreateItemRequest request, List<MultipartFile> files) {
         Business business = businessHelper.findOwnedBusiness(businessId);
+        businessCacheEvictor.evictCatalogAndStorefront(businessId);
 
         Item item = new Item();
         item.setBusiness(business);
@@ -156,21 +160,21 @@ public class ItemServiceImpl implements ItemService {
     @Transactional(readOnly = true)
     public PageResponse<ItemResponse> findAllItems(UUID businessId, Pageable pageable) {
         businessHelper.findOwnedBusiness(businessId);
-        Page<Item> items = itemRepository.findAllByBusinessId(businessId, pageable);
-        return PageResponse.from(items.map(itemMapper::toResponse));
+        return catalogItemQueryCache.findAllItems(businessId, pageable);
     }
 
     @Override
     @Transactional(readOnly = true)
     public ItemResponse findItemById(UUID businessId, UUID itemId) {
         businessHelper.findOwnedBusiness(businessId);
-        return itemMapper.toResponse(findItem(itemId, businessId));
+        return catalogItemQueryCache.findItemById(businessId, itemId);
     }
 
     @Override
     @Transactional
     public ItemResponse updateItem(UUID businessId, UUID itemId, UpdateItemRequest request, List<MultipartFile> files) {
         businessHelper.findOwnedBusiness(businessId);
+        businessCacheEvictor.evictCatalogAndStorefront(businessId);
         Item item = findItem(itemId, businessId);
 
         if (request.itemGroupId() != null) {
@@ -279,6 +283,7 @@ public class ItemServiceImpl implements ItemService {
     @Transactional
     public ItemResponse updateItemAddOns(UUID businessId, UUID itemId, List<UUID> addOnIds) {
         businessHelper.findOwnedBusiness(businessId);
+        businessCacheEvictor.evictCatalogAndStorefront(businessId);
         Item item = findItem(itemId, businessId);
 
         replaceAddOns(item, businessId, addOnIds);
@@ -294,6 +299,7 @@ public class ItemServiceImpl implements ItemService {
     @Transactional
     public void deleteItem(UUID businessId, UUID itemId) {
         businessHelper.findOwnedBusiness(businessId);
+        businessCacheEvictor.evictCatalogAndStorefront(businessId);
         Item item = findItem(itemId, businessId);
 
         List<ItemChannel> itemChannels = itemChannelRepository.findByItemId(itemId);
@@ -342,6 +348,7 @@ public class ItemServiceImpl implements ItemService {
     @Transactional
     public ItemResponse deleteItemImage(UUID businessId, UUID itemId, UUID imageId) {
         businessHelper.findOwnedBusiness(businessId);
+        businessCacheEvictor.evictCatalogAndStorefront(businessId);
         Item item = findItem(itemId, businessId);
         ItemImage imageToRemove = item.getImages().stream()
                 .filter(img -> img.getId().equals(imageId))
@@ -361,6 +368,7 @@ public class ItemServiceImpl implements ItemService {
     @Transactional
     public ItemResponse uploadItemImages(UUID businessId, UUID itemId, kh.edu.istad.ite.features.catalog.dto.UploadItemImagesRequest request) {
         businessHelper.findOwnedBusiness(businessId);
+        businessCacheEvictor.evictCatalogAndStorefront(businessId);
         Item item = findItem(itemId, businessId);
         if (request.files() != null && !request.files().isEmpty()) {
             for (MultipartFile file : request.files()) {
@@ -380,6 +388,7 @@ public class ItemServiceImpl implements ItemService {
     @Transactional
     public ItemResponse reorderItemImages(UUID businessId, UUID itemId, kh.edu.istad.ite.features.catalog.dto.ReorderItemImagesRequest request) {
         businessHelper.findOwnedBusiness(businessId);
+        businessCacheEvictor.evictCatalogAndStorefront(businessId);
         Item item = findItem(itemId, businessId);
         
         List<UUID> orderedIds = request.imageIds();
@@ -415,10 +424,7 @@ public class ItemServiceImpl implements ItemService {
     @Override
     public ItemResponse findItemByBarcode(UUID businessId, String barcode) {
         businessHelper.findOwnedBusiness(businessId);
-        Item item = itemRepository.findByBusinessIdAndBarcode(businessId, barcode.trim())
-                .orElseThrow(() -> new ResponseStatusException(
-                        HttpStatus.NOT_FOUND, "Item not found with barcode: " + barcode));
-        return itemMapper.toResponse(item);
+        return catalogItemQueryCache.findItemByBarcode(businessId, barcode);
     }
 
     private Item findItem(UUID itemId, UUID businessId) {
@@ -799,6 +805,7 @@ public class ItemServiceImpl implements ItemService {
     public ItemResponse updateItemAddOnAvailability(
             UUID businessId, UUID itemId, UUID addOnId, boolean available) {
         businessHelper.findOwnedBusiness(businessId);
+        businessCacheEvictor.evictCatalogAndStorefront(businessId);
         Item item = findItem(itemId, businessId);
 
         ItemAddOn link = item.getAddOns().stream()

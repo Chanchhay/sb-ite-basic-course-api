@@ -9,6 +9,8 @@ server:
 spring:
   application:
     name: ite-sb-api
+  cache:
+    type: none
 
   scalar:
     url: http://localhost:8080/v3/api-docs

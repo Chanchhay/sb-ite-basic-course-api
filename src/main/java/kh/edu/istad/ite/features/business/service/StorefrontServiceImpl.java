@@ -1,5 +1,6 @@
 package kh.edu.istad.ite.features.business.service;
 
+import kh.edu.istad.ite.config.CacheNames;
 import kh.edu.istad.ite.config.props.StorefrontProps;
 import kh.edu.istad.ite.config.security.SecurityUtils;
 import kh.edu.istad.ite.features.business.dto.PublicFacebookPageResponse;
@@ -18,7 +19,9 @@ import kh.edu.istad.ite.features.catalog.repository.ItemRepository;
 import kh.edu.istad.ite.shared.enums.BusinessFeature;
 import kh.edu.istad.ite.shared.enums.BusinessOwnerStatus;
 import kh.edu.istad.ite.shared.helper.GeoDistanceHelper;
+import kh.edu.istad.ite.shared.cache.BusinessCacheEvictor;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
@@ -79,6 +82,7 @@ public class StorefrontServiceImpl implements StorefrontService {
     private final StockEntryService stockEntryService;
     private final ItemGroupService itemGroupService;
     private final BusinessFacebookPageRepository businessFacebookPageRepository;
+    private final BusinessCacheEvictor businessCacheEvictor;
 
     @Override
     @Transactional(readOnly = true)
@@ -90,6 +94,7 @@ public class StorefrontServiceImpl implements StorefrontService {
     @Transactional
     public StorefrontStatusResponse enableStorefront() {
         Business business = findMyBusiness();
+        businessCacheEvictor.evictStorefront(business.getId());
 
         // The platform can withhold the storefront entirely; the owner's own
         // checklist below only governs whether they are ready for it.
@@ -115,6 +120,7 @@ public class StorefrontServiceImpl implements StorefrontService {
     @Transactional
     public StorefrontStatusResponse disableStorefront() {
         Business business = findMyBusiness();
+        businessCacheEvictor.evictStorefront(business.getId());
         business.setIsListing(false);
         return toStatusResponse(businessRepository.save(business));
     }
@@ -123,6 +129,7 @@ public class StorefrontServiceImpl implements StorefrontService {
     @Transactional
     public StorefrontStatusResponse changeSlug(StorefrontSlugRequest request) {
         Business business = findMyBusiness();
+        businessCacheEvictor.evictStorefront(business.getId());
         String normalized = normalizeSlug(request.slug());
 
         String rejection = rejectionReason(normalized, business.getId());
@@ -225,6 +232,7 @@ public class StorefrontServiceImpl implements StorefrontService {
 
     @Override
     @Transactional(readOnly = true)
+    @Cacheable(cacheNames = CacheNames.PUBLIC_STORE_ITEMS, key = "T(kh.edu.istad.ite.config.CacheKeys).store(#p0)")
     public List<ItemResponse> getPublicStoreItems(String slugOrId) {
         Business business = resolvePublicBusiness(slugOrId);
 
@@ -330,6 +338,7 @@ public class StorefrontServiceImpl implements StorefrontService {
 
     @Override
     @Transactional(readOnly = true)
+    @Cacheable(cacheNames = CacheNames.PUBLIC_STORE_ITEM_GROUPS, key = "T(kh.edu.istad.ite.config.CacheKeys).store(#p0)")
     public List<ItemGroupResponse> getPublicStoreItemGroups(String slugOrId) {
         Business business = resolvePublicBusiness(slugOrId);
         return itemGroupService.findAllItemGroupsPublic(business.getId());
