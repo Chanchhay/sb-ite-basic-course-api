@@ -2,6 +2,7 @@ package kh.edu.istad.ite.features.notification.push;
 
 import kh.edu.istad.ite.config.props.PushProps;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
@@ -72,15 +73,20 @@ public class PushNotificationClient {
                 requestBody.put("tag", tag);
             }
 
-            restClient.post()
+            Map<String, Object> result = restClient.post()
                     .uri(props.getDashboardBaseUrl() + "/api/push/send")
                     .contentType(MediaType.APPLICATION_JSON)
                     .header("X-Push-Secret", props.getInternalSecret())
                     .body(requestBody)
                     .retrieve()
-                    .toBodilessEntity();
+                    .body(new ParameterizedTypeReference<Map<String, Object>>() {
+                    });
 
-            log.info("Push notification sent to owner {}: {}", keycloakUserId, title);
+            // The webhook itself always answers 200 — "no device is
+            // subscribed for this owner" is a legitimate outcome it reports
+            // in the body (sent: 0), not an HTTP error, so the only way to
+            // tell a real delivery from a silent no-op is to read it.
+            log.info("Push notification to owner {} ({}): {}", keycloakUserId, title, result);
         } catch (HttpStatusCodeException exception) {
             log.warn("Push notification to owner {} failed: {} -> {}",
                     keycloakUserId, exception.getStatusCode(), exception.getResponseBodyAsString());
