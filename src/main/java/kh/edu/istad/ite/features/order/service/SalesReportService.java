@@ -109,7 +109,10 @@ public class SalesReportService {
 
         BigDecimal takings = orZero(revenue);
         BigDecimal spent = orZero(cost);
-        BigDecimal profit = takings.subtract(spent);
+        BigDecimal gross = orZero(grossSales);
+        BigDecimal disc = orZero(discounts);
+        // Profit = Net Sale - COGS - Tax = (Gross + Tax - Disc) - COGS - Tax = Gross - Disc - COGS
+        BigDecimal profit = gross.subtract(disc).subtract(spent);
 
         return new SalesProfitResponse.ChannelProfit(
                 channel,
@@ -192,9 +195,17 @@ public class SalesReportService {
             BigDecimal revenue,
             BigDecimal cost) {
 
-        BigDecimal takings = orZero(revenue);
-        BigDecimal spent = orZero(cost);
-        BigDecimal profit = takings.subtract(spent);
+        BigDecimal cogs = orZero(cost);
+        BigDecimal taxAmount = orZero(tax);
+        BigDecimal discountAmount = orZero(discounts);
+        BigDecimal grossSalesAmount = orZero(grossSales);
+
+        BigDecimal takings = grossSalesAmount.add(taxAmount).subtract(discountAmount);
+
+
+        BigDecimal netSale = takings;
+
+        BigDecimal profit = netSale.subtract(cogs).subtract(taxAmount);
 
         return new PeriodProfitResponse.PeriodProfit(
                 periodStart,
@@ -204,7 +215,7 @@ public class SalesReportService {
                 money(discounts),
                 money(tax),
                 money(takings),
-                money(spent),
+                money(cogs),
                 money(profit),
                 // Nothing taken is no margin, not a margin of nothing.
                 takings.signum() == 0
