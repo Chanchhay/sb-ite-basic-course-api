@@ -154,139 +154,51 @@ pipeline {
                         ssh \
                             -o StrictHostKeyChecking=accept-new \
                             "$DEPLOY_HOST" \
-                            "DEPLOY_DIR='$DEPLOY_DIR' IMAGE='$IMAGE' bash -s" <<'REMOTE'
+                            "DEPLOY_DIR='$DEPLOY_DIR' GIT_SHA='$GIT_SHA' bash -s" <<'REMOTE'
 
 set -euo pipefail
 
 cd "$DEPLOY_DIR"
 
-compose() {
-    docker compose \
-        --env-file .env \
-        --env-file deploy.env \
-        "$@"
-}
+# compose.yml resolves the API image as ipos-api:${IMAGE_TAG:-latest}, so the
+# tag this build produced is handed over by writing IMAGE_TAG into .env. Any
+# other variable name silently leaves the previous tag in place and redeploys
+# the image that is already running.
+echo "Updating IMAGE_TAG=$GIT_SHA"
 
-echo "========================================"
-echo "Deploying iPOS API"
-echo "Image: $IMAGE"
-echo "========================================"
-
-echo
-echo "Checking required files..."
-
-if [ ! -f compose.yml ]; then
-    echo "ERROR: compose.yml not found"
-    exit 1
-fi
-
-if [ ! -f .env ]; then
-    echo "ERROR: .env not found"
-    exit 1
-fi
-
-if [ ! -f deploy.env ]; then
-    echo "Creating deploy.env"
-    touch deploy.env
-fi
-
-echo
-echo "Backing up deploy.env..."
-cp deploy.env deploy.env.bak
-
-echo
-echo "Updating IPOS_IMAGE..."
-
-if grep -q '^IPOS_IMAGE=' deploy.env; then
-    sed -i "s|^IPOS_IMAGE=.*|IPOS_IMAGE=$IMAGE|" deploy.env
+if grep -q '^IMAGE_TAG=' .env; then
+    sed -i "s|^IMAGE_TAG=.*|IMAGE_TAG=$GIT_SHA|" .env
 else
-    echo "IPOS_IMAGE=$IMAGE" >> deploy.env
+    echo "IMAGE_TAG=$GIT_SHA" >> .env
 fi
-
-echo
-echo "Validating Docker Compose..."
-
-if ! compose config >/dev/null; then
-    echo "ERROR: Docker Compose validation failed"
-    mv deploy.env.bak deploy.env
-    exit 1
-fi
-
-echo "Docker Compose configuration valid."
 
 echo
 echo "Resolved API image:"
-compose config \
-    | grep 'image:' \
-    | grep 'ipos-api' \
-    || true
+docker compose config | grep 'ipos-api:' || true
 
 echo
-echo "Pulling API image..."
-compose pull api
+echo "Pulling new API image..."
+docker compose pull api
+
+# The API is recreated with --no-deps so a deploy never restarts the database,
+# which means its dependencies have to be up already. Redis is started here
+# because --no-deps also skips the depends_on that would otherwise start it.
+echo
+echo "Ensuring Redis is up..."
+docker compose up -d redis
 
 echo
 echo "Deploying API..."
-compose up -d --no-deps api
-
-echo
-echo "Waiting for container..."
-sleep 5
-
-API_CONTAINER="$(compose ps -q api)"
-
-if [ -z "$API_CONTAINER" ]; then
-    echo "ERROR: API container not found"
-    mv deploy.env.bak deploy.env
-    exit 1
-fi
+docker compose up -d --no-deps api
 
 echo
 echo "Container status:"
-compose ps
+docker compose ps
 
 echo
 echo "Running image:"
-docker inspect "$API_CONTAINER" \
+docker inspect "$(docker compose ps -q api)" \
     --format '{{.Config.Image}}'
-
-echo
-echo "Container state:"
-docker inspect "$API_CONTAINER" \
-    --format 'Status={{.State.Status}} Running={{.State.Running}} Restarting={{.State.Restarting}}'
-
-RUNNING="$(docker inspect "$API_CONTAINER" \
-    --format '{{.State.Running}}')"
-
-RESTARTING="$(docker inspect "$API_CONTAINER" \
-    --format '{{.State.Restarting}}')"
-
-if [ "$RUNNING" != "true" ] || [ "$RESTARTING" = "true" ]; then
-    echo
-    echo "ERROR: API container failed to start correctly"
-
-    echo
-    echo "Recent API logs:"
-    docker logs --tail=100 "$API_CONTAINER" || true
-
-    echo
-    echo "Restoring previous deployment configuration..."
-    mv deploy.env.bak deploy.env
-
-    echo
-    echo "Restoring previous API..."
-    compose pull api || true
-    compose up -d --no-deps api || true
-
-    exit 1
-fi
-
-rm -f deploy.env.bak
-
-echo
-echo "========================================"
-echo "Deployment successful"
-echo "========================================"
 
 REMOTE
                     '''
