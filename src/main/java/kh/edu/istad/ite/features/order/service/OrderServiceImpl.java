@@ -79,6 +79,7 @@ import kh.edu.istad.ite.features.payment.khqr.KhqrGenerator;
 import kh.edu.istad.ite.features.payment.khqr.QrImageRenderer;
 import kh.edu.istad.ite.features.payment.repository.BusinessPaymentSettingRepository;
 import kh.edu.istad.ite.features.payment.repository.PaymentQrCodeRepository;
+import kh.edu.istad.ite.features.payment.repository.ReceiptRepository;
 import kh.edu.istad.ite.features.payment.service.ReceiptService;
 import kh.edu.istad.ite.features.register.entity.RegisterSession;
 import kh.edu.istad.ite.shared.dto.PageResponse;
@@ -132,6 +133,7 @@ public class OrderServiceImpl implements OrderService {
 
     private final ItemChannelStockService itemChannelStockService;
     private final ReceiptService receiptService;
+    private final ReceiptRepository receiptRepository;
     private final FilterSpecification<Order> filterSpecification;
     private final kh.edu.istad.ite.features.register.repository.RegisterSessionRepository registerSessionRepository;
     private final TelegramAlertService telegramAlertService;
@@ -744,6 +746,30 @@ public class OrderServiceImpl implements OrderService {
         return orderMapper.toResponse(orderRepository.save(order));
     }
 
+    @Override
+    @Transactional
+    public void deleteOrder(UUID businessId, UUID orderId) {
+        businessHelper.findAccessibleBusiness(businessId);
+        Order order = findOrder(businessId, orderId);
+
+        // Delete associated payment QR codes if any
+        List<PaymentQrCode> qrCodes = paymentQrCodeRepository.findByOrderIdOrderByCreatedAtDesc(order.getId());
+        if (qrCodes != null && !qrCodes.isEmpty()) {
+            paymentQrCodeRepository.deleteAll(qrCodes);
+        }
+
+        // Delete associated receipt if any
+        receiptRepository.findByOrder_IdAndBusiness_Id(order.getId(), businessId)
+                .ifPresent(receiptRepository::delete);
+
+        // Delete associated sale if any
+        saleRepository.findByOrderId(order.getId())
+                .ifPresent(saleRepository::delete);
+
+        // Delete the order itself (items cascade deleted via orphanRemoval)
+        orderRepository.delete(order);
+    }
+
     /** The channel an order came through, as the sales channel knows it. */
     private static String channelCodeOf(Order order) {
         return order.getChannel() == null ? null : order.getChannel().name();
@@ -871,6 +897,13 @@ public class OrderServiceImpl implements OrderService {
      */
     private static boolean sameLine(
             OrderItem line, UUID itemId, UUID variantId, UUID unitId, List<UUID> addOnIds) {
+        // A permanently-deleted item detaches its old lines (item goes null)
+        // rather than losing the receipt; such a line can no longer be "the
+        // same" as a catalog item someone is adding right now.
+        if (line.getItem() == null) {
+            return false;
+        }
+
         boolean sameItem = line.getItem().getId().equals(itemId);
         boolean sameVariant = line.getVariant() == null
                 ? variantId == null
@@ -1622,13 +1655,20 @@ public class OrderServiceImpl implements OrderService {
         for (OrderItem item : order.getItems()) {
             BigDecimal unitPrice = item.priceWithAddOns();
             int quantity = item.getQuantity() == null ? 0 : item.getQuantity();
-            UUID itemId = item.getItem().getId();
-            UUID itemGroupId = item.getItem().getItemGroup() != null ? item.getItem().getItemGroup().getId() : null;
 
-            BigDecimal amount = discountApplicationService.resolveLineDiscount(
-                            businessId, channel, itemId, itemGroupId, unitPrice, quantity, grossOrderSubtotal)
-                    .map(LineDiscountApplication::amount)
-                    .orElse(BigDecimal.ZERO);
+            // A permanently-deleted item detaches its old lines rather than
+            // losing the receipt — such a line no longer names a catalog item
+            // a discount could be resolved against, so it takes none.
+            BigDecimal amount = BigDecimal.ZERO;
+            if (item.getItem() != null) {
+                UUID itemId = item.getItem().getId();
+                UUID itemGroupId = item.getItem().getItemGroup() != null ? item.getItem().getItemGroup().getId() : null;
+
+                amount = discountApplicationService.resolveLineDiscount(
+                                businessId, channel, itemId, itemGroupId, unitPrice, quantity, grossOrderSubtotal)
+                        .map(LineDiscountApplication::amount)
+                        .orElse(BigDecimal.ZERO);
+            }
 
             item.setDiscountAmount(amount);
             item.setLineTotal(unitPrice.multiply(BigDecimal.valueOf(quantity)).subtract(amount));

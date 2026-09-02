@@ -14,7 +14,7 @@ public interface StockLayerRepository extends JpaRepository<StockLayer, UUID> {
 
     /** The FIFO batches an item was received in, cleared when the item is deleted. */
     @Modifying
-    @Query("delete from StockLayer l where l.item.id = :itemId")
+    @Query("delete from StockLayer l where (l.item is not null and l.item.id = :itemId) or (l.sourceEntry is not null and l.sourceEntry.item.id = :itemId)")
     void deleteByItemId(@Param("itemId") UUID itemId);
 
     /**
