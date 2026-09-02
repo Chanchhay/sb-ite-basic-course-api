@@ -4,6 +4,7 @@ import kh.edu.istad.ite.shared.enums.ItemStatus;
 import kh.edu.istad.ite.shared.enums.ItemType;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -63,6 +64,8 @@ public record ItemResponse(
          * Only the storefront fills this in; every other reader leaves it null,
          * which means "not asked" rather than "none left".
          */
-        BigDecimal availableQuantity
+        BigDecimal availableQuantity,
+        Boolean isDeleted,
+        LocalDateTime deletedAt
 ) {
 }

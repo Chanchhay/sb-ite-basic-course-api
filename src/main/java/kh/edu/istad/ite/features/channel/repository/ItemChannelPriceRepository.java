@@ -34,4 +34,6 @@ public interface ItemChannelPriceRepository extends JpaRepository<ItemChannelPri
             @Param("itemId") UUID itemId,
             @Param("variantId") UUID variantId,
             @Param("unitId") UUID unitId);
+
+    List<ItemChannelPrice> findByItemId(UUID itemId);
 }

@@ -23,6 +23,14 @@ public class ItemSpecifications {
         return (root, query, cb) -> cb.equal(root.get("status"), status);
     }
 
+    public static Specification<Item> isNotDeleted() {
+        return (root, query, cb) -> cb.or(cb.isNull(root.get("isDeleted")), cb.isFalse(root.get("isDeleted")));
+    }
+
+    public static Specification<Item> isDeleted() {
+        return (root, query, cb) -> cb.isTrue(root.get("isDeleted"));
+    }
+
     public static Specification<Item> hasItemGroupId(UUID itemGroupId) {
         return (root, query, cb) -> itemGroupId == null ? cb.conjunction() : cb.equal(root.get("itemGroup").get("id"), itemGroupId);
     }

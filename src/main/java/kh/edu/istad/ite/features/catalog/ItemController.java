@@ -191,6 +191,24 @@ public class ItemController {
     }
 
     @ResponseStatus(HttpStatus.OK)
+    @PatchMapping("/{itemId}/restore")
+    public ItemResponse restoreItem(
+            @PathVariable UUID businessId,
+            @PathVariable UUID itemId
+    ) {
+        return itemService.restoreItem(businessId, itemId);
+    }
+
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @DeleteMapping("/{itemId}/permanent")
+    public void hardDeleteItem(
+            @PathVariable UUID businessId,
+            @PathVariable UUID itemId
+    ) {
+        itemService.hardDeleteItem(businessId, itemId);
+    }
+
+    @ResponseStatus(HttpStatus.OK)
     @GetMapping("/barcode/{barcode}")
     public ItemResponse findItemByBarcode(
             @PathVariable UUID businessId,

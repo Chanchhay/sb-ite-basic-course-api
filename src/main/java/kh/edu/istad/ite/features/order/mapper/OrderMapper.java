@@ -144,7 +144,7 @@ public class OrderMapper {
 
         return new OrderItemResponse(
                 item.getId(),
-                item.getItem().getId(),
+                item.getItem() == null ? null : item.getItem().getId(),
                 item.getVariant() == null ? null : item.getVariant().getId(),
                 item.getVariant() == null ? null : item.getVariant().getVariantName(),
                 item.getItemName(),

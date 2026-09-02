@@ -103,6 +103,15 @@ public class OrderController {
         return orderService.cancelOrder(businessId, orderId);
     }
 
+    @DeleteMapping("/{orderId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void deleteOrder(
+            @PathVariable UUID businessId,
+            @PathVariable UUID orderId
+    ) {
+        orderService.deleteOrder(businessId, orderId);
+    }
+
     @PatchMapping("/{orderId}/confirm")
     public OrderResponse confirmOrder(
             @PathVariable UUID businessId,

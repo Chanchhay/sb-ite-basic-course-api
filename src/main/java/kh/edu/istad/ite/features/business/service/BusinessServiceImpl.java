@@ -16,6 +16,7 @@ import kh.edu.istad.ite.shared.helper.AuthHelper;
 import kh.edu.istad.ite.shared.helper.BusinessHelper;
 import kh.edu.istad.ite.shared.helper.SlugHelper;
 import kh.edu.istad.ite.shared.helper.TextHelper;
+import kh.edu.istad.ite.shared.cache.BusinessCacheEvictor;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -42,6 +43,7 @@ public class BusinessServiceImpl implements BusinessService {
     private final BusinessMapper businessMapper;
     private final BusinessHelper businessHelper;
     private final MinioService minioService;
+    private final BusinessCacheEvictor businessCacheEvictor;
 
     @Override
     @Transactional
@@ -92,6 +94,8 @@ public class BusinessServiceImpl implements BusinessService {
     @Transactional
     public BusinessResponse updateBusiness(UUID businessId, UpdateBusinessRequest request) {
         Business business = businessHelper.findOwnedBusinessOrNotFound(businessId);
+        businessCacheEvictor.evictStorefront(businessId);
+        businessCacheEvictor.evictStoreDirectory();
 
         if (StringUtils.hasText(request.name())) {
             String trimmedName = request.name().trim();
@@ -179,6 +183,8 @@ public class BusinessServiceImpl implements BusinessService {
     @Transactional
     public BusinessResponse uploadLogo(UUID businessId, MultipartFile file) {
         Business business = businessHelper.findOwnedBusinessOrNotFound(businessId);
+        businessCacheEvictor.evictStorefront(businessId);
+        businessCacheEvictor.evictStoreDirectory();
         validateImage(file);
 
         String oldKey = business.getLogo();
@@ -195,6 +201,8 @@ public class BusinessServiceImpl implements BusinessService {
     @Transactional
     public BusinessResponse deleteLogo(UUID businessId) {
         Business business = businessHelper.findOwnedBusinessOrNotFound(businessId);
+        businessCacheEvictor.evictStorefront(businessId);
+        businessCacheEvictor.evictStoreDirectory();
         String oldKey = business.getLogo();
         business.setLogo(null);
         Business saved = businessRepository.save(business);
@@ -209,6 +217,8 @@ public class BusinessServiceImpl implements BusinessService {
     @Transactional
     public BusinessResponse uploadThumbnail(UUID businessId, MultipartFile file) {
         Business business = businessHelper.findOwnedBusinessOrNotFound(businessId);
+        businessCacheEvictor.evictStorefront(businessId);
+        businessCacheEvictor.evictStoreDirectory();
         validateImage(file);
 
         String oldKey = business.getThumbnail();
@@ -225,6 +235,8 @@ public class BusinessServiceImpl implements BusinessService {
     @Transactional
     public BusinessResponse deleteThumbnail(UUID businessId) {
         Business business = businessHelper.findOwnedBusinessOrNotFound(businessId);
+        businessCacheEvictor.evictStorefront(businessId);
+        businessCacheEvictor.evictStoreDirectory();
         String oldKey = business.getThumbnail();
         business.setThumbnail(null);
         Business saved = businessRepository.save(business);
@@ -249,6 +261,8 @@ public class BusinessServiceImpl implements BusinessService {
     @Transactional
     public BusinessResponse deleteBusiness(UUID businessId) {
         Business business = businessHelper.findOwnedBusinessOrNotFound(businessId);
+        businessCacheEvictor.evictStorefront(businessId);
+        businessCacheEvictor.evictStoreDirectory();
         business.setStatus(BusinessOwnerStatus.DELETED);
         business.setIsEnabled(false);
         business.setIsListing(false);
