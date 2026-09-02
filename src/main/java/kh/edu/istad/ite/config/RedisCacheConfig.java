@@ -1,6 +1,8 @@
 package kh.edu.istad.ite.config;
 
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.cache.Cache;
+import org.springframework.cache.interceptor.CacheErrorHandler;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.redis.cache.RedisCacheConfiguration;
@@ -54,7 +56,38 @@ public class RedisCacheConfig {
 
     private GenericJacksonJsonRedisSerializer redisValueSerializer() {
         return GenericJacksonJsonRedisSerializer.create(builder ->
-                builder.enableDefaultTyping(cacheTypeValidator()));
+                builder
+                        .typePropertyName("@class")
+                        .enableDefaultTyping(cacheTypeValidator()));
+    }
+
+    @Bean
+    CacheErrorHandler cacheErrorHandler() {
+        return new CacheErrorHandler() {
+            @Override
+            public void handleCacheGetError(RuntimeException exception, Cache cache, Object key) {
+                try {
+                    cache.evict(key);
+                } catch (RuntimeException ignored) {
+                    // The request can still continue from the database.
+                }
+            }
+
+            @Override
+            public void handleCachePutError(RuntimeException exception, Cache cache, Object key, Object value) {
+                // Do not fail API requests because Redis cannot store a cache value.
+            }
+
+            @Override
+            public void handleCacheEvictError(RuntimeException exception, Cache cache, Object key) {
+                // TTLs are short for volatile cache entries; stale values age out.
+            }
+
+            @Override
+            public void handleCacheClearError(RuntimeException exception, Cache cache) {
+                // Keep the write operation successful even if Redis is temporarily unavailable.
+            }
+        };
     }
 
     private PolymorphicTypeValidator cacheTypeValidator() {
