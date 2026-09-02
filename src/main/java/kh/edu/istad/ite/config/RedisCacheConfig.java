@@ -31,13 +31,24 @@ public class RedisCacheConfig implements CachingConfigurer {
         return RedisCacheManager
                 .builder(connectionFactory)
                 .cacheDefaults(defaults)
-                .withInitialCacheConfigurations(Map.of(
-                        CacheNames.CATALOG_ITEMS, cacheConfiguration(Duration.ofMinutes(2)),
-                        CacheNames.CATALOG_ITEM_BY_ID, cacheConfiguration(Duration.ofMinutes(5)),
-                        CacheNames.CATALOG_ITEM_BY_BARCODE, cacheConfiguration(Duration.ofMinutes(5)),
-                        CacheNames.CATALOG_ITEM_GROUPS, cacheConfiguration(Duration.ofMinutes(10)),
-                        CacheNames.PUBLIC_STORE_ITEMS, cacheConfiguration(Duration.ofSeconds(30)),
-                        CacheNames.PUBLIC_STORE_ITEM_GROUPS, cacheConfiguration(Duration.ofMinutes(5))
+                .withInitialCacheConfigurations(Map.ofEntries(
+                        Map.entry(CacheNames.CATALOG_ITEMS, cacheConfiguration(Duration.ofMinutes(2))),
+                        Map.entry(CacheNames.CATALOG_ITEM_BY_ID, cacheConfiguration(Duration.ofMinutes(5))),
+                        Map.entry(CacheNames.CATALOG_ITEM_BY_BARCODE, cacheConfiguration(Duration.ofMinutes(5))),
+                        Map.entry(CacheNames.CATALOG_ITEM_GROUPS, cacheConfiguration(Duration.ofMinutes(10))),
+                        Map.entry(CacheNames.PUBLIC_STORE_ITEMS, cacheConfiguration(Duration.ofSeconds(30))),
+                        Map.entry(CacheNames.PUBLIC_STORE_ITEM_GROUPS, cacheConfiguration(Duration.ofMinutes(5))),
+                        Map.entry(CacheNames.PUBLIC_STORE_DETAIL, cacheConfiguration(Duration.ofMinutes(5))),
+                        Map.entry(CacheNames.PUBLIC_STORE_FACEBOOK, cacheConfiguration(Duration.ofMinutes(5))),
+
+                        // The directory caches are not evicted by a shop editing
+                        // itself, only by one appearing, leaving or moving, so their
+                        // TTL is the backstop for everything else that could make a
+                        // listing stale. A minute is short enough that nobody notices
+                        // and long enough to absorb a shopper paging through results.
+                        Map.entry(CacheNames.PUBLIC_STORE_LIST, cacheConfiguration(Duration.ofMinutes(1))),
+                        Map.entry(CacheNames.PUBLIC_STORE_RECOMMENDED, cacheConfiguration(Duration.ofMinutes(1))),
+                        Map.entry(CacheNames.PUBLIC_STORE_PROVINCES, cacheConfiguration(Duration.ofHours(1)))
                 ))
                 .transactionAware()
                 .build();

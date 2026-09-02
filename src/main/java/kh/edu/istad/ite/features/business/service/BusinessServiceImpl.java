@@ -95,6 +95,7 @@ public class BusinessServiceImpl implements BusinessService {
     public BusinessResponse updateBusiness(UUID businessId, UpdateBusinessRequest request) {
         Business business = businessHelper.findOwnedBusinessOrNotFound(businessId);
         businessCacheEvictor.evictStorefront(businessId);
+        businessCacheEvictor.evictStoreDirectory();
 
         if (StringUtils.hasText(request.name())) {
             String trimmedName = request.name().trim();
@@ -183,6 +184,7 @@ public class BusinessServiceImpl implements BusinessService {
     public BusinessResponse uploadLogo(UUID businessId, MultipartFile file) {
         Business business = businessHelper.findOwnedBusinessOrNotFound(businessId);
         businessCacheEvictor.evictStorefront(businessId);
+        businessCacheEvictor.evictStoreDirectory();
         validateImage(file);
 
         String oldKey = business.getLogo();
@@ -200,6 +202,7 @@ public class BusinessServiceImpl implements BusinessService {
     public BusinessResponse deleteLogo(UUID businessId) {
         Business business = businessHelper.findOwnedBusinessOrNotFound(businessId);
         businessCacheEvictor.evictStorefront(businessId);
+        businessCacheEvictor.evictStoreDirectory();
         String oldKey = business.getLogo();
         business.setLogo(null);
         Business saved = businessRepository.save(business);
@@ -215,6 +218,7 @@ public class BusinessServiceImpl implements BusinessService {
     public BusinessResponse uploadThumbnail(UUID businessId, MultipartFile file) {
         Business business = businessHelper.findOwnedBusinessOrNotFound(businessId);
         businessCacheEvictor.evictStorefront(businessId);
+        businessCacheEvictor.evictStoreDirectory();
         validateImage(file);
 
         String oldKey = business.getThumbnail();
@@ -232,6 +236,7 @@ public class BusinessServiceImpl implements BusinessService {
     public BusinessResponse deleteThumbnail(UUID businessId) {
         Business business = businessHelper.findOwnedBusinessOrNotFound(businessId);
         businessCacheEvictor.evictStorefront(businessId);
+        businessCacheEvictor.evictStoreDirectory();
         String oldKey = business.getThumbnail();
         business.setThumbnail(null);
         Business saved = businessRepository.save(business);
@@ -257,6 +262,7 @@ public class BusinessServiceImpl implements BusinessService {
     public BusinessResponse deleteBusiness(UUID businessId) {
         Business business = businessHelper.findOwnedBusinessOrNotFound(businessId);
         businessCacheEvictor.evictStorefront(businessId);
+        businessCacheEvictor.evictStoreDirectory();
         business.setStatus(BusinessOwnerStatus.DELETED);
         business.setIsEnabled(false);
         business.setIsListing(false);

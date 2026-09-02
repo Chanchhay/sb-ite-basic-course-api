@@ -66,6 +66,7 @@ public class AdminBusinessServiceImpl implements AdminBusinessService {
     @Transactional
     public BusinessResponse activate(UUID businessId) {
         businessCacheEvictor.evictStorefront(businessId);
+        businessCacheEvictor.evictStoreDirectory();
         Business business = findBusiness(businessId);
         String previousState = statusName(business);
 
@@ -83,6 +84,7 @@ public class AdminBusinessServiceImpl implements AdminBusinessService {
     @Transactional
     public BusinessResponse suspend(UUID businessId, BusinessStatusActionRequest request) {
         businessCacheEvictor.evictStorefront(businessId);
+        businessCacheEvictor.evictStoreDirectory();
         Business business = findBusiness(businessId);
         String previousState = statusName(business);
 
@@ -100,6 +102,7 @@ public class AdminBusinessServiceImpl implements AdminBusinessService {
     @Transactional
     public BusinessResponse enable(UUID businessId) {
         businessCacheEvictor.evictStorefront(businessId);
+        businessCacheEvictor.evictStoreDirectory();
         Business business = findBusiness(businessId);
         String previousState = enabledState(business);
 
@@ -116,6 +119,7 @@ public class AdminBusinessServiceImpl implements AdminBusinessService {
     @Transactional
     public BusinessResponse disable(UUID businessId, BusinessStatusActionRequest request) {
         businessCacheEvictor.evictStorefront(businessId);
+        businessCacheEvictor.evictStoreDirectory();
         Business business = findBusiness(businessId);
         String previousState = enabledState(business);
 
@@ -132,6 +136,7 @@ public class AdminBusinessServiceImpl implements AdminBusinessService {
     @Transactional
     public BusinessResponse close(UUID businessId, BusinessStatusActionRequest request) {
         businessCacheEvictor.evictStorefront(businessId);
+        businessCacheEvictor.evictStoreDirectory();
         Business business = findBusiness(businessId);
         String previousState = closedState(business);
 
@@ -149,6 +154,7 @@ public class AdminBusinessServiceImpl implements AdminBusinessService {
     @Transactional
     public BusinessResponse reopen(UUID businessId) {
         businessCacheEvictor.evictStorefront(businessId);
+        businessCacheEvictor.evictStoreDirectory();
         Business business = findBusiness(businessId);
         String previousState = closedState(business);
 
@@ -165,6 +171,7 @@ public class AdminBusinessServiceImpl implements AdminBusinessService {
     @Transactional
     public BusinessResponse delete(UUID businessId) {
         businessCacheEvictor.evictStorefront(businessId);
+        businessCacheEvictor.evictStoreDirectory();
         Business business = findBusiness(businessId);
         String previousState = statusName(business);
 

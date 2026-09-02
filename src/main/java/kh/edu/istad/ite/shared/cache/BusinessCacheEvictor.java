@@ -49,7 +49,27 @@ public class BusinessCacheEvictor {
 
     private static final String[] STOREFRONT_CACHES = {
             CacheNames.PUBLIC_STORE_ITEMS,
-            CacheNames.PUBLIC_STORE_ITEM_GROUPS
+            CacheNames.PUBLIC_STORE_ITEM_GROUPS,
+            CacheNames.PUBLIC_STORE_FACEBOOK
+    };
+
+    /**
+     * Keyed by the shop plus the place it is being viewed from, so one shop owns a
+     * family of keys rather than a single one.
+     */
+    private static final String[] STOREFRONT_PREFIXED_CACHES = {
+            CacheNames.PUBLIC_STORE_DETAIL
+    };
+
+    /**
+     * Every entry here spans all shops, so there is nothing per-business to delete —
+     * these are cleared whole, and only by the handful of writes that change which
+     * shops the marketplace should list.
+     */
+    private static final String[] DIRECTORY_CACHES = {
+            CacheNames.PUBLIC_STORE_LIST,
+            CacheNames.PUBLIC_STORE_RECOMMENDED,
+            CacheNames.PUBLIC_STORE_PROVINCES
     };
 
     /**
@@ -75,6 +95,24 @@ public class BusinessCacheEvictor {
         evict(businessId, true);
     }
 
+    /**
+     * Invalidates the marketplace listings — who is listed, where they are, which
+     * provinces have shops. For writes that change a business's presence in the
+     * directory rather than its menu: publishing or hiding a storefront, renaming
+     * it, moving it, or an admin suspending it.
+     * <p>
+     * These entries belong to no single business, so this clears them for everyone.
+     * That is the honest cost of a listing that spans all shops, and it is why the
+     * far more frequent menu and stock writes deliberately do not call this.
+     */
+    public void evictStoreDirectory() {
+        afterCommit(() -> {
+            for (String cacheName : DIRECTORY_CACHES) {
+                deleteByPrefix(CacheNames.keyPrefix(cacheName));
+            }
+        });
+    }
+
     private void evict(UUID businessId, boolean includeCatalog) {
         if (businessId == null) {
             return;
@@ -94,6 +132,13 @@ public class BusinessCacheEvictor {
                 deleteKey(CacheNames.keyPrefix(cacheName) + normalized(businessId.toString()));
                 if (slug != null) {
                     deleteKey(CacheNames.keyPrefix(cacheName) + normalized(slug));
+                }
+            }
+
+            for (String cacheName : STOREFRONT_PREFIXED_CACHES) {
+                deleteByPrefix(CacheNames.keyPrefix(cacheName) + normalized(businessId.toString()) + ":");
+                if (slug != null) {
+                    deleteByPrefix(CacheNames.keyPrefix(cacheName) + normalized(slug) + ":");
                 }
             }
 

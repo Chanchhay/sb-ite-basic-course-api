@@ -14,6 +14,18 @@ public final class CacheNames {
     public static final String CATALOG_ITEM_GROUPS = "catalog:item-groups";
     public static final String PUBLIC_STORE_ITEMS = "public:store-items";
     public static final String PUBLIC_STORE_ITEM_GROUPS = "public:store-item-groups";
+    public static final String PUBLIC_STORE_DETAIL = "public:store-detail";
+    public static final String PUBLIC_STORE_FACEBOOK = "public:store-facebook";
+
+    /**
+     * The marketplace side of the storefront: which shops exist and where. Unlike
+     * the caches above, an entry here spans every business rather than belonging
+     * to one, so it is invalidated by a shop appearing, disappearing or moving —
+     * never by a shop editing its own menu.
+     */
+    public static final String PUBLIC_STORE_LIST = "public:store-list";
+    public static final String PUBLIC_STORE_RECOMMENDED = "public:store-recommended";
+    public static final String PUBLIC_STORE_PROVINCES = "public:store-provinces";
 
     /**
      * The Redis key prefix a cache stores its entries under. Shared by the cache
