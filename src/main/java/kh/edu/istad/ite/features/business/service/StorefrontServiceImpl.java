@@ -1,5 +1,6 @@
 package kh.edu.istad.ite.features.business.service;
 
+import kh.edu.istad.ite.config.CacheNames;
 import kh.edu.istad.ite.config.props.StorefrontProps;
 import kh.edu.istad.ite.config.security.SecurityUtils;
 import kh.edu.istad.ite.features.business.dto.PublicFacebookPageResponse;
@@ -19,6 +20,9 @@ import kh.edu.istad.ite.shared.enums.BusinessFeature;
 import kh.edu.istad.ite.shared.enums.BusinessOwnerStatus;
 import kh.edu.istad.ite.shared.helper.GeoDistanceHelper;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.cache.annotation.Caching;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
@@ -88,6 +92,10 @@ public class StorefrontServiceImpl implements StorefrontService {
 
     @Override
     @Transactional
+    @Caching(evict = {
+            @CacheEvict(cacheNames = CacheNames.PUBLIC_STORE_ITEMS, allEntries = true),
+            @CacheEvict(cacheNames = CacheNames.PUBLIC_STORE_ITEM_GROUPS, allEntries = true)
+    })
     public StorefrontStatusResponse enableStorefront() {
         Business business = findMyBusiness();
 
@@ -113,6 +121,10 @@ public class StorefrontServiceImpl implements StorefrontService {
 
     @Override
     @Transactional
+    @Caching(evict = {
+            @CacheEvict(cacheNames = CacheNames.PUBLIC_STORE_ITEMS, allEntries = true),
+            @CacheEvict(cacheNames = CacheNames.PUBLIC_STORE_ITEM_GROUPS, allEntries = true)
+    })
     public StorefrontStatusResponse disableStorefront() {
         Business business = findMyBusiness();
         business.setIsListing(false);
@@ -121,6 +133,10 @@ public class StorefrontServiceImpl implements StorefrontService {
 
     @Override
     @Transactional
+    @Caching(evict = {
+            @CacheEvict(cacheNames = CacheNames.PUBLIC_STORE_ITEMS, allEntries = true),
+            @CacheEvict(cacheNames = CacheNames.PUBLIC_STORE_ITEM_GROUPS, allEntries = true)
+    })
     public StorefrontStatusResponse changeSlug(StorefrontSlugRequest request) {
         Business business = findMyBusiness();
         String normalized = normalizeSlug(request.slug());
@@ -225,6 +241,7 @@ public class StorefrontServiceImpl implements StorefrontService {
 
     @Override
     @Transactional(readOnly = true)
+    @Cacheable(cacheNames = CacheNames.PUBLIC_STORE_ITEMS, key = "T(kh.edu.istad.ite.config.CacheKeys).store(#p0)")
     public List<ItemResponse> getPublicStoreItems(String slugOrId) {
         Business business = resolvePublicBusiness(slugOrId);
 
@@ -330,6 +347,7 @@ public class StorefrontServiceImpl implements StorefrontService {
 
     @Override
     @Transactional(readOnly = true)
+    @Cacheable(cacheNames = CacheNames.PUBLIC_STORE_ITEM_GROUPS, key = "T(kh.edu.istad.ite.config.CacheKeys).store(#p0)")
     public List<ItemGroupResponse> getPublicStoreItemGroups(String slugOrId) {
         Business business = resolvePublicBusiness(slugOrId);
         return itemGroupService.findAllItemGroupsPublic(business.getId());

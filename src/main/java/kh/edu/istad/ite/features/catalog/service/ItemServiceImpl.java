@@ -1,5 +1,6 @@
 package kh.edu.istad.ite.features.catalog.service;
 
+import kh.edu.istad.ite.config.CacheNames;
 import kh.edu.istad.ite.features.business.entity.Business;
 import kh.edu.istad.ite.features.catalog.dto.CreateItemRequest;
 import kh.edu.istad.ite.features.catalog.dto.ItemResponse;
@@ -48,6 +49,8 @@ import kh.edu.istad.ite.shared.enums.AttributePlacement;
 import kh.edu.istad.ite.shared.enums.AttributeType;
 import kh.edu.istad.ite.shared.enums.DescriptionBlockType;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Caching;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -96,9 +99,16 @@ public class ItemServiceImpl implements ItemService {
     private final StockEntryRepository stockEntryRepository;
     private final StockLayerRepository stockLayerRepository;
     private final StockConsumptionRepository stockConsumptionRepository;
+    private final CatalogItemQueryCache catalogItemQueryCache;
 
     @Override
     @Transactional
+    @Caching(evict = {
+            @CacheEvict(cacheNames = CacheNames.CATALOG_ITEMS, allEntries = true),
+            @CacheEvict(cacheNames = CacheNames.CATALOG_ITEM_BY_ID, allEntries = true),
+            @CacheEvict(cacheNames = CacheNames.CATALOG_ITEM_BY_BARCODE, allEntries = true),
+            @CacheEvict(cacheNames = CacheNames.PUBLIC_STORE_ITEMS, allEntries = true)
+    })
     public ItemResponse createItem(UUID businessId, CreateItemRequest request, List<MultipartFile> files) {
         Business business = businessHelper.findOwnedBusiness(businessId);
 
@@ -156,19 +166,24 @@ public class ItemServiceImpl implements ItemService {
     @Transactional(readOnly = true)
     public PageResponse<ItemResponse> findAllItems(UUID businessId, Pageable pageable) {
         businessHelper.findOwnedBusiness(businessId);
-        Page<Item> items = itemRepository.findAllByBusinessId(businessId, pageable);
-        return PageResponse.from(items.map(itemMapper::toResponse));
+        return catalogItemQueryCache.findAllItems(businessId, pageable);
     }
 
     @Override
     @Transactional(readOnly = true)
     public ItemResponse findItemById(UUID businessId, UUID itemId) {
         businessHelper.findOwnedBusiness(businessId);
-        return itemMapper.toResponse(findItem(itemId, businessId));
+        return catalogItemQueryCache.findItemById(businessId, itemId);
     }
 
     @Override
     @Transactional
+    @Caching(evict = {
+            @CacheEvict(cacheNames = CacheNames.CATALOG_ITEMS, allEntries = true),
+            @CacheEvict(cacheNames = CacheNames.CATALOG_ITEM_BY_ID, allEntries = true),
+            @CacheEvict(cacheNames = CacheNames.CATALOG_ITEM_BY_BARCODE, allEntries = true),
+            @CacheEvict(cacheNames = CacheNames.PUBLIC_STORE_ITEMS, allEntries = true)
+    })
     public ItemResponse updateItem(UUID businessId, UUID itemId, UpdateItemRequest request, List<MultipartFile> files) {
         businessHelper.findOwnedBusiness(businessId);
         Item item = findItem(itemId, businessId);
@@ -277,6 +292,11 @@ public class ItemServiceImpl implements ItemService {
 
     @Override
     @Transactional
+    @Caching(evict = {
+            @CacheEvict(cacheNames = CacheNames.CATALOG_ITEMS, allEntries = true),
+            @CacheEvict(cacheNames = CacheNames.CATALOG_ITEM_BY_ID, allEntries = true),
+            @CacheEvict(cacheNames = CacheNames.PUBLIC_STORE_ITEMS, allEntries = true)
+    })
     public ItemResponse updateItemAddOns(UUID businessId, UUID itemId, List<UUID> addOnIds) {
         businessHelper.findOwnedBusiness(businessId);
         Item item = findItem(itemId, businessId);
@@ -292,6 +312,12 @@ public class ItemServiceImpl implements ItemService {
 
     @Override
     @Transactional
+    @Caching(evict = {
+            @CacheEvict(cacheNames = CacheNames.CATALOG_ITEMS, allEntries = true),
+            @CacheEvict(cacheNames = CacheNames.CATALOG_ITEM_BY_ID, allEntries = true),
+            @CacheEvict(cacheNames = CacheNames.CATALOG_ITEM_BY_BARCODE, allEntries = true),
+            @CacheEvict(cacheNames = CacheNames.PUBLIC_STORE_ITEMS, allEntries = true)
+    })
     public void deleteItem(UUID businessId, UUID itemId) {
         businessHelper.findOwnedBusiness(businessId);
         Item item = findItem(itemId, businessId);
@@ -340,6 +366,11 @@ public class ItemServiceImpl implements ItemService {
 
     @Override
     @Transactional
+    @Caching(evict = {
+            @CacheEvict(cacheNames = CacheNames.CATALOG_ITEMS, allEntries = true),
+            @CacheEvict(cacheNames = CacheNames.CATALOG_ITEM_BY_ID, allEntries = true),
+            @CacheEvict(cacheNames = CacheNames.PUBLIC_STORE_ITEMS, allEntries = true)
+    })
     public ItemResponse deleteItemImage(UUID businessId, UUID itemId, UUID imageId) {
         businessHelper.findOwnedBusiness(businessId);
         Item item = findItem(itemId, businessId);
@@ -359,6 +390,11 @@ public class ItemServiceImpl implements ItemService {
 
     @Override
     @Transactional
+    @Caching(evict = {
+            @CacheEvict(cacheNames = CacheNames.CATALOG_ITEMS, allEntries = true),
+            @CacheEvict(cacheNames = CacheNames.CATALOG_ITEM_BY_ID, allEntries = true),
+            @CacheEvict(cacheNames = CacheNames.PUBLIC_STORE_ITEMS, allEntries = true)
+    })
     public ItemResponse uploadItemImages(UUID businessId, UUID itemId, kh.edu.istad.ite.features.catalog.dto.UploadItemImagesRequest request) {
         businessHelper.findOwnedBusiness(businessId);
         Item item = findItem(itemId, businessId);
@@ -378,6 +414,11 @@ public class ItemServiceImpl implements ItemService {
 
     @Override
     @Transactional
+    @Caching(evict = {
+            @CacheEvict(cacheNames = CacheNames.CATALOG_ITEMS, allEntries = true),
+            @CacheEvict(cacheNames = CacheNames.CATALOG_ITEM_BY_ID, allEntries = true),
+            @CacheEvict(cacheNames = CacheNames.PUBLIC_STORE_ITEMS, allEntries = true)
+    })
     public ItemResponse reorderItemImages(UUID businessId, UUID itemId, kh.edu.istad.ite.features.catalog.dto.ReorderItemImagesRequest request) {
         businessHelper.findOwnedBusiness(businessId);
         Item item = findItem(itemId, businessId);
@@ -415,10 +456,7 @@ public class ItemServiceImpl implements ItemService {
     @Override
     public ItemResponse findItemByBarcode(UUID businessId, String barcode) {
         businessHelper.findOwnedBusiness(businessId);
-        Item item = itemRepository.findByBusinessIdAndBarcode(businessId, barcode.trim())
-                .orElseThrow(() -> new ResponseStatusException(
-                        HttpStatus.NOT_FOUND, "Item not found with barcode: " + barcode));
-        return itemMapper.toResponse(item);
+        return catalogItemQueryCache.findItemByBarcode(businessId, barcode);
     }
 
     private Item findItem(UUID itemId, UUID businessId) {
@@ -796,6 +834,11 @@ public class ItemServiceImpl implements ItemService {
      */
     @Override
     @Transactional
+    @Caching(evict = {
+            @CacheEvict(cacheNames = CacheNames.CATALOG_ITEMS, allEntries = true),
+            @CacheEvict(cacheNames = CacheNames.CATALOG_ITEM_BY_ID, allEntries = true),
+            @CacheEvict(cacheNames = CacheNames.PUBLIC_STORE_ITEMS, allEntries = true)
+    })
     public ItemResponse updateItemAddOnAvailability(
             UUID businessId, UUID itemId, UUID addOnId, boolean available) {
         businessHelper.findOwnedBusiness(businessId);

@@ -1,5 +1,6 @@
 package kh.edu.istad.ite.features.channel.service;
 
+import kh.edu.istad.ite.config.CacheNames;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import kh.edu.istad.ite.features.business.entity.Business;
@@ -25,6 +26,7 @@ import kh.edu.istad.ite.shared.enums.PriceOverrideKind;
 import kh.edu.istad.ite.shared.helper.BusinessHelper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -83,6 +85,7 @@ public class ChannelPricingServiceImpl implements ChannelPricingService {
 
     @Override
     @Transactional
+    @CacheEvict(cacheNames = CacheNames.PUBLIC_STORE_ITEMS, allEntries = true)
     public ChannelListingResponse saveListing(
             UUID businessId, UUID channelId, SaveChannelListingRequest request) {
         Business business = businessHelper.findOwnedBusiness(businessId);

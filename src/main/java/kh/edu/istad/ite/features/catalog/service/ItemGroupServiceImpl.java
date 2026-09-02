@@ -1,5 +1,6 @@
 package kh.edu.istad.ite.features.catalog.service;
 
+import kh.edu.istad.ite.config.CacheNames;
 import kh.edu.istad.ite.features.business.entity.Business;
 import kh.edu.istad.ite.features.catalog.dto.CreateItemGroupRequest;
 import kh.edu.istad.ite.features.catalog.dto.ItemGroupResponse;
@@ -9,12 +10,16 @@ import kh.edu.istad.ite.features.catalog.entity.ItemGroup;
 import kh.edu.istad.ite.features.catalog.mapper.ItemGroupMapper;
 import kh.edu.istad.ite.features.catalog.repository.ItemGroupRepository;
 import kh.edu.istad.ite.features.catalog.repository.ItemRepository;
+import kh.edu.istad.ite.shared.dto.PageResponse;
 import kh.edu.istad.ite.shared.helper.BusinessHelper;
 import kh.edu.istad.ite.shared.helper.SlugHelper;
 import kh.edu.istad.ite.shared.helper.TextHelper;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Caching;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -22,9 +27,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
-import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -37,9 +40,17 @@ public class ItemGroupServiceImpl implements ItemGroupService {
     private final ItemGroupRepository itemGroupRepository;
     private final ItemRepository itemRepository;
     private final ItemGroupMapper itemGroupMapper;
+    private final ItemGroupQueryCache itemGroupQueryCache;
 
     @Override
     @Transactional
+    @Caching(evict = {
+            @CacheEvict(cacheNames = CacheNames.CATALOG_ITEM_GROUPS, allEntries = true),
+            @CacheEvict(cacheNames = CacheNames.PUBLIC_STORE_ITEM_GROUPS, allEntries = true),
+            @CacheEvict(cacheNames = CacheNames.CATALOG_ITEMS, allEntries = true),
+            @CacheEvict(cacheNames = CacheNames.CATALOG_ITEM_BY_ID, allEntries = true),
+            @CacheEvict(cacheNames = CacheNames.PUBLIC_STORE_ITEMS, allEntries = true)
+    })
     public ItemSubGroupResponse createItemGroup(UUID businessId, CreateItemGroupRequest request) {
         Business business = businessHelper.findOwnedBusiness(businessId);
         ItemGroup parent = null;
@@ -97,16 +108,8 @@ public class ItemGroupServiceImpl implements ItemGroupService {
     @Transactional(readOnly = true)
     public Page<ItemGroupResponse> findAllItemGroups(UUID businessId, Pageable pageable) {
         businessHelper.findOwnedBusiness(businessId);
-
-        Map<UUID, List<ItemGroup>> subGroupsByParentId=
-                itemGroupRepository.findByBusinessIdAndParentIsNotNullOrderByNameAsc(businessId)
-                        .stream()
-                        .collect(Collectors.groupingBy(itemGroup -> itemGroup.getParent().getId()));
-        return itemGroupRepository.findByBusinessIdAndParentIsNull(businessId, pageable)
-                .map(itemGroup -> itemGroupMapper.toItemGroupTreeResponse(
-                        itemGroup,
-                        subGroupsByParentId.getOrDefault(itemGroup.getId(), List.of())
-                ));
+        PageResponse<ItemGroupResponse> response = itemGroupQueryCache.findAllItemGroups(businessId, pageable);
+        return new PageImpl<>(response.content(), pageable, response.totalElements());
     }
 
     @Override
@@ -116,23 +119,19 @@ public class ItemGroupServiceImpl implements ItemGroupService {
         // storefront/menu) is never the business owner, just a shopper
         // browsing categories, so there is no "owned by the current user"
         // check to make.
-        Map<UUID, List<ItemGroup>> subGroupsByParentId =
-                itemGroupRepository.findByBusinessIdAndParentIsNotNullOrderByNameAsc(businessId)
-                        .stream()
-                        .collect(Collectors.groupingBy(itemGroup -> itemGroup.getParent().getId()));
-
-        return itemGroupRepository.findByBusinessIdAndParentIsNullOrderByNameAsc(businessId)
-                .stream()
-                .map(itemGroup -> itemGroupMapper.toItemGroupTreeResponse(
-                        itemGroup,
-                        subGroupsByParentId.getOrDefault(itemGroup.getId(), List.of())
-                ))
-                .toList();
+        return itemGroupQueryCache.findAllItemGroupsPublic(businessId);
     }
 
 
     @Override
     @Transactional
+    @Caching(evict = {
+            @CacheEvict(cacheNames = CacheNames.CATALOG_ITEM_GROUPS, allEntries = true),
+            @CacheEvict(cacheNames = CacheNames.PUBLIC_STORE_ITEM_GROUPS, allEntries = true),
+            @CacheEvict(cacheNames = CacheNames.CATALOG_ITEMS, allEntries = true),
+            @CacheEvict(cacheNames = CacheNames.CATALOG_ITEM_BY_ID, allEntries = true),
+            @CacheEvict(cacheNames = CacheNames.PUBLIC_STORE_ITEMS, allEntries = true)
+    })
     public ItemSubGroupResponse updateItemGroup(
             UUID businessId,
             UUID itemGroupId,
@@ -190,6 +189,13 @@ public class ItemGroupServiceImpl implements ItemGroupService {
 
     @Override
     @Transactional
+    @Caching(evict = {
+            @CacheEvict(cacheNames = CacheNames.CATALOG_ITEM_GROUPS, allEntries = true),
+            @CacheEvict(cacheNames = CacheNames.PUBLIC_STORE_ITEM_GROUPS, allEntries = true),
+            @CacheEvict(cacheNames = CacheNames.CATALOG_ITEMS, allEntries = true),
+            @CacheEvict(cacheNames = CacheNames.CATALOG_ITEM_BY_ID, allEntries = true),
+            @CacheEvict(cacheNames = CacheNames.PUBLIC_STORE_ITEMS, allEntries = true)
+    })
     public void deleteItemGroup(UUID businessId, UUID itemGroupId) {
         businessHelper.findOwnedBusiness(businessId);
         ItemGroup itemGroup = findItemGroup(itemGroupId, businessId);

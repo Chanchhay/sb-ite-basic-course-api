@@ -1,5 +1,6 @@
 package kh.edu.istad.ite.features.discount.service.Impl;
 
+import kh.edu.istad.ite.config.CacheNames;
 import kh.edu.istad.ite.config.props.KeycloakAdminClientProps;
 import kh.edu.istad.ite.config.security.SecurityUtils;
 import kh.edu.istad.ite.features.business.entity.Business;
@@ -30,6 +31,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.keycloak.admin.client.Keycloak;
 import org.keycloak.representations.idm.UserRepresentation;
+import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -69,6 +71,7 @@ public class DiscountServiceImpl implements DiscountService {
 
     @Override
     @Transactional
+    @CacheEvict(cacheNames = CacheNames.PUBLIC_STORE_ITEMS, allEntries = true)
     public DiscountResponse createDiscount(UUID businessId, CreateDiscountRequest request) {
         Business business = businessHelper.findOwnedBusiness(businessId);
 
@@ -153,6 +156,7 @@ public class DiscountServiceImpl implements DiscountService {
 
     @Override
     @Transactional
+    @CacheEvict(cacheNames = CacheNames.PUBLIC_STORE_ITEMS, allEntries = true)
     public DiscountResponse updateDiscount(UUID businessId, UUID discountId, UpdateDiscountRequest request) {
         businessHelper.findOwnedBusiness(businessId);
         Discount discount = findDiscount(discountId, businessId);
@@ -245,6 +249,7 @@ public class DiscountServiceImpl implements DiscountService {
 
     @Override
     @Transactional
+    @CacheEvict(cacheNames = CacheNames.PUBLIC_STORE_ITEMS, allEntries = true)
     public DiscountResponse activateDiscount(UUID businessId, UUID discountId) {
         businessHelper.findOwnedBusiness(businessId);
         Discount discount = findDiscount(discountId, businessId);
@@ -268,6 +273,7 @@ public class DiscountServiceImpl implements DiscountService {
 
     @Override
     @Transactional
+    @CacheEvict(cacheNames = CacheNames.PUBLIC_STORE_ITEMS, allEntries = true)
     public DiscountResponse deactivateDiscount(UUID businessId, UUID discountId) {
         businessHelper.findOwnedBusiness(businessId);
         Discount discount = findDiscount(discountId, businessId);
@@ -282,6 +288,7 @@ public class DiscountServiceImpl implements DiscountService {
 
     @Override
     @Transactional
+    @CacheEvict(cacheNames = CacheNames.PUBLIC_STORE_ITEMS, allEntries = true)
     public void deleteDiscount(UUID businessId, UUID discountId) {
         businessHelper.findOwnedBusiness(businessId);
         Discount discount = findDiscount(discountId, businessId);

@@ -1,5 +1,6 @@
 package kh.edu.istad.ite.features.business.service;
 
+import kh.edu.istad.ite.config.CacheNames;
 import kh.edu.istad.ite.features.business.dto.BusinessResponse;
 import kh.edu.istad.ite.features.business.dto.CreateBusinessRequest;
 import kh.edu.istad.ite.features.business.dto.SocialLinkRequest;
@@ -17,6 +18,8 @@ import kh.edu.istad.ite.shared.helper.BusinessHelper;
 import kh.edu.istad.ite.shared.helper.SlugHelper;
 import kh.edu.istad.ite.shared.helper.TextHelper;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Caching;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -90,6 +93,10 @@ public class BusinessServiceImpl implements BusinessService {
 
     @Override
     @Transactional
+    @Caching(evict = {
+            @CacheEvict(cacheNames = CacheNames.PUBLIC_STORE_ITEMS, allEntries = true),
+            @CacheEvict(cacheNames = CacheNames.PUBLIC_STORE_ITEM_GROUPS, allEntries = true)
+    })
     public BusinessResponse updateBusiness(UUID businessId, UpdateBusinessRequest request) {
         Business business = businessHelper.findOwnedBusinessOrNotFound(businessId);
 
@@ -177,6 +184,10 @@ public class BusinessServiceImpl implements BusinessService {
 
     @Override
     @Transactional
+    @Caching(evict = {
+            @CacheEvict(cacheNames = CacheNames.PUBLIC_STORE_ITEMS, allEntries = true),
+            @CacheEvict(cacheNames = CacheNames.PUBLIC_STORE_ITEM_GROUPS, allEntries = true)
+    })
     public BusinessResponse uploadLogo(UUID businessId, MultipartFile file) {
         Business business = businessHelper.findOwnedBusinessOrNotFound(businessId);
         validateImage(file);
@@ -193,6 +204,10 @@ public class BusinessServiceImpl implements BusinessService {
 
     @Override
     @Transactional
+    @Caching(evict = {
+            @CacheEvict(cacheNames = CacheNames.PUBLIC_STORE_ITEMS, allEntries = true),
+            @CacheEvict(cacheNames = CacheNames.PUBLIC_STORE_ITEM_GROUPS, allEntries = true)
+    })
     public BusinessResponse deleteLogo(UUID businessId) {
         Business business = businessHelper.findOwnedBusinessOrNotFound(businessId);
         String oldKey = business.getLogo();
@@ -207,6 +222,10 @@ public class BusinessServiceImpl implements BusinessService {
 
     @Override
     @Transactional
+    @Caching(evict = {
+            @CacheEvict(cacheNames = CacheNames.PUBLIC_STORE_ITEMS, allEntries = true),
+            @CacheEvict(cacheNames = CacheNames.PUBLIC_STORE_ITEM_GROUPS, allEntries = true)
+    })
     public BusinessResponse uploadThumbnail(UUID businessId, MultipartFile file) {
         Business business = businessHelper.findOwnedBusinessOrNotFound(businessId);
         validateImage(file);
@@ -223,6 +242,10 @@ public class BusinessServiceImpl implements BusinessService {
 
     @Override
     @Transactional
+    @Caching(evict = {
+            @CacheEvict(cacheNames = CacheNames.PUBLIC_STORE_ITEMS, allEntries = true),
+            @CacheEvict(cacheNames = CacheNames.PUBLIC_STORE_ITEM_GROUPS, allEntries = true)
+    })
     public BusinessResponse deleteThumbnail(UUID businessId) {
         Business business = businessHelper.findOwnedBusinessOrNotFound(businessId);
         String oldKey = business.getThumbnail();
@@ -247,6 +270,10 @@ public class BusinessServiceImpl implements BusinessService {
 
     @Override
     @Transactional
+    @Caching(evict = {
+            @CacheEvict(cacheNames = CacheNames.PUBLIC_STORE_ITEMS, allEntries = true),
+            @CacheEvict(cacheNames = CacheNames.PUBLIC_STORE_ITEM_GROUPS, allEntries = true)
+    })
     public BusinessResponse deleteBusiness(UUID businessId) {
         Business business = businessHelper.findOwnedBusinessOrNotFound(businessId);
         business.setStatus(BusinessOwnerStatus.DELETED);
