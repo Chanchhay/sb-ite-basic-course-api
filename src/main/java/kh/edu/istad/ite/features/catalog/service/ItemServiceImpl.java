@@ -42,6 +42,7 @@ import kh.edu.istad.ite.shared.enums.ItemType;
 import kh.edu.istad.ite.shared.helper.BusinessHelper;
 import kh.edu.istad.ite.shared.helper.SlugHelper;
 import kh.edu.istad.ite.shared.helper.TextHelper;
+import kh.edu.istad.ite.shared.cache.BusinessCacheEvictor;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import kh.edu.istad.ite.features.catalog.dto.DescriptionBlockRequest;
@@ -111,6 +112,8 @@ public class ItemServiceImpl implements ItemService {
     private final StockEntryRepository stockEntryRepository;
     private final StockLayerRepository stockLayerRepository;
     private final StockConsumptionRepository stockConsumptionRepository;
+    private final CatalogItemQueryCache catalogItemQueryCache;
+    private final BusinessCacheEvictor businessCacheEvictor;
     private final OrderItemRepository orderItemRepository;
     private final DiscountTargetRepository discountTargetRepository;
     private final ItemChannelStockRepository itemChannelStockRepository;
@@ -122,6 +125,7 @@ public class ItemServiceImpl implements ItemService {
     @Transactional
     public ItemResponse createItem(UUID businessId, CreateItemRequest request, List<MultipartFile> files) {
         Business business = businessHelper.findOwnedBusiness(businessId);
+        businessCacheEvictor.evictCatalogAndStorefront(businessId);
 
         Item item = new Item();
         item.setBusiness(business);
@@ -177,21 +181,21 @@ public class ItemServiceImpl implements ItemService {
     @Transactional(readOnly = true)
     public PageResponse<ItemResponse> findAllItems(UUID businessId, Pageable pageable) {
         businessHelper.findOwnedBusiness(businessId);
-        Page<Item> items = itemRepository.findAllByBusinessId(businessId, pageable);
-        return PageResponse.from(items.map(itemMapper::toResponse));
+        return catalogItemQueryCache.findAllItems(businessId, pageable);
     }
 
     @Override
     @Transactional(readOnly = true)
     public ItemResponse findItemById(UUID businessId, UUID itemId) {
         businessHelper.findOwnedBusiness(businessId);
-        return itemMapper.toResponse(findActiveItem(itemId, businessId));
+        return catalogItemQueryCache.findItemById(businessId, itemId);
     }
 
     @Override
     @Transactional
     public ItemResponse updateItem(UUID businessId, UUID itemId, UpdateItemRequest request, List<MultipartFile> files) {
         businessHelper.findOwnedBusiness(businessId);
+        businessCacheEvictor.evictCatalogAndStorefront(businessId);
         Item item = findActiveItem(itemId, businessId);
 
         if (request.itemGroupId() != null) {
@@ -300,6 +304,7 @@ public class ItemServiceImpl implements ItemService {
     @Transactional
     public ItemResponse updateItemAddOns(UUID businessId, UUID itemId, List<UUID> addOnIds) {
         businessHelper.findOwnedBusiness(businessId);
+        businessCacheEvictor.evictCatalogAndStorefront(businessId);
         Item item = findActiveItem(itemId, businessId);
 
         replaceAddOns(item, businessId, addOnIds);
@@ -315,6 +320,7 @@ public class ItemServiceImpl implements ItemService {
     @Transactional
     public void deleteItem(UUID businessId, UUID itemId) {
         businessHelper.findOwnedBusiness(businessId);
+        businessCacheEvictor.evictCatalogAndStorefront(businessId);
         Item item = findActiveItem(itemId, businessId);
 
         item.setIsDeleted(true);
@@ -327,6 +333,7 @@ public class ItemServiceImpl implements ItemService {
     @Transactional
     public ItemResponse restoreItem(UUID businessId, UUID itemId) {
         businessHelper.findOwnedBusiness(businessId);
+        businessCacheEvictor.evictCatalogAndStorefront(businessId);
         Item item = findItem(itemId, businessId);
 
         item.setIsDeleted(false);
@@ -339,6 +346,7 @@ public class ItemServiceImpl implements ItemService {
     @Transactional
     public void hardDeleteItem(UUID businessId, UUID itemId) {
         businessHelper.findOwnedBusiness(businessId);
+        businessCacheEvictor.evictCatalogAndStorefront(businessId);
         Item item = findItem(itemId, businessId);
 
         // An order still being worked on (not yet paid, cancelled, or
@@ -436,6 +444,7 @@ public class ItemServiceImpl implements ItemService {
     @Transactional
     public ItemResponse deleteItemImage(UUID businessId, UUID itemId, UUID imageId) {
         businessHelper.findOwnedBusiness(businessId);
+        businessCacheEvictor.evictCatalogAndStorefront(businessId);
         Item item = findActiveItem(itemId, businessId);
         ItemImage imageToRemove = item.getImages().stream()
                 .filter(img -> img.getId().equals(imageId))
@@ -455,6 +464,7 @@ public class ItemServiceImpl implements ItemService {
     @Transactional
     public ItemResponse uploadItemImages(UUID businessId, UUID itemId, kh.edu.istad.ite.features.catalog.dto.UploadItemImagesRequest request) {
         businessHelper.findOwnedBusiness(businessId);
+        businessCacheEvictor.evictCatalogAndStorefront(businessId);
         Item item = findActiveItem(itemId, businessId);
         if (request.files() != null && !request.files().isEmpty()) {
             for (MultipartFile file : request.files()) {
@@ -474,6 +484,7 @@ public class ItemServiceImpl implements ItemService {
     @Transactional
     public ItemResponse reorderItemImages(UUID businessId, UUID itemId, kh.edu.istad.ite.features.catalog.dto.ReorderItemImagesRequest request) {
         businessHelper.findOwnedBusiness(businessId);
+        businessCacheEvictor.evictCatalogAndStorefront(businessId);
         Item item = findActiveItem(itemId, businessId);
 
         List<UUID> orderedIds = request.imageIds();
@@ -516,10 +527,7 @@ public class ItemServiceImpl implements ItemService {
     @Override
     public ItemResponse findItemByBarcode(UUID businessId, String barcode) {
         businessHelper.findOwnedBusiness(businessId);
-        Item item = itemRepository.findByBusinessIdAndBarcodeAndIsDeletedFalse(businessId, barcode.trim())
-                .orElseThrow(() -> new ResponseStatusException(
-                        HttpStatus.NOT_FOUND, "Item not found with barcode: " + barcode));
-        return itemMapper.toResponse(item);
+        return catalogItemQueryCache.findItemByBarcode(businessId, barcode);
     }
 
     /**
@@ -563,6 +571,11 @@ public class ItemServiceImpl implements ItemService {
     }
 
 
+    /**
+     * A business may measure an item in a platform unit or in one of its own,
+     * and in nothing else — resolving globally would let it borrow another
+     * business's "Sack" and silently change meaning.
+     */
     private Unit findUnit(UUID unitId, UUID businessId) {
         if (unitId == null) {
             return null;
@@ -609,6 +622,15 @@ public class ItemServiceImpl implements ItemService {
         return colors;
     }
 
+    /**
+     * Every variant's colour has to be one the item declares.
+     *
+     * A variant pointing at a colour the item does not list is a row nothing
+     * can reach: the swatches are drawn from the item's colours, so no click
+     * would ever select it — and it would sit there holding stock nobody can
+     * sell. Two variants on the same size and colour are refused for the same
+     * reason: the picker would resolve to whichever came first, silently.
+     */
     private void requireDeclaredColors(Item item) {
         Set<String> declared = (item.getColors() == null ? List.<ItemColor>of() : item.getColors())
                 .stream()
@@ -900,6 +922,7 @@ public class ItemServiceImpl implements ItemService {
     public ItemResponse updateItemAddOnAvailability(
             UUID businessId, UUID itemId, UUID addOnId, boolean available) {
         businessHelper.findOwnedBusiness(businessId);
+        businessCacheEvictor.evictCatalogAndStorefront(businessId);
         Item item = findActiveItem(itemId, businessId);
 
         ItemAddOn link = item.getAddOns().stream()
@@ -914,6 +937,21 @@ public class ItemServiceImpl implements ItemService {
     }
 
 
+    /**
+     * Brings the item's conversions in line with what was sent.
+     *
+     * The base unit is rejected rather than ignored: "1 g = 5 g" is not a
+     * conversion anyone meant to type, and storing it would make every amount
+     * on the item ambiguous.
+     *
+     * A conversion already on the item is edited where it stands rather than
+     * dropped and written again. Only one row may exist per (item, unit,
+     * option), and
+     * Hibernate flushes its inserts before its deletes — so re-saving an item
+     * with the same conversions would collide with the very rows it was about
+     * to remove, and surface as "Item already exists". Keeping the rows also
+     * keeps their ids stable for anything holding a reference to them.
+     */
     private void replaceUomConversions(
             Item item,
             UUID businessId,
@@ -1007,6 +1045,16 @@ public class ItemServiceImpl implements ItemService {
 
             ItemUomConversion conversion = byKey.get(key);
 
+            /*
+             * Failing that, any row still going spare on the same unit is
+             * this one under a different option — a case that used to be for
+             * nothing in particular and is now for Small.
+             *
+             * Reusing it is what keeps that an UPDATE. Written as a delete and
+             * an insert it would collide with itself: Hibernate flushes inserts
+             * before deletes, and the row it was about to remove still holds
+             * this item and unit.
+             */
 
             if (conversion == null) {
                 conversion = byUnit.getOrDefault(unitId, List.of()).stream()
@@ -1039,6 +1087,13 @@ public class ItemServiceImpl implements ItemService {
     }
 
 
+    /**
+     * How an option is told apart within its item.
+     *
+     * By name, because an option created in this same request has no id until
+     * the flush — and because renaming one makes a new option rather than
+     * editing this one, so the name is the identity either way.
+     */
     private static String optionKey(ItemVariant variant) {
         if (variant.getVariantName() != null) {
             return variant.getVariantName().toLowerCase();
@@ -1075,6 +1130,14 @@ public class ItemServiceImpl implements ItemService {
     }
 
 
+    /**
+     * What actually clashed, rather than "Item already exists" over everything.
+     *
+     * Only two of this table's constraints are about an item's identity; the
+     * rest — a duplicate conversion, a variant — say nothing about the name,
+     * and reporting them as a name clash sends people renaming an item that
+     * was never the problem.
+     */
     private ResponseStatusException itemConflict(DataIntegrityViolationException e) {
         String detail = String.valueOf(e.getMostSpecificCause().getMessage()).toLowerCase();
 

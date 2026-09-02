@@ -1,6 +1,8 @@
 package kh.edu.istad.ite.config.security;
 
+import kh.edu.istad.ite.shared.ratelimit.RateLimitFilter;
 import lombok.RequiredArgsConstructor;
+import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.convert.converter.Converter;
@@ -19,6 +21,7 @@ import org.springframework.security.web.access.intercept.RequestAuthorizationCon
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.web.filter.CorsFilter;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -28,15 +31,37 @@ import java.util.Map;
 @EnableWebSecurity
 @RequiredArgsConstructor
 public class SecurityConfig {
+
+        /**
+         * Boot registers every {@code Filter} bean with the servlet container of its
+         * own accord, which would run the rate limiter ahead of the security chain
+         * and so ahead of CORS. Only the placement configured above should apply, so
+         * the automatic registration is switched off here.
+         */
+        @Bean
+        public FilterRegistrationBean<RateLimitFilter> rateLimitFilterRegistration(
+                        RateLimitFilter rateLimitFilter) {
+                FilterRegistrationBean<RateLimitFilter> registration =
+                                new FilterRegistrationBean<>(rateLimitFilter);
+                registration.setEnabled(false);
+                return registration;
+        }
+
         @Bean
         public SecurityFilterChain configureApiSecurity(HttpSecurity http,
                                                         JwtAuthenticationConverter jwtAuthenticationConverter,
-                                                        BusinessAccessAuthorizationManager tenant) throws Exception {
+                                                        BusinessAccessAuthorizationManager tenant,
+                                                        RateLimitFilter rateLimitFilter) throws Exception {
 
                 http.oauth2ResourceServer(oauth2 -> oauth2.jwt(jwt -> jwt.jwtAuthenticationConverter(
                         jwtAuthenticationConverter)));
 
                 http.cors(Customizer.withDefaults());
+
+                // After CORS so a browser can read the 429 rather than reporting an
+                // opaque network failure, and before authentication so a flood is
+                // turned away without a token check or a database round trip.
+                http.addFilterAfter(rateLimitFilter, CorsFilter.class);
                 http.csrf(AbstractHttpConfigurer::disable);
                 http.formLogin(AbstractHttpConfigurer::disable);
                 http.httpBasic(Customizer.withDefaults());

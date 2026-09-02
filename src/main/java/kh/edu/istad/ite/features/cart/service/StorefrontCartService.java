@@ -53,6 +53,7 @@ import kh.edu.istad.ite.features.discount.dto.LineDiscountApplication;
 import kh.edu.istad.ite.features.discount.dto.OrderLineUnits;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
@@ -674,6 +675,7 @@ public class StorefrontCartService {
         // targeted item promo don't stack), so the two totals can never
         // disagree over the same cart.
         BigDecimal orderDiscountAmount = BigDecimal.ZERO;
+        String orderDiscountLabel = null;
         if (itemDiscountTotal.compareTo(BigDecimal.ZERO) == 0) {
             List<OrderLineUnits> lineUnits = cart.getItems().stream()
                     .map(item -> new OrderLineUnits(
@@ -682,10 +684,10 @@ public class StorefrontCartService {
                     .filter(units -> units.unitPrice() != null && units.quantity() > 0)
                     .toList();
 
-            orderDiscountAmount = discountApplicationService
-                    .resolveOrderDiscount(business.getId(), OrderChannel.WEB, lineUnits)
-                    .map(LineDiscountApplication::amount)
-                    .orElse(BigDecimal.ZERO);
+            Optional<LineDiscountApplication> orderDiscount = discountApplicationService
+                    .resolveOrderDiscount(business.getId(), OrderChannel.WEB, lineUnits);
+            orderDiscountAmount = orderDiscount.map(LineDiscountApplication::amount).orElse(BigDecimal.ZERO);
+            orderDiscountLabel = orderDiscount.map(LineDiscountApplication::label).orElse(null);
         }
 
         BigDecimal finalSubtotal = rawSubtotal.subtract(itemDiscountTotal).subtract(orderDiscountAmount);
@@ -693,7 +695,16 @@ public class StorefrontCartService {
             finalSubtotal = BigDecimal.ZERO;
         }
 
-        List<CartSummaryResponse.Line> lines = priced.stream().map(PricedCartLine::line).toList();
+        // A storewide/order-scoped discount is only ever computed once,
+        // above, against the real subtotal — never per line (see
+        // DiscountApplicationService). That keeps checkout's total correct,
+        // but leaves every line's own discountAmount at zero, which reads to
+        // a shopper as "nothing was discounted" even though the total moved.
+        // Spreading it back out, pro rata, is display-only: finalSubtotal
+        // above is still what actually gets charged either way.
+        List<CartSummaryResponse.Line> lines = orderDiscountAmount.compareTo(BigDecimal.ZERO) > 0
+                ? distributeOrderDiscount(priced, rawSubtotal, orderDiscountAmount, orderDiscountLabel)
+                : priced.stream().map(PricedCartLine::line).toList();
 
         return new CartSummaryResponse.StoreCart(
                 cart.getId(),
@@ -716,6 +727,73 @@ public class StorefrontCartService {
                 cart.getTotalItemsCount(),
                 finalSubtotal,
                 lines);
+    }
+
+    /**
+     * Spreads a storewide discount back across the lines it was computed
+     * from, pro rata by each line's own undiscounted subtotal — purely for
+     * display, so a shopper sees which lines the promotion touched instead
+     * of just a total that moved for no line-level reason. The last line
+     * absorbs whatever rounding leaves over, so the shares still sum to
+     * exactly {@code orderDiscountAmount}.
+     */
+    private List<CartSummaryResponse.Line> distributeOrderDiscount(
+            List<PricedCartLine> priced, BigDecimal rawSubtotal, BigDecimal orderDiscountAmount, String label) {
+        List<CartSummaryResponse.Line> result = new ArrayList<>(priced.size());
+        BigDecimal remaining = orderDiscountAmount;
+
+        for (int i = 0; i < priced.size(); i++) {
+            CartSummaryResponse.Line line = priced.get(i).line();
+            boolean isLast = i == priced.size() - 1;
+
+            BigDecimal lineRawSubtotal = line.subtotal().add(
+                    line.discountAmount() != null ? line.discountAmount() : BigDecimal.ZERO);
+
+            BigDecimal share;
+            if (isLast) {
+                share = remaining;
+            } else if (rawSubtotal.compareTo(BigDecimal.ZERO) == 0) {
+                share = BigDecimal.ZERO;
+            } else {
+                share = orderDiscountAmount
+                        .multiply(lineRawSubtotal)
+                        .divide(rawSubtotal, 2, RoundingMode.HALF_UP);
+                remaining = remaining.subtract(share);
+            }
+
+            if (share.compareTo(BigDecimal.ZERO) <= 0) {
+                result.add(line);
+                continue;
+            }
+
+            BigDecimal newSubtotal = line.subtotal().subtract(share);
+            if (newSubtotal.compareTo(BigDecimal.ZERO) < 0) {
+                newSubtotal = BigDecimal.ZERO;
+            }
+
+            result.add(new CartSummaryResponse.Line(
+                    line.cartItemId(),
+                    line.itemId(),
+                    line.variantId(),
+                    line.name(),
+                    line.description(),
+                    line.imageUrl(),
+                    line.badges(),
+                    line.selections(),
+                    line.addOns(),
+                    line.unitId(),
+                    line.unitName(),
+                    line.unitFactor(),
+                    line.quantity(),
+                    line.unitPrice(),
+                    line.unitPriceWithAddOns(),
+                    newSubtotal,
+                    line.compareAtPrice(),
+                    share,
+                    label));
+        }
+
+        return result;
     }
 
     /** This line's own undiscounted subtotal — its base price plus extras, times quantity. */

@@ -17,6 +17,14 @@ spring:
 
   application:
     name: ite-sb-api
+  cache:
+    type: redis
+  data:
+    redis:
+      host: ${SPRING_DATA_REDIS_HOST:redis}
+      port: ${SPRING_DATA_REDIS_PORT:6379}
+      password: ${SPRING_DATA_REDIS_PASSWORD:${REDIS_PASSWORD:}}
+      timeout: ${SPRING_DATA_REDIS_TIMEOUT:2s}
   servlet:
     multipart:
       max-file-size: 10MB
@@ -105,6 +113,10 @@ app:
     webhook-base-url: ${TELEGRAM_WEBHOOK_BASE_URL:}
     payment-poll-interval-ms: 10000
     payment-poll-initial-delay-ms: 10000
+
+  push:
+    dashboard-base-url: ${PUSH_DASHBOARD_BASE_URL:}
+    internal-secret: ${PUSH_INTERNAL_SECRET:}
 
   facebook:
     app-id: ${FACEBOOK_APP_ID:}

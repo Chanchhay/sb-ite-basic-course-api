@@ -9,6 +9,7 @@ import kh.edu.istad.ite.features.channel.entity.ItemChannel;
 import kh.edu.istad.ite.features.channel.entity.SalesChannel;
 import kh.edu.istad.ite.features.channel.repository.ItemChannelRepository;
 import kh.edu.istad.ite.features.channel.repository.SalesChannelRepository;
+import kh.edu.istad.ite.shared.cache.BusinessCacheEvictor;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -29,6 +30,8 @@ public class ItemChannelServiceImpl implements ItemChannelService {
     private final ItemRepository itemRepository;
 
     private final SalesChannelRepository salesChannelRepository;
+
+    private final BusinessCacheEvictor businessCacheEvictor;
 
 
     @Override
@@ -74,6 +77,7 @@ public class ItemChannelServiceImpl implements ItemChannelService {
         itemChannel.setSalesChannel(channel);
         itemChannel.setIsEnabled(true);
         ItemChannel saved = itemChannelRepository.save(itemChannel);
+        businessCacheEvictor.evictStorefront(item.getBusiness().getId());
 
 
         return mapToResponse(saved);
@@ -117,6 +121,7 @@ public class ItemChannelServiceImpl implements ItemChannelService {
 
         ItemChannel saved =
                 itemChannelRepository.save(itemChannel);
+        businessCacheEvictor.evictStorefront(itemChannel.getItem().getBusiness().getId());
         return mapToResponse(saved);
 
     }
@@ -136,6 +141,7 @@ public class ItemChannelServiceImpl implements ItemChannelService {
                                         "Item channel not found"
                                 )
                         );
+        businessCacheEvictor.evictStorefront(itemChannel.getItem().getBusiness().getId());
         itemChannelRepository.delete(itemChannel);
     }
 

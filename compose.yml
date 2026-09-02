@@ -24,6 +24,33 @@ services:
     networks:
       - internal
 
+  redis:
+    image: redis:8.10.1-alpine
+    restart: unless-stopped
+
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+
+    command:
+      [
+        "sh",
+        "-c",
+        "exec redis-server --requirepass \"$${REDIS_PASSWORD}\" --maxmemory 1024mb --maxmemory-policy allkeys-lru --save \"\" --appendonly no"
+      ]
+
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "if [ -n \"$${REDIS_PASSWORD}\" ]; then redis-cli -a \"$${REDIS_PASSWORD}\" ping; else redis-cli ping; fi | grep PONG"
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+    networks:
+      - internal
+
 
   api:
     image: asia-southeast1-docker.pkg.dev/project-6f8e390c-7ad4-4d23-b1b/backend-images/ipos-api:${IMAGE_TAG:-latest}
@@ -33,6 +60,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      redis:
+        condition: service_healthy
 
     env_file:
       - .env
@@ -41,6 +70,9 @@ services:
       SPRING_PROFILES_ACTIVE: prod
       PGHOST: db
       PGPORT: 5432
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: 6379
+      SPRING_DATA_REDIS_PASSWORD: ${REDIS_PASSWORD:-}
       TZ: Asia/Phnom_Penh
 
     networks:

@@ -1,5 +1,6 @@
 package kh.edu.istad.ite.features.business.service;
 
+import kh.edu.istad.ite.config.CacheNames;
 import kh.edu.istad.ite.config.props.StorefrontProps;
 import kh.edu.istad.ite.config.security.SecurityUtils;
 import kh.edu.istad.ite.features.business.dto.PublicFacebookPageResponse;
@@ -18,7 +19,10 @@ import kh.edu.istad.ite.features.catalog.repository.ItemRepository;
 import kh.edu.istad.ite.shared.enums.BusinessFeature;
 import kh.edu.istad.ite.shared.enums.BusinessOwnerStatus;
 import kh.edu.istad.ite.shared.helper.GeoDistanceHelper;
+import kh.edu.istad.ite.shared.cache.BusinessCacheEvictor;
+import kh.edu.istad.ite.shared.dto.PageResponse;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
@@ -79,6 +83,8 @@ public class StorefrontServiceImpl implements StorefrontService {
     private final StockEntryService stockEntryService;
     private final ItemGroupService itemGroupService;
     private final BusinessFacebookPageRepository businessFacebookPageRepository;
+    private final BusinessCacheEvictor businessCacheEvictor;
+    private final PublicStoreQueryCache publicStoreQueryCache;
 
     @Override
     @Transactional(readOnly = true)
@@ -90,6 +96,8 @@ public class StorefrontServiceImpl implements StorefrontService {
     @Transactional
     public StorefrontStatusResponse enableStorefront() {
         Business business = findMyBusiness();
+        businessCacheEvictor.evictStorefront(business.getId());
+        businessCacheEvictor.evictStoreDirectory();
 
         // The platform can withhold the storefront entirely; the owner's own
         // checklist below only governs whether they are ready for it.
@@ -115,6 +123,8 @@ public class StorefrontServiceImpl implements StorefrontService {
     @Transactional
     public StorefrontStatusResponse disableStorefront() {
         Business business = findMyBusiness();
+        businessCacheEvictor.evictStorefront(business.getId());
+        businessCacheEvictor.evictStoreDirectory();
         business.setIsListing(false);
         return toStatusResponse(businessRepository.save(business));
     }
@@ -123,6 +133,8 @@ public class StorefrontServiceImpl implements StorefrontService {
     @Transactional
     public StorefrontStatusResponse changeSlug(StorefrontSlugRequest request) {
         Business business = findMyBusiness();
+        businessCacheEvictor.evictStorefront(business.getId());
+        businessCacheEvictor.evictStoreDirectory();
         String normalized = normalizeSlug(request.slug());
 
         String rejection = rejectionReason(normalized, business.getId());
@@ -154,7 +166,6 @@ public class StorefrontServiceImpl implements StorefrontService {
     }
 
     @Override
-    @Transactional(readOnly = true)
     public Page<PublicStoreResponse> getPublicStores(
             UUID categoryId,
             String province,
@@ -164,30 +175,9 @@ public class StorefrontServiceImpl implements StorefrontService {
             Double lat,
             Double lng,
             Pageable pageable) {
-        var spec = PublicStoreSpecifications.withFilters(categoryId, province, district, cityOrProvince, keyword);
-
-        if (lat == null || lng == null) {
-            return businessRepository.findAll(spec, pageable).map(storefrontMapper::toPublicResponse);
-        }
-
-
-        List<Business> matches = businessRepository.findAll(spec);
-
-        List<java.util.Map.Entry<Business, Double>> ranked = matches.stream()
-                .map(business -> (java.util.Map.Entry<Business, Double>)
-                        new java.util.AbstractMap.SimpleEntry<>(business, distanceKm(business, lat, lng)))
-                .sorted(Comparator.comparing(
-                        java.util.Map.Entry::getValue,
-                        Comparator.nullsLast(Comparator.naturalOrder())))
-                .toList();
-
-        int start = Math.min((int) pageable.getOffset(), ranked.size());
-        int end = Math.min(start + pageable.getPageSize(), ranked.size());
-        List<PublicStoreResponse> pageContent = ranked.subList(start, end).stream()
-                .map(entry -> storefrontMapper.toPublicResponse(entry.getKey(), entry.getValue()))
-                .toList();
-
-        return new PageImpl<>(pageContent, pageable, ranked.size());
+        PageResponse<PublicStoreResponse> response = publicStoreQueryCache.findPublicStores(
+                categoryId, province, district, cityOrProvince, keyword, lat, lng, pageable);
+        return new PageImpl<>(response.content(), pageable, response.totalElements());
     }
 
     /** Null when the business hasn't dropped a map pin yet — nothing to rank it by. */
@@ -201,6 +191,8 @@ public class StorefrontServiceImpl implements StorefrontService {
 
     @Override
     @Transactional(readOnly = true)
+    @Cacheable(cacheNames = CacheNames.PUBLIC_STORE_DETAIL,
+            key = "T(kh.edu.istad.ite.config.CacheKeys).store(#p0, #p1, #p2)")
     public PublicStoreDetailResponse getPublicStoreBySlug(String slugOrId, Double lat, Double lng) {
         String normalized = normalizeSlug(slugOrId);
 
@@ -225,6 +217,7 @@ public class StorefrontServiceImpl implements StorefrontService {
 
     @Override
     @Transactional(readOnly = true)
+    @Cacheable(cacheNames = CacheNames.PUBLIC_STORE_ITEMS, key = "T(kh.edu.istad.ite.config.CacheKeys).store(#p0)")
     public List<ItemResponse> getPublicStoreItems(String slugOrId) {
         Business business = resolvePublicBusiness(slugOrId);
 
@@ -330,6 +323,7 @@ public class StorefrontServiceImpl implements StorefrontService {
 
     @Override
     @Transactional(readOnly = true)
+    @Cacheable(cacheNames = CacheNames.PUBLIC_STORE_ITEM_GROUPS, key = "T(kh.edu.istad.ite.config.CacheKeys).store(#p0)")
     public List<ItemGroupResponse> getPublicStoreItemGroups(String slugOrId) {
         Business business = resolvePublicBusiness(slugOrId);
         return itemGroupService.findAllItemGroupsPublic(business.getId());
@@ -357,6 +351,8 @@ public class StorefrontServiceImpl implements StorefrontService {
 
     @Override
     @Transactional(readOnly = true)
+    @Cacheable(cacheNames = CacheNames.PUBLIC_STORE_FACEBOOK,
+            key = "T(kh.edu.istad.ite.config.CacheKeys).store(#p0)")
     public PublicFacebookPageResponse getPublicFacebookSocialSettings(String slugOrId) {
         Business business = resolvePublicBusiness(slugOrId);
 
@@ -368,21 +364,17 @@ public class StorefrontServiceImpl implements StorefrontService {
     }
 
     @Override
-    @Transactional(readOnly = true)
-    public Page<PublicStoreResponse> getRecommendedStores(UUID categoryId, Double lat, Double lng, Pageable pageable) {
-        // Ranking here stays sales/recency-based — "recommended" isn't
-        // "nearest" — this only annotates each card with its distance for
-        // display, same as the plain listing does.
-        if (lat == null || lng == null) {
-            return businessRepository.findRecommendedStores(categoryId, pageable)
-                    .map(storefrontMapper::toPublicResponse);
-        }
-        return businessRepository.findRecommendedStores(categoryId, pageable)
-                .map(business -> storefrontMapper.toPublicResponse(business, distanceKm(business, lat, lng)));
+    public Page<PublicStoreResponse> getRecommendedStores(
+            UUID categoryId, Double lat, Double lng, Pageable pageable) {
+        PageResponse<PublicStoreResponse> response =
+                publicStoreQueryCache.findRecommendedStores(categoryId, lat, lng, pageable);
+        return new PageImpl<>(response.content(), pageable, response.totalElements());
     }
 
     @Override
     @Transactional(readOnly = true)
+    // One list for everyone, and it only changes when a shop opens, closes or moves.
+    @Cacheable(cacheNames = CacheNames.PUBLIC_STORE_PROVINCES, key = "'all'")
     public List<String> getDistinctProvinces() {
         return businessRepository.findDistinctProvinceNames();
     }

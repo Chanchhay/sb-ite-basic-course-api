@@ -23,6 +23,16 @@ public interface ItemRepository extends JpaRepository<Item, UUID>, JpaSpecificat
 
         Page<Item> findAllByBusinessId(UUID businessId, Pageable pageable);
 
+        /**
+         * The same page, with the trash left out.
+         *
+         * This is what the catalogue list is actually asking for: an item in
+         * the recycle bin is not on sale, and showing it alongside live stock
+         * is how a shop ends up scanning something it has already deleted.
+         * The bin has its own listing through the search endpoint.
+         */
+        Page<Item> findAllByBusinessIdAndIsDeletedFalse(UUID businessId, Pageable pageable);
+
         Optional<Item> findByIdAndBusinessId(UUID id, UUID businessId);
 
         /** Same lookup, but blind to anything sitting in the trash. */
