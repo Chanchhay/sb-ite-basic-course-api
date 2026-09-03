@@ -36,6 +36,21 @@ public record OfflineOrderDto(
         TaxInclusionType taxInclusionType,
 
         BigDecimal total,
+        /**
+         * What the customer actually handed over, and what came back.
+         *
+         * The total is what was owed; these two are what happened at the
+         * till, and only the till saw it. Without them a synced sale records
+         * the exact money as tendered and no change given, so a receipt
+         * reprinted later contradicts the one the customer was handed.
+         *
+         * Both are optional: a card or QR payment tenders the total by
+         * definition, and an older till has no record of either.
+         */
+        @JsonProperty("paid_amount")
+        BigDecimal paidAmount,
+        @JsonProperty("change_amount")
+        BigDecimal changeAmount,
 
         @JsonProperty("payment_method")
         PaymentMethodType paymentMethod,
