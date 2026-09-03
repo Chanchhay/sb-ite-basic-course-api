@@ -497,6 +497,19 @@ public class OrderServiceImpl implements OrderService {
 
         recordCouponUsage(order);
 
+        // Counted here, once, against the sale's own total — not the amount
+        // actually handed over. Pay Later collects nothing right now (see
+        // `payOrder` above), but the customer still bought the goods at this
+        // moment; a Total Spend that only grew once the balance was later
+        // collected would read as an entirely separate purchase whenever
+        // that happened, or never move at all for a sale still outstanding.
+        if (order.getCustomer() != null) {
+            Customer customer = order.getCustomer();
+            BigDecimal current = customer.getTotalSpend() == null ? BigDecimal.ZERO : customer.getTotalSpend();
+            customer.setTotalSpend(current.add(effectiveTotal));
+            customerRepository.save(customer);
+        }
+
         Sale saved = saleRepository.save(sale);
 
         ReceiptType receiptType = OrderChannel.POS.equals(order.getChannel())
