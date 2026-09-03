@@ -73,6 +73,13 @@ public class SecurityConfig {
                         .requestMatchers("/api/v1/telegram/webhook/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/actuator/health", "/actuator/health/**").permitAll()
 
+                        // Push subscription lookup/prune: no dashboard user in the
+                        // loop, only the dashboard server itself asking who to wake
+                        // for a push it was just told to send. Gated on its own
+                        // shared secret inside PushSubscriptionController, the same
+                        // one PushNotificationClient sends the other direction.
+                        .requestMatchers("/api/v1/internal/push-subscriptions/**").permitAll()
+
                         // Cache hit rates and request timings. Operational detail
                         // about the running system, so it is read by the people who
                         // run it and by nobody else.
