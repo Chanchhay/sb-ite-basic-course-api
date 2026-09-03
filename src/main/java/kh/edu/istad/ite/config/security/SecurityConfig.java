@@ -287,8 +287,20 @@ public class SecurityConfig {
                         .hasAuthority("SCOPE_bakong-setting:update")
 
                         // --- The business collection ---
-                        .requestMatchers(HttpMethod.GET, "/api/v1/businesses/me", "/api/v1/businesses")
-                        .hasAuthority("SCOPE_business:read")
+                        // "Which business am I in?" is identity, not data, and
+                        // it must not need a permission. The dashboard resolves
+                        // every other business id from this call and refuses to
+                        // open at all when it fails, so gating it on
+                        // business:read locked out every staff member whose role
+                        // did not happen to include "View shop details" — a
+                        // cashier with only order:* could not sign in.
+                        //
+                        // Nothing here can be forged or fished for: it answers
+                        // for the caller's own business, found by ownership or
+                        // by active staff membership, and returns the details of
+                        // the shop they already work in.
+                        .requestMatchers(HttpMethod.GET, "/api/v1/businesses/me")
+                        .authenticated()
                         .requestMatchers(HttpMethod.POST, "/api/v1/businesses")
                         .hasAuthority("SCOPE_business:create")
 

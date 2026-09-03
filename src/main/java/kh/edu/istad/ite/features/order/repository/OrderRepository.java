@@ -134,4 +134,23 @@ public interface OrderRepository extends JpaRepository<Order, UUID>, JpaSpecific
             ORDER BY o.createdDate DESC
             """)
     List<Order> findAllOrdersForShopper(@Param("customerIds") Collection<UUID> customerIds);
+
+    /**
+     * The business's unfinished orders, lines included.
+     *
+     * Used when the base currency moves: an order still being rung up holds
+     * prices in the old base, and leaving them behind would label new-base
+     * amounts with the old code and convert them a second time on the
+     * secondary line. Settled orders are deliberately not here — a receipt
+     * has to keep showing the figures the customer was actually handed.
+     */
+    @Query("""
+            SELECT DISTINCT o FROM Order o
+            LEFT JOIN FETCH o.items
+            WHERE o.business.id = :businessId
+              AND o.status = :status
+            """)
+    List<Order> findAllWithItemsByBusinessIdAndStatus(
+            @Param("businessId") UUID businessId,
+            @Param("status") OrderStatus status);
 }

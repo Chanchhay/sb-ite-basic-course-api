@@ -71,6 +71,13 @@ class BusinessAccessAuthorizationManagerTest {
                 .matcher(get("/api/v1/businesses/storefront")).getVariables())
                 .containsEntry("businessId", "storefront");
 
+        // `/businesses/me` too. It is the call the dashboard opens on, and the
+        // whole app refuses to load when it fails, so if the catch-all ever
+        // reaches it first every account is locked out at the login screen.
+        assertThat(pathPattern("/api/v1/businesses/{businessId}/**")
+                .matcher(get("/api/v1/businesses/me")).getVariables())
+                .containsEntry("businessId", "me");
+
         assertThat(manager.authorize(this::caller, new RequestAuthorizationContext(
                 get("/api/v1/businesses/storefront"), Map.of("businessId", "storefront")))
                 .isGranted()).isFalse();
