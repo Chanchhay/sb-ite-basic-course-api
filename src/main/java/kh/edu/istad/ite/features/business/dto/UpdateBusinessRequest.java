@@ -28,7 +28,7 @@ public record UpdateBusinessRequest(
         @Size(max = 255, message = "address must be at most 255 characters")
         String address,
 
-        @Size(max = 255, message = "about must be at most 255 characters")
+        @Size(max = 300, message = "about must be at most 300 characters")
         String about,
 
         @Size(min = 8, max = 30, message = "phoneNumber must be between 8 and 30 characters")
