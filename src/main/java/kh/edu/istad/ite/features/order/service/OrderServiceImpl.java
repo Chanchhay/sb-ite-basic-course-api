@@ -1929,8 +1929,16 @@ public class OrderServiceImpl implements OrderService {
                 sale.setSubtotal(savedOrder.getSubtotal());
                 sale.setDiscountAmount(savedOrder.getDiscountAmount());
                 sale.setTotalAmount(savedOrder.getTotal());
-                sale.setPaidAmount(savedOrder.getTotal());
-                sale.setChangeAmount(BigDecimal.ZERO);
+                // What the till took, where it said so. Assuming the exact
+                // money was tendered made every reprinted offline receipt
+                // disagree with the one the customer was handed.
+                BigDecimal paid = dto.paidAmount() != null
+                        ? dto.paidAmount()
+                        : savedOrder.getTotal();
+                sale.setPaidAmount(paid);
+                sale.setChangeAmount(dto.changeAmount() != null
+                        ? dto.changeAmount()
+                        : paid.subtract(savedOrder.getTotal()).max(BigDecimal.ZERO));
                 sale.setPaymentMethod(dto.paymentMethod() != null ? dto.paymentMethod() : PaymentMethodType.CASH);
                 sale.setItemCount(savedOrder.getItems() != null ? savedOrder.getItems().size() : 0);
                 sale.setSoldAt(dto.createdAt() != null ? LocalDateTime.ofInstant(dto.createdAt(), ZoneId.systemDefault()) : LocalDateTime.now());
