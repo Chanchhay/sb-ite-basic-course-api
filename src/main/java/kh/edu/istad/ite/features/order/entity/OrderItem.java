@@ -55,7 +55,7 @@ public class OrderItem {
      * quantity still move for every unit here, since a free unit still comes
      * off the shelf. Zero for an ordinary line.
      */
-    @Column(name = "free_quantity", nullable = false)
+    @Column(name = "free_quantity", nullable = false, columnDefinition = "int default 0")
     private Integer freeQuantity = 0;
 
     @Column(name = "unit_price", nullable = false, precision = 12, scale = 2)

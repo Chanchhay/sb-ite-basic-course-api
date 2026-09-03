@@ -48,7 +48,7 @@ public class CartItem extends BasedAuditingEntity {
      * for a free unit the same as a paid one. Zero for an ordinary line.
      */
     @Builder.Default
-    @Column(name = "free_quantity", nullable = false)
+    @Column(name = "free_quantity", nullable = false, columnDefinition = "int default 0")
     private Integer freeQuantity = 0;
 
     @Column(name = "price_snapshot", nullable = false, precision = 10, scale = 2)
