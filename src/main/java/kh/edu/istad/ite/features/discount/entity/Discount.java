@@ -116,4 +116,8 @@ public class Discount extends BasedAuditingEntity {
             columnDefinition = "varchar(20) default 'ACTIVE'"
     )
     private RecordStatus status = RecordStatus.ACTIVE;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "paused_discount_ids", columnDefinition = "jsonb")
+    private List<UUID> pausedDiscountIds;
 }

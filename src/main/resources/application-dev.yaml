@@ -13,6 +13,14 @@ spring:
 
   application:
     name: ite-sb-api
+  cache:
+    type: redis
+  data:
+    redis:
+      host: ${SPRING_DATA_REDIS_HOST:localhost}
+      port: ${SPRING_DATA_REDIS_PORT:6379}
+      password: ${SPRING_DATA_REDIS_PASSWORD:}
+      timeout: ${SPRING_DATA_REDIS_TIMEOUT:2s}
   servlet:
     multipart:
       max-file-size: 10MB
@@ -44,7 +52,7 @@ keycloak:
     client-secret: ${KEYCLOAK_CLIENT_SECRET}
     realm: master
     target-realm: ${TARGET_REALM}
-    send-verification-email: false
+    send-verification-email: true
 
 app:
   cors:
@@ -70,6 +78,10 @@ app:
     webhook-base-url: ${TELEGRAM_WEBHOOK_BASE_URL:}
     payment-poll-interval-ms: 10000
     payment-poll-initial-delay-ms: 10000
+
+  push:
+    dashboard-base-url: ${PUSH_DASHBOARD_BASE_URL:}
+    internal-secret: ${PUSH_INTERNAL_SECRET:}
 
   facebook:
     app-id: ${FACEBOOK_APP_ID:2213406572840514}
@@ -101,3 +113,11 @@ minio:
     # by the import that owns them, never linked to, so they are kept out of
     # the asset bucket whose objects are served straight to browsers.
     imports: fluxibiz-imports
+
+# Same endpoints as production, so a cache that misbehaves can be looked at here
+# before it is looked at there.
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,metrics

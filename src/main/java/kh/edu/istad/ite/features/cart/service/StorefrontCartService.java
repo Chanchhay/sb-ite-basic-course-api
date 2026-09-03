@@ -50,8 +50,11 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.server.ResponseStatusException;
 
 import kh.edu.istad.ite.features.discount.dto.LineDiscountApplication;
+import kh.edu.istad.ite.features.discount.dto.OrderLineUnits;
+import kh.edu.istad.ite.features.discount.service.DiscountApplicationService.BundleOffer;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
@@ -167,10 +170,22 @@ public class StorefrontCartService {
                 .orElse(null);
 
         // What the line would hold once this is added, so that adding one at a
-        // time cannot creep past what the web may sell.
+        // time cannot creep past what the web may sell. Counted in *paid*
+        // units so a line that already carries a previous bundle's free
+        // units isn't mistaken for extra demand on top of them.
         int alreadyHeld = line == null || line.getQuantity() == null ? 0 : line.getQuantity();
+        int alreadyFree = line == null || line.getFreeQuantity() == null ? 0 : line.getFreeQuantity();
+        int currentPaid = alreadyHeld - alreadyFree;
+        int newPaid = currentPaid + request.quantity();
+
+        Optional<BundleOffer> offer = discountApplicationService.resolveBundleOffer(
+                business.getId(), OrderChannel.WEB, item.getId(),
+                item.getItemGroup() == null ? null : item.getItemGroup().getId());
+        int newTotal = offer.isEmpty() ? Math.max(0, newPaid) : offer.get().totalForPaidUnits(newPaid);
+        int newFree = newTotal - newPaid;
+
         requireStock(business, item, variant,
-                priced.unitFactor().multiply(BigDecimal.valueOf(alreadyHeld + request.quantity())));
+                priced.unitFactor().multiply(BigDecimal.valueOf(newTotal)));
 
         if (line == null) {
             line = CartItem.builder()
@@ -179,7 +194,8 @@ public class StorefrontCartService {
                     .variant(variant)
                     .unit(priced.unit())
                     .unitFactor(priced.unitFactor())
-                    .quantity(request.quantity())
+                    .quantity(newTotal)
+                    .freeQuantity(newFree)
                     .priceSnapshot(priced.unitPrice())
                     .basePrice(priced.channelPrice())
                     .build();
@@ -188,7 +204,8 @@ public class StorefrontCartService {
             addOns.forEach(line::addAddOn);
             cart.getItems().add(line);
         } else {
-            line.setQuantity(line.getQuantity() + request.quantity());
+            line.setQuantity(newTotal);
+            line.setFreeQuantity(newFree);
             line.setPriceSnapshot(priced.unitPrice());
             line.setBasePrice(priced.channelPrice());
         }
@@ -198,6 +215,14 @@ public class StorefrontCartService {
         return findMyCart();
     }
 
+    /**
+     * @param quantity The *paid* quantity the shopper now wants on this line
+     *                 — typing "2" always means two they are paying for,
+     *                 never a raw total that might already have a free unit
+     *                 folded into it. Exactly the total for a line under no
+     *                 Buy X Get Y offer; the free portion is layered on top
+     *                 automatically for one that is.
+     */
     @Transactional
     public CartSummaryResponse updateItem(UUID cartItemId, int quantity) {
         CartItem line = requireOwnedLine(cartItemId);
@@ -214,12 +239,20 @@ public class StorefrontCartService {
                     ? BigDecimal.ONE
                     : line.getUnitFactor();
 
+            Item item = line.getItem();
+            Optional<BundleOffer> offer = discountApplicationService.resolveBundleOffer(
+                    line.getCart().getBusiness().getId(), OrderChannel.WEB, item.getId(),
+                    item.getItemGroup() == null ? null : item.getItemGroup().getId());
+            int newTotal = offer.isEmpty() ? quantity : offer.get().totalForPaidUnits(quantity);
+            int newFree = newTotal - quantity;
+
             requireStock(
                     line.getCart().getBusiness(),
-                    line.getItem(),
+                    item,
                     line.getVariant(),
-                    factor.multiply(BigDecimal.valueOf(quantity)));
-            line.setQuantity(quantity);
+                    factor.multiply(BigDecimal.valueOf(newTotal)));
+            line.setQuantity(newTotal);
+            line.setFreeQuantity(newFree);
             cartItemRepository.save(line);
         }
 
@@ -343,20 +376,7 @@ public class StorefrontCartService {
                 .filter(line -> line.addOnKey().equals(addOnKey))
                 .findFirst();
     }
-
-    /**
-     * Turns what the shopper picked into what the line will carry.
-     *
-     * Checked against the item rather than trusted, for the ordinary reason:
-     * this arrives from a browser. An attribute the item does not have, or a
-     * value it does not offer, is a line the shop cannot make — and a value the
-     * seller switched off is one they said they would not make today.
-     *
-     * Only {@code OPTION} attributes are choices. The rest are copy: a
-     * HIGHLIGHT is a delivery promise, a SPECIFICATION is a fact about the
-     * item, and a HIDDEN one was never meant to leave the back office.
-     */
-    /** Absent placement means OPTION — that is what an attribute was before the field existed. */
+    
     private boolean isOption(ItemAttribute attribute) {
         return attribute.getPlacement() == null
                 || AttributePlacement.OPTION.equals(attribute.getPlacement());
@@ -657,7 +677,6 @@ public class StorefrontCartService {
         BigDecimal rawSubtotal = cart.getItems().stream()
                 .map(this::rawLineSubtotal)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
-        int totalQuantity = cart.getTotalItemsCount();
 
         List<PricedCartLine> priced = cart.getItems().stream()
                 .map(item -> toLine(item, rawSubtotal))
@@ -674,11 +693,19 @@ public class StorefrontCartService {
         // targeted item promo don't stack), so the two totals can never
         // disagree over the same cart.
         BigDecimal orderDiscountAmount = BigDecimal.ZERO;
+        String orderDiscountLabel = null;
         if (itemDiscountTotal.compareTo(BigDecimal.ZERO) == 0) {
-            orderDiscountAmount = discountApplicationService
-                    .resolveOrderDiscount(business.getId(), OrderChannel.WEB, rawSubtotal, totalQuantity)
-                    .map(LineDiscountApplication::amount)
-                    .orElse(BigDecimal.ZERO);
+            List<OrderLineUnits> lineUnits = cart.getItems().stream()
+                    .map(item -> new OrderLineUnits(
+                            item.getBasePrice() != null ? item.getBasePrice() : item.getPriceSnapshot(),
+                            item.getQuantity() == null ? 0 : item.getQuantity()))
+                    .filter(units -> units.unitPrice() != null && units.quantity() > 0)
+                    .toList();
+
+            Optional<LineDiscountApplication> orderDiscount = discountApplicationService
+                    .resolveOrderDiscount(business.getId(), OrderChannel.WEB, lineUnits);
+            orderDiscountAmount = orderDiscount.map(LineDiscountApplication::amount).orElse(BigDecimal.ZERO);
+            orderDiscountLabel = orderDiscount.map(LineDiscountApplication::label).orElse(null);
         }
 
         BigDecimal finalSubtotal = rawSubtotal.subtract(itemDiscountTotal).subtract(orderDiscountAmount);
@@ -686,7 +713,16 @@ public class StorefrontCartService {
             finalSubtotal = BigDecimal.ZERO;
         }
 
-        List<CartSummaryResponse.Line> lines = priced.stream().map(PricedCartLine::line).toList();
+        // A storewide/order-scoped discount is only ever computed once,
+        // above, against the real subtotal — never per line (see
+        // DiscountApplicationService). That keeps checkout's total correct,
+        // but leaves every line's own discountAmount at zero, which reads to
+        // a shopper as "nothing was discounted" even though the total moved.
+        // Spreading it back out, pro rata, is display-only: finalSubtotal
+        // above is still what actually gets charged either way.
+        List<CartSummaryResponse.Line> lines = orderDiscountAmount.compareTo(BigDecimal.ZERO) > 0
+                ? distributeOrderDiscount(priced, rawSubtotal, orderDiscountAmount, orderDiscountLabel)
+                : priced.stream().map(PricedCartLine::line).toList();
 
         return new CartSummaryResponse.StoreCart(
                 cart.getId(),
@@ -706,9 +742,77 @@ public class StorefrontCartService {
                 Boolean.TRUE.equals(business.getIsEnabled())
                         && !Boolean.TRUE.equals(business.getIsClosed())
                         && channelPriceResolver.isOpenNow(business.getId(), WEB_CHANNEL_CODE),
-                totalQuantity,
+                cart.getTotalItemsCount(),
                 finalSubtotal,
                 lines);
+    }
+
+    /**
+     * Spreads a storewide discount back across the lines it was computed
+     * from, pro rata by each line's own undiscounted subtotal — purely for
+     * display, so a shopper sees which lines the promotion touched instead
+     * of just a total that moved for no line-level reason. The last line
+     * absorbs whatever rounding leaves over, so the shares still sum to
+     * exactly {@code orderDiscountAmount}.
+     */
+    private List<CartSummaryResponse.Line> distributeOrderDiscount(
+            List<PricedCartLine> priced, BigDecimal rawSubtotal, BigDecimal orderDiscountAmount, String label) {
+        List<CartSummaryResponse.Line> result = new ArrayList<>(priced.size());
+        BigDecimal remaining = orderDiscountAmount;
+
+        for (int i = 0; i < priced.size(); i++) {
+            CartSummaryResponse.Line line = priced.get(i).line();
+            boolean isLast = i == priced.size() - 1;
+
+            BigDecimal lineRawSubtotal = line.subtotal().add(
+                    line.discountAmount() != null ? line.discountAmount() : BigDecimal.ZERO);
+
+            BigDecimal share;
+            if (isLast) {
+                share = remaining;
+            } else if (rawSubtotal.compareTo(BigDecimal.ZERO) == 0) {
+                share = BigDecimal.ZERO;
+            } else {
+                share = orderDiscountAmount
+                        .multiply(lineRawSubtotal)
+                        .divide(rawSubtotal, 2, RoundingMode.HALF_UP);
+                remaining = remaining.subtract(share);
+            }
+
+            if (share.compareTo(BigDecimal.ZERO) <= 0) {
+                result.add(line);
+                continue;
+            }
+
+            BigDecimal newSubtotal = line.subtotal().subtract(share);
+            if (newSubtotal.compareTo(BigDecimal.ZERO) < 0) {
+                newSubtotal = BigDecimal.ZERO;
+            }
+
+            result.add(new CartSummaryResponse.Line(
+                    line.cartItemId(),
+                    line.itemId(),
+                    line.variantId(),
+                    line.name(),
+                    line.description(),
+                    line.imageUrl(),
+                    line.badges(),
+                    line.selections(),
+                    line.addOns(),
+                    line.unitId(),
+                    line.unitName(),
+                    line.unitFactor(),
+                    line.quantity(),
+                    line.freeQuantity(),
+                    line.unitPrice(),
+                    line.unitPriceWithAddOns(),
+                    newSubtotal,
+                    line.compareAtPrice(),
+                    share,
+                    label));
+        }
+
+        return result;
     }
 
     /** This line's own undiscounted subtotal — its base price plus extras, times quantity. */
@@ -742,24 +846,15 @@ public class StorefrontCartService {
         Unit unit = line.getUnit();
         BigDecimal factor = line.getUnitFactor() == null ? BigDecimal.ONE : line.getUnitFactor();
 
-        // Only worth a chip when it is a pack. "per Bottle" on every single
-        // line is noise the shopper already knows.
         if (unit != null && factor.compareTo(BigDecimal.ONE) > 0) {
             badges.add(unit.getName());
         }
 
         List<CartItemAddOn> extras = line.getAddOns() == null ? List.of() : line.getAddOns();
 
-        // "+ Extra shot" reads as an addition rather than as another option,
-        // which is what it is — and what the counter's ticket says too.
         extras.forEach(addOn -> badges.add("+ " + addOn.getAddOnName()));
 
-        // basePrice (falling back to priceSnapshot for older rows) is the
-        // undiscounted unit price — the discount itself is always computed
-        // fresh here, from the line's current quantity, the same way
-        // checkout will, rather than trusted from anything stored on the
-        // line at add-time (quantity can change afterwards — see
-        // updateItem — without ever recomputing a stored snapshot).
+
         BigDecimal basePrice = line.getBasePrice() != null ? line.getBasePrice() : line.getPriceSnapshot();
         int quantity = line.getQuantity() == null ? 0 : line.getQuantity();
 
@@ -816,6 +911,7 @@ public class StorefrontCartService {
                 unit == null ? null : unit.getName(),
                 factor,
                 line.getQuantity(),
+                line.getFreeQuantity() == null ? 0 : line.getFreeQuantity(),
                 basePrice,
                 unitPriceWithAddOns,
                 lineSubtotal,
@@ -827,7 +923,12 @@ public class StorefrontCartService {
     }
 
 
+
     private String coverImageOf(Item item) {
+        if (StringUtils.hasText(item.getImageUrl())) {
+            return item.getImageUrl();
+        }
+
         if (item.getImages() == null || item.getImages().isEmpty()) {
             return null;
         }

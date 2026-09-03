@@ -2,6 +2,8 @@ package kh.edu.istad.ite.features.user.dto;
 
 import jakarta.validation.constraints.NotBlank;
 
+import java.util.List;
+
 public record UpdateStaffRequest(
         @NotBlank(message = "First name is required")
         String firstName,
@@ -15,5 +17,5 @@ public record UpdateStaffRequest(
         @NotBlank(message = "Gender is required")
         String gender,
 
-        String roleId // optional
+        List<String> roleIds // optional
 ) {}

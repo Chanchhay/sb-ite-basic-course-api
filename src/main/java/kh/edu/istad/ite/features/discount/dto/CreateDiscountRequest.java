@@ -85,6 +85,9 @@ public record CreateDiscountRequest(
         // Required when scope = CATEGORY: the specific category/categories
         // (item groups, e.g. "Food", "Drink") this discount applies to.
         @Size(max = 200, message = "targetItemGroupIds cannot contain more than 200 entries")
-        List<UUID> targetItemGroupIds
+        List<UUID> targetItemGroupIds,
+
+        // Optional: when scope = ALL_ITEMS / ORDER, if true, pauses/deactivates other active discounts
+        Boolean pauseOtherDiscounts
 ) {
 }

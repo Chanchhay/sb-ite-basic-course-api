@@ -3,7 +3,12 @@ pipeline {
 
     options {
         timestamps()
-        buildDiscarder(logRotator(numToKeepStr: '20'))
+        buildDiscarder(
+                logRotator(
+                        numToKeepStr: '20',
+                        artifactNumToKeepStr: '5'
+                )
+        )
         timeout(time: 30, unit: 'MINUTES')
         disableConcurrentBuilds()
     }
@@ -14,7 +19,6 @@ pipeline {
         REPOSITORY = 'backend-images'
         APP_NAME   = 'ipos-api'
 
-        // Replace YOUR_USER with the Linux user on main-app-server
         DEPLOY_HOST = 'chanchhay@10.148.0.2'
         DEPLOY_DIR  = '/opt/apps/ipos'
     }
@@ -49,8 +53,8 @@ pipeline {
             post {
                 always {
                     junit(
-                        allowEmptyResults: true,
-                        testResults: 'build/test-results/test/*.xml'
+                            allowEmptyResults: true,
+                            testResults: 'build/test-results/test/*.xml'
                     )
                 }
             }
@@ -87,15 +91,15 @@ pipeline {
             steps {
                 script {
                     env.GIT_SHA = sh(
-                        script: 'git rev-parse --short HEAD',
-                        returnStdout: true
+                            script: 'git rev-parse --short HEAD',
+                            returnStdout: true
                     ).trim()
 
                     env.IMAGE_REPO =
-                        "${REGISTRY}/${PROJECT_ID}/${REPOSITORY}/${APP_NAME}"
+                            "${REGISTRY}/${PROJECT_ID}/${REPOSITORY}/${APP_NAME}"
 
                     env.IMAGE =
-                        "${env.IMAGE_REPO}:${env.GIT_SHA}"
+                            "${env.IMAGE_REPO}:${env.GIT_SHA}"
 
                     echo "Git SHA: ${env.GIT_SHA}"
                     echo "Docker image: ${env.IMAGE}"
@@ -156,6 +160,10 @@ set -euo pipefail
 
 cd "$DEPLOY_DIR"
 
+# compose.yml resolves the API image as ipos-api:${IMAGE_TAG:-latest}, so the
+# tag this build produced is handed over by writing IMAGE_TAG into .env. Any
+# other variable name silently leaves the previous tag in place and redeploys
+# the image that is already running.
 echo "Updating IMAGE_TAG=$GIT_SHA"
 
 if grep -q '^IMAGE_TAG=' .env; then
@@ -171,6 +179,13 @@ docker compose config | grep 'ipos-api:' || true
 echo
 echo "Pulling new API image..."
 docker compose pull api
+
+# The API is recreated with --no-deps so a deploy never restarts the database,
+# which means its dependencies have to be up already. Redis is started here
+# because --no-deps also skips the depends_on that would otherwise start it.
+echo
+echo "Ensuring Redis is up..."
+docker compose up -d redis
 
 echo
 echo "Deploying API..."
@@ -193,6 +208,7 @@ REMOTE
     }
 
     post {
+
         success {
             echo '=============================='
             echo 'CI/CD SUCCESS'
@@ -209,7 +225,15 @@ REMOTE
         always {
             sh '''
                 rm -f app.jar
+
+                echo "Cleaning dangling Docker images..."
                 docker image prune -f || true
+
+                echo "Cleaning Docker build cache older than 2 days..."
+                docker builder prune \
+                    -af \
+                    --filter "until=48h" \
+                    || true
             '''
         }
     }

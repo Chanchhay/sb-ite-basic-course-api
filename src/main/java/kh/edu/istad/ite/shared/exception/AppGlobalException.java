@@ -141,10 +141,15 @@ public class AppGlobalException {
     @ResponseStatus(HttpStatus.CONFLICT)
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ErrorResponse handleDataIntegrityViolation(DataIntegrityViolationException e) {
-        log.error("Data integrity violation", e);
+        String detail = e.getMostSpecificCause() != null ? e.getMostSpecificCause().getMessage() : e.getMessage();
+        log.error("Data integrity violation: {}", detail, e);
         return ErrorResponse.builder()
                 .status(HttpStatus.CONFLICT.getReasonPhrase())
                 .code(HttpStatus.CONFLICT.value())
+                // The cause is logged, not returned: a raw Postgres constraint
+                // message names tables and columns, and the storefront is a
+                // public surface. What the caller gets back is what they can
+                // act on.
                 .message("That change conflicts with something already saved. Please check the"
                         + " details and try again.")
                 .timestamp(Instant.now())

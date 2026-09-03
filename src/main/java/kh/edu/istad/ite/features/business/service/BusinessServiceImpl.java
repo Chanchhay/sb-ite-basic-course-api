@@ -16,6 +16,9 @@ import kh.edu.istad.ite.shared.helper.AuthHelper;
 import kh.edu.istad.ite.shared.helper.BusinessHelper;
 import kh.edu.istad.ite.shared.helper.SlugHelper;
 import kh.edu.istad.ite.shared.helper.TextHelper;
+import kh.edu.istad.ite.config.CacheNames;
+import kh.edu.istad.ite.shared.cache.BusinessCacheEvictor;
+import org.springframework.cache.annotation.Cacheable;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -42,6 +45,7 @@ public class BusinessServiceImpl implements BusinessService {
     private final BusinessMapper businessMapper;
     private final BusinessHelper businessHelper;
     private final MinioService minioService;
+    private final BusinessCacheEvictor businessCacheEvictor;
 
     @Override
     @Transactional
@@ -75,6 +79,8 @@ public class BusinessServiceImpl implements BusinessService {
 
     @Override
     @Transactional(readOnly = true)
+    @Cacheable(cacheNames = CacheNames.BUSINESS_ME,
+            key = "T(kh.edu.istad.ite.config.CacheKeys).currentUser()")
     public BusinessResponse getMyBusiness() {
         // Owner or staff. The dashboard resolves every other business id
         // through this one call, so answering only for owners left staff with
@@ -92,6 +98,9 @@ public class BusinessServiceImpl implements BusinessService {
     @Transactional
     public BusinessResponse updateBusiness(UUID businessId, UpdateBusinessRequest request) {
         Business business = businessHelper.findOwnedBusinessOrNotFound(businessId);
+        businessCacheEvictor.evictStorefront(businessId);
+        businessCacheEvictor.evictStoreDirectory();
+        businessCacheEvictor.evictMyBusiness();
 
         if (StringUtils.hasText(request.name())) {
             String trimmedName = request.name().trim();
@@ -179,6 +188,9 @@ public class BusinessServiceImpl implements BusinessService {
     @Transactional
     public BusinessResponse uploadLogo(UUID businessId, MultipartFile file) {
         Business business = businessHelper.findOwnedBusinessOrNotFound(businessId);
+        businessCacheEvictor.evictStorefront(businessId);
+        businessCacheEvictor.evictStoreDirectory();
+        businessCacheEvictor.evictMyBusiness();
         validateImage(file);
 
         String oldKey = business.getLogo();
@@ -195,6 +207,9 @@ public class BusinessServiceImpl implements BusinessService {
     @Transactional
     public BusinessResponse deleteLogo(UUID businessId) {
         Business business = businessHelper.findOwnedBusinessOrNotFound(businessId);
+        businessCacheEvictor.evictStorefront(businessId);
+        businessCacheEvictor.evictStoreDirectory();
+        businessCacheEvictor.evictMyBusiness();
         String oldKey = business.getLogo();
         business.setLogo(null);
         Business saved = businessRepository.save(business);
@@ -209,6 +224,9 @@ public class BusinessServiceImpl implements BusinessService {
     @Transactional
     public BusinessResponse uploadThumbnail(UUID businessId, MultipartFile file) {
         Business business = businessHelper.findOwnedBusinessOrNotFound(businessId);
+        businessCacheEvictor.evictStorefront(businessId);
+        businessCacheEvictor.evictStoreDirectory();
+        businessCacheEvictor.evictMyBusiness();
         validateImage(file);
 
         String oldKey = business.getThumbnail();
@@ -225,6 +243,9 @@ public class BusinessServiceImpl implements BusinessService {
     @Transactional
     public BusinessResponse deleteThumbnail(UUID businessId) {
         Business business = businessHelper.findOwnedBusinessOrNotFound(businessId);
+        businessCacheEvictor.evictStorefront(businessId);
+        businessCacheEvictor.evictStoreDirectory();
+        businessCacheEvictor.evictMyBusiness();
         String oldKey = business.getThumbnail();
         business.setThumbnail(null);
         Business saved = businessRepository.save(business);
@@ -249,6 +270,9 @@ public class BusinessServiceImpl implements BusinessService {
     @Transactional
     public BusinessResponse deleteBusiness(UUID businessId) {
         Business business = businessHelper.findOwnedBusinessOrNotFound(businessId);
+        businessCacheEvictor.evictStorefront(businessId);
+        businessCacheEvictor.evictStoreDirectory();
+        businessCacheEvictor.evictMyBusiness();
         business.setStatus(BusinessOwnerStatus.DELETED);
         business.setIsEnabled(false);
         business.setIsListing(false);

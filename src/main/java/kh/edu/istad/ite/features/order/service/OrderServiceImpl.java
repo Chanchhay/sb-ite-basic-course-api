@@ -39,14 +39,20 @@ import kh.edu.istad.ite.features.catalog.entity.Unit;
 import kh.edu.istad.ite.features.catalog.repository.ItemRepository;
 import kh.edu.istad.ite.features.customer.entity.Customer;
 import kh.edu.istad.ite.features.customer.repository.CustomerRepository;
+import kh.edu.istad.ite.features.discount.dto.LineDiscountApplication;
+import kh.edu.istad.ite.features.discount.dto.OrderLineUnits;
 import kh.edu.istad.ite.features.discount.entity.Coupon;
 import kh.edu.istad.ite.features.discount.entity.Discount;
 import kh.edu.istad.ite.features.discount.entity.DiscountTarget;
 import kh.edu.istad.ite.features.discount.repository.CouponRepository;
 import kh.edu.istad.ite.features.discount.repository.DiscountRepository;
 import kh.edu.istad.ite.features.discount.repository.DiscountTargetRepository;
+import kh.edu.istad.ite.features.discount.service.DiscountApplicationService;
+import kh.edu.istad.ite.features.discount.service.DiscountApplicationService.BundleOffer;
 import kh.edu.istad.ite.features.channel.service.ItemChannelStockService;
+import kh.edu.istad.ite.features.inventory.dto.StockSummaryResponse;
 import kh.edu.istad.ite.features.inventory.service.StockEntryService;
+import kh.edu.istad.ite.shared.enums.ItemType;
 import kh.edu.istad.ite.features.order.dto.OfflineOrderDto;
 import kh.edu.istad.ite.features.order.dto.OfflineOrderItemDto;
 import kh.edu.istad.ite.features.order.dto.SyncOfflineOrdersRequest;
@@ -59,6 +65,7 @@ import kh.edu.istad.ite.features.order.dto.PayOrderRequest;
 import kh.edu.istad.ite.features.order.dto.PaymentStatusResponse;
 import kh.edu.istad.ite.features.order.dto.SaleResponse;
 import kh.edu.istad.ite.features.order.dto.UpdateOrderItemRequest;
+import kh.edu.istad.ite.features.order.dto.UpdateOrderCustomerRequest;
 import kh.edu.istad.ite.features.order.dto.UpdateOrderDiscountRequest;
 import kh.edu.istad.ite.features.order.dto.UpdateOrderNoteRequest;
 import kh.edu.istad.ite.features.order.entity.Order;
@@ -76,6 +83,7 @@ import kh.edu.istad.ite.features.payment.khqr.KhqrGenerator;
 import kh.edu.istad.ite.features.payment.khqr.QrImageRenderer;
 import kh.edu.istad.ite.features.payment.repository.BusinessPaymentSettingRepository;
 import kh.edu.istad.ite.features.payment.repository.PaymentQrCodeRepository;
+import kh.edu.istad.ite.features.payment.repository.ReceiptRepository;
 import kh.edu.istad.ite.features.payment.service.ReceiptService;
 import kh.edu.istad.ite.features.register.entity.RegisterSession;
 import kh.edu.istad.ite.shared.dto.PageResponse;
@@ -98,8 +106,10 @@ import kh.edu.istad.ite.shared.enums.DiscountScope;
 import kh.edu.istad.ite.shared.enums.DiscountType;
 import kh.edu.istad.ite.shared.enums.RecordStatus;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
 @Service
+@Slf4j
 @RequiredArgsConstructor
 public class OrderServiceImpl implements OrderService {
 
@@ -127,11 +137,13 @@ public class OrderServiceImpl implements OrderService {
 
     private final ItemChannelStockService itemChannelStockService;
     private final ReceiptService receiptService;
+    private final ReceiptRepository receiptRepository;
     private final FilterSpecification<Order> filterSpecification;
     private final kh.edu.istad.ite.features.register.repository.RegisterSessionRepository registerSessionRepository;
     private final TelegramAlertService telegramAlertService;
     private final kh.edu.istad.ite.features.channel.service.ChannelPriceResolver channelPriceResolver;
     private final TaxCalculator taxCalculator;
+    private final DiscountApplicationService discountApplicationService;
 
     @Override
     @Transactional
@@ -545,6 +557,68 @@ public class OrderServiceImpl implements OrderService {
      * is priced, and {@code settle} skips this entirely for an order that
      * arrives already {@link OrderStatus#CONFIRMED}.
      */
+    /**
+     * Rebuilds what an offline line was sold as, so the stock it moves is the
+     * stock it actually took.
+     *
+     * `consumeStockForOrder` already deducts `baseQuantity()`, which is the
+     * quantity times the pack's factor — it only ever read one because nothing
+     * here set a unit on the line.
+     *
+     * A shape the shop no longer has is logged and left off rather than thrown:
+     * the cash was taken hours ago and refusing the sale now would lose the
+     * only record of it. The count is wrong either way; a sale that never
+     * arrives is worse.
+     */
+    private void applySoldAs(Item item, OfflineOrderItemDto itemDto, OrderItem orderItem) {
+        ItemVariant variant = null;
+
+        if (itemDto.variantId() != null) {
+            variant = item.getVariants().stream()
+                    .filter(candidate -> candidate.getId().equals(itemDto.variantId()))
+                    .findFirst()
+                    .orElse(null);
+
+            if (variant == null) {
+                log.warn("Offline sale named option {} that item {} no longer has;"
+                        + " its stock will move against the item's own total",
+                        itemDto.variantId(), item.getId());
+            }
+        }
+
+        orderItem.setVariant(variant);
+        orderItem.setUnitFactor(BigDecimal.ONE);
+
+        if (itemDto.unitId() == null || itemDto.unitId().equals(baseUnitId(item))) {
+            orderItem.setUnit(item.getUnit());
+            return;
+        }
+
+        // A pack belongs to one option: the case defined for Large is not the
+        // one defined for Small, so the line's option is part of finding it.
+        final UUID lineVariantId = variant == null ? null : variant.getId();
+
+        ItemUomConversion conversion = item.getUomConversions().stream()
+                .filter(candidate -> candidate.getUnit() != null
+                        && candidate.getUnit().getId().equals(itemDto.unitId()))
+                .filter(candidate -> java.util.Objects.equals(
+                        candidate.getVariant() == null ? null : candidate.getVariant().getId(),
+                        lineVariantId))
+                .findFirst()
+                .orElse(null);
+
+        if (conversion == null) {
+            log.warn("Offline sale named pack {} that item {} no longer sells;"
+                    + " its stock will move one base unit per line",
+                    itemDto.unitId(), item.getId());
+            orderItem.setUnit(item.getUnit());
+            return;
+        }
+
+        orderItem.setUnit(conversion.getUnit());
+        orderItem.setUnitFactor(conversion.getFactor());
+    }
+
     private void consumeStockForOrder(Business business, Order order) {
         // Nothing has been written yet, so a line that would sell past this
         // channel's share stops the whole sale here rather than halfway
@@ -676,6 +750,30 @@ public class OrderServiceImpl implements OrderService {
         return orderMapper.toResponse(orderRepository.save(order));
     }
 
+    @Override
+    @Transactional
+    public void deleteOrder(UUID businessId, UUID orderId) {
+        businessHelper.findAccessibleBusiness(businessId);
+        Order order = findOrder(businessId, orderId);
+
+        // Delete associated payment QR codes if any
+        List<PaymentQrCode> qrCodes = paymentQrCodeRepository.findByOrderIdOrderByCreatedAtDesc(order.getId());
+        if (qrCodes != null && !qrCodes.isEmpty()) {
+            paymentQrCodeRepository.deleteAll(qrCodes);
+        }
+
+        // Delete associated receipt if any
+        receiptRepository.findByOrder_IdAndBusiness_Id(order.getId(), businessId)
+                .ifPresent(receiptRepository::delete);
+
+        // Delete associated sale if any
+        saleRepository.findByOrderId(order.getId())
+                .ifPresent(saleRepository::delete);
+
+        // Delete the order itself (items cascade deleted via orphanRemoval)
+        orderRepository.delete(order);
+    }
+
     /** The channel an order came through, as the sales channel knows it. */
     private static String channelCodeOf(Order order) {
         return order.getChannel() == null ? null : order.getChannel().name();
@@ -803,6 +901,13 @@ public class OrderServiceImpl implements OrderService {
      */
     private static boolean sameLine(
             OrderItem line, UUID itemId, UUID variantId, UUID unitId, List<UUID> addOnIds) {
+        // A permanently-deleted item detaches its old lines (item goes null)
+        // rather than losing the receipt; such a line can no longer be "the
+        // same" as a catalog item someone is adding right now.
+        if (line.getItem() == null) {
+            return false;
+        }
+
         boolean sameItem = line.getItem().getId().equals(itemId);
         boolean sameVariant = line.getVariant() == null
                 ? variantId == null
@@ -963,11 +1068,91 @@ public class OrderServiceImpl implements OrderService {
         }));
     }
 
+    /**
+     * The line's real total once a Buy X Get Y offer it qualifies for is
+     * folded in — the free units a completed bundle owes the customer, added
+     * on their own rather than left for the customer to ask for by name.
+     *
+     * {@code newPaidQuantity} is always the *paid* count this edit wants:
+     * for an add, that is the line's current paid units (backed out of its
+     * current total) plus however many more were just requested; for an
+     * absolute quantity edit, it is exactly the number requested — a cashier
+     * typing "2" means two they are paying for, never two total once a free
+     * one is mixed in. Everything downstream (this order's own discount sync)
+     * still does the actual pricing; this only ever decides the quantity.
+     *
+     * Refuses the whole edit — not just the free portion — when the shelf
+     * cannot cover the bundle it is about to create. A promotion is not a
+     * reason to oversell stock nobody has.
+     */
+    private int applyBundleQuantity(
+            UUID businessId,
+            Business business,
+            Item item,
+            ItemVariant variant,
+            OrderChannel channel,
+            int currentTotalQuantity,
+            int newPaidQuantity,
+            BigDecimal unitFactor
+    ) {
+        UUID itemGroupId = item.getItemGroup() != null ? item.getItemGroup().getId() : null;
+        Optional<BundleOffer> offer = discountApplicationService.resolveBundleOffer(
+                businessId, channel, item.getId(), itemGroupId);
+
+        int newTotal = offer.isEmpty()
+                ? Math.max(0, newPaidQuantity)
+                : offer.get().totalForPaidUnits(newPaidQuantity);
+
+        if (newTotal > currentTotalQuantity) {
+            requireStockForBundle(business, item, variant, newTotal, unitFactor);
+        }
+
+        return newTotal;
+    }
+
+    /**
+     * Refuses a line whose Buy X Get Y bundle the shelf cannot cover.
+     *
+     * Checked against the line's whole new total (paid units and free units
+     * together), not just the increment a tap asked for — "cannot supply the
+     * total" is the actual promise a completed bundle makes to the shelf.
+     * Mirrors {@code StorefrontCartService.requireStock}, so the till and the
+     * storefront refuse the same way for the same reason.
+     */
+    private void requireStockForBundle(
+            Business business, Item item, ItemVariant variant, int totalQuantity, BigDecimal unitFactor) {
+        if (!ItemType.PHYSICAL.equals(item.getItemType())) {
+            return;
+        }
+
+        StockSummaryResponse summary = stockEntryService.findAvailableStock(
+                business.getId(), item.getId(), variant == null ? null : variant.getId());
+
+        // No entries at all means the shop is not tracking this item, which is
+        // not the same as it having none.
+        if (summary == null || summary.lastEntryId() == null) {
+            return;
+        }
+
+        BigDecimal onHand = summary.quantityOnHand() == null ? BigDecimal.ZERO : summary.quantityOnHand();
+        BigDecimal available = itemChannelStockService.availableFor(item, variant, OrderChannel.POS, onHand);
+        BigDecimal factor = unitFactor == null ? BigDecimal.ONE : unitFactor;
+        BigDecimal totalBaseQuantity = factor.multiply(BigDecimal.valueOf(totalQuantity));
+
+        if (available.compareTo(totalBaseQuantity) < 0) {
+            String optionSuffix = variant == null ? "" : " (" + variant.getVariantName() + ")";
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "\"" + item.getName() + optionSuffix + "\" only has "
+                            + available.stripTrailingZeros().toPlainString()
+                            + " left — not enough to include the free item this offer gives.");
+        }
+    }
+
     @Override
     @Transactional
     public OrderResponse addOrderItem(UUID businessId, UUID orderId, AddOrderItemRequest request) {
         Order order = validateOrderModification(businessId, orderId);
-        BigDecimal orderLevelDiscount = currentOrderLevelDiscount(order);
 
         java.util.Optional<OrderItem> existingOpt = order.getItems().stream()
                 .filter(i -> sameLine(i, request.itemId(), request.variantId(), request.unitId(),
@@ -976,7 +1161,16 @@ public class OrderServiceImpl implements OrderService {
 
         if (existingOpt.isPresent()) {
             OrderItem existing = existingOpt.get();
-            existing.setQuantity(existing.getQuantity() + request.quantity());
+            int currentFree = existing.getFreeQuantity() == null ? 0 : existing.getFreeQuantity();
+            int currentPaid = existing.getQuantity() - currentFree;
+            int newPaid = currentPaid + request.quantity();
+            int newTotal = applyBundleQuantity(
+                    businessId, order.getBusiness(), existing.getItem(), existing.getVariant(),
+                    order.getChannel(), existing.getQuantity(), newPaid, existing.getUnitFactor());
+
+            existing.setQuantity(newTotal);
+            existing.setFreeQuantity(newTotal - newPaid);
+
             BigDecimal itemDiscount = existing.getDiscountAmount() != null ? existing.getDiscountAmount() : BigDecimal.ZERO;
             if (request.discountAmount() != null) {
                 itemDiscount = itemDiscount.add(request.discountAmount());
@@ -989,10 +1183,19 @@ public class OrderServiceImpl implements OrderService {
                     request.addOnIds(), request.quantity());
 
             OrderItem item = buildItem(businessId, channelCodeOf(order), createReq);
+            int newTotal = applyBundleQuantity(
+                    businessId, order.getBusiness(), item.getItem(), item.getVariant(),
+                    order.getChannel(), 0, request.quantity(), item.getUnitFactor());
+
+            item.setQuantity(newTotal);
+            item.setFreeQuantity(newTotal - request.quantity());
+
             if (request.discountAmount() != null) {
                 item.setDiscountAmount(request.discountAmount());
-                item.setLineTotal(item.priceWithAddOns().multiply(BigDecimal.valueOf(item.getQuantity())).subtract(request.discountAmount()));
             }
+            BigDecimal manualDiscount = item.getDiscountAmount() != null ? item.getDiscountAmount() : BigDecimal.ZERO;
+            item.setLineTotal(item.priceWithAddOns().multiply(BigDecimal.valueOf(item.getQuantity())).subtract(manualDiscount));
+
             int maxLine = order.getItems().stream()
                     .mapToInt(i -> i.getLineNumber() == null ? 0 : i.getLineNumber())
                     .max()
@@ -1001,7 +1204,7 @@ public class OrderServiceImpl implements OrderService {
             order.addItem(item);
         }
 
-        order.setDiscountAmount(itemDiscountTotal(order).add(orderLevelDiscount));
+        syncOrderDiscount(businessId, order);
         recalculateOrderTotals(order);
         return orderMapper.toResponse(orderRepository.save(order));
     }
@@ -1010,7 +1213,6 @@ public class OrderServiceImpl implements OrderService {
     @Transactional
     public OrderResponse updateOrderItem(UUID businessId, UUID orderId, UUID orderItemId, UpdateOrderItemRequest request) {
         Order order = validateOrderModification(businessId, orderId);
-        BigDecimal orderLevelDiscount = currentOrderLevelDiscount(order);
 
         OrderItem item = order.getItems().stream()
                 .filter(i -> i.getId().equals(orderItemId))
@@ -1018,7 +1220,11 @@ public class OrderServiceImpl implements OrderService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Order item not found"));
 
         if (request.quantity() != null) {
-            item.setQuantity(request.quantity());
+            int newTotal = applyBundleQuantity(
+                    businessId, order.getBusiness(), item.getItem(), item.getVariant(),
+                    order.getChannel(), item.getQuantity(), request.quantity(), item.getUnitFactor());
+            item.setQuantity(newTotal);
+            item.setFreeQuantity(newTotal - request.quantity());
         }
 
         if (request.discountAmount() != null) {
@@ -1029,7 +1235,7 @@ public class OrderServiceImpl implements OrderService {
         BigDecimal discount = item.getDiscountAmount() != null ? item.getDiscountAmount() : BigDecimal.ZERO;
         item.setLineTotal(item.priceWithAddOns().multiply(BigDecimal.valueOf(item.getQuantity())).subtract(discount));
 
-        order.setDiscountAmount(itemDiscountTotal(order).add(orderLevelDiscount));
+        syncOrderDiscount(businessId, order);
         recalculateOrderTotals(order);
         return orderMapper.toResponse(orderRepository.save(order));
     }
@@ -1038,14 +1244,13 @@ public class OrderServiceImpl implements OrderService {
     @Transactional
     public OrderResponse removeOrderItem(UUID businessId, UUID orderId, UUID orderItemId) {
         Order order = validateOrderModification(businessId, orderId);
-        BigDecimal orderLevelDiscount = currentOrderLevelDiscount(order);
 
         boolean removed = order.getItems().removeIf(i -> i.getId().equals(orderItemId));
         if (!removed) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Order item not found");
         }
 
-        order.setDiscountAmount(itemDiscountTotal(order).add(orderLevelDiscount));
+        syncOrderDiscount(businessId, order);
         recalculateOrderTotals(order);
         return orderMapper.toResponse(orderRepository.save(order));
     }
@@ -1058,20 +1263,52 @@ public class OrderServiceImpl implements OrderService {
         return orderMapper.toResponse(orderRepository.save(order));
     }
 
+
+    @Override
+    @Transactional
+    public OrderResponse updateOrderCustomer(UUID businessId, UUID orderId, UpdateOrderCustomerRequest request) {
+        Order order = validateOrderModification(businessId, orderId);
+
+        if (request.customerId() == null) {
+            order.setCustomer(null);
+        } else {
+            Customer customer = customerRepository.findByIdAndBusinessId(request.customerId(), businessId)
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Customer has not been found"));
+            order.setCustomer(customer);
+        }
+
+        syncOrderDiscount(businessId, order);
+        recalculateOrderTotals(order);
+        return orderMapper.toResponse(orderRepository.save(order));
+    }
+
     @Override
     @Transactional
     public OrderResponse updateOrderDiscount(UUID businessId, UUID orderId, UpdateOrderDiscountRequest request) {
         Order order = validateOrderModification(businessId, orderId);
-        BigDecimal itemDiscount = itemDiscountTotal(order);
-        BigDecimal orderLevelDiscount = resolveOrderDiscountAmount(
-                businessId,
-                order,
-                order.getCustomer(),
-                request.discountId(),
-                request.discountCode(),
-                request.discountAmount(),
-                false);
-        order.setDiscountAmount(itemDiscount.add(orderLevelDiscount));
+
+        List<UUID> discountIds = request.discountIds();
+        BigDecimal totalDiscount;
+        if (discountIds != null && discountIds.size() > 1) {
+            // Several simultaneously-active discounts, each auto-matched to
+            // its own line (e.g. two item-scoped promos on different
+            // products) — no single id speaks for the whole order.
+            totalDiscount = resolveMultipleOrderDiscounts(businessId, order, order.getCustomer(), discountIds);
+        } else {
+            UUID singleDiscountId = request.discountId() != null
+                    ? request.discountId()
+                    : (discountIds != null && !discountIds.isEmpty() ? discountIds.get(0) : null);
+            totalDiscount = resolveOrderDiscountAmount(
+                    businessId,
+                    order,
+                    order.getCustomer(),
+                    singleDiscountId,
+                    request.discountCode(),
+                    request.discountAmount(),
+                    false);
+        }
+
+        order.setDiscountAmount(totalDiscount);
         recalculateOrderTotals(order);
         return orderMapper.toResponse(orderRepository.save(order));
     }
@@ -1085,10 +1322,16 @@ public class OrderServiceImpl implements OrderService {
             BigDecimal manualDiscountAmount,
             boolean applyMembershipDiscount
     ) {
+        // Clear attribution left by a previously-applied catalog discount
+        // before recomputing anything — manual (cashier-typed) per-item
+        // amounts never carry a label and are never touched here, so this
+        // can't clobber them.
+        clearCatalogAttributedItemDiscounts(order);
+
         BigDecimal discountableSubtotal = grossSubtotal(order).subtract(itemDiscountTotal(order));
         if (discountableSubtotal.compareTo(BigDecimal.ZERO) <= 0) {
             clearOrderDiscountSource(order);
-            return BigDecimal.ZERO;
+            return itemDiscountTotal(order);
         }
 
         if (StringUtils.hasText(requestedDiscountCode)) {
@@ -1102,7 +1345,9 @@ public class OrderServiceImpl implements OrderService {
             validateDiscountForOrder(discount, order, customer, true);
             order.setDiscountId(discount.getId());
             order.setDiscountCode(coupon.getCode());
-            return calculateDiscountAmount(discount, order, discountableSubtotal);
+            BigDecimal amount = calculateDiscountAmount(discount, order, discountableSubtotal);
+            distributeItemLevelDiscount(discount, order, amount);
+            return totalDiscountAfterDistribution(order, discount, amount);
         }
 
         if (requestedDiscountId != null) {
@@ -1111,13 +1356,14 @@ public class OrderServiceImpl implements OrderService {
             order.setDiscountId(discount.getId());
             order.setDiscountCode(null);
             BigDecimal calculated = calculateDiscountAmount(discount, order, discountableSubtotal);
+            distributeItemLevelDiscount(discount, order, calculated);
             if (calculated.compareTo(BigDecimal.ZERO) > 0) {
-                return calculated;
+                return totalDiscountAfterDistribution(order, discount, calculated);
             }
             if (manualDiscountAmount != null && manualDiscountAmount.compareTo(BigDecimal.ZERO) > 0) {
-                return manualDiscountAmount.min(discountableSubtotal);
+                return itemDiscountTotal(order).add(manualDiscountAmount.min(discountableSubtotal));
             }
-            return calculated;
+            return totalDiscountAfterDistribution(order, discount, calculated);
         }
 
         if (applyMembershipDiscount
@@ -1129,11 +1375,111 @@ public class OrderServiceImpl implements OrderService {
             validateDiscountForOrder(discount, order, customer, false);
             order.setDiscountId(discount.getId());
             order.setDiscountCode(null);
-            return calculateDiscountAmount(discount, order, discountableSubtotal);
+            BigDecimal amount = calculateDiscountAmount(discount, order, discountableSubtotal);
+            distributeItemLevelDiscount(discount, order, amount);
+            return totalDiscountAfterDistribution(order, discount, amount);
         }
 
         clearOrderDiscountSource(order);
-        return manualDiscountAmount == null ? BigDecimal.ZERO : manualDiscountAmount;
+        BigDecimal manual = manualDiscountAmount == null ? BigDecimal.ZERO : manualDiscountAmount;
+        return itemDiscountTotal(order).add(manual);
+    }
+
+
+    private BigDecimal resolveMultipleOrderDiscounts(
+            UUID businessId, Order order, Customer customer, List<UUID> discountIds
+    ) {
+        clearCatalogAttributedItemDiscounts(order);
+
+        BigDecimal discountableSubtotal = grossSubtotal(order).subtract(itemDiscountTotal(order));
+        if (discountableSubtotal.compareTo(BigDecimal.ZERO) <= 0) {
+            clearOrderDiscountSource(order);
+            return itemDiscountTotal(order);
+        }
+
+        BigDecimal orderLevelPortion = BigDecimal.ZERO;
+        UUID primaryDiscountId = null;
+        for (UUID discountId : discountIds) {
+            Discount discount = discountRepository.findByIdAndBusinessId(discountId, businessId).orElse(null);
+            if (discount == null) {
+                continue;
+            }
+            BigDecimal amount;
+            try {
+                validateDiscountForOrder(discount, order, customer, false);
+                amount = calculateDiscountAmount(discount, order, discountableSubtotal);
+            } catch (ResponseStatusException e) {
+                continue;
+            }
+            if (amount.compareTo(BigDecimal.ZERO) <= 0) {
+                continue;
+            }
+            distributeItemLevelDiscount(discount, order, amount);
+            DiscountScope scope = normalizeScope(discount.getScope());
+            if (scope != DiscountScope.SPECIFIC_ITEMS && scope != DiscountScope.SPECIFIC_CATEGORIES) {
+                orderLevelPortion = orderLevelPortion.add(amount);
+            }
+            if (primaryDiscountId == null) {
+                primaryDiscountId = discountId;
+            }
+        }
+
+        order.setDiscountId(primaryDiscountId);
+        order.setDiscountCode(null);
+        return itemDiscountTotal(order).add(orderLevelPortion);
+    }
+
+
+    private BigDecimal totalDiscountAfterDistribution(Order order, Discount discount, BigDecimal amount) {
+        DiscountScope scope = normalizeScope(discount.getScope());
+        boolean itemAttributed = scope == DiscountScope.SPECIFIC_ITEMS || scope == DiscountScope.SPECIFIC_CATEGORIES;
+        BigDecimal itemLevelTotal = itemDiscountTotal(order);
+        return itemAttributed ? itemLevelTotal : itemLevelTotal.add(amount);
+    }
+
+
+    private void clearCatalogAttributedItemDiscounts(Order order) {
+        for (OrderItem item : order.getItems()) {
+            if (item.getDiscountLabel() != null) {
+                item.setDiscountAmount(BigDecimal.ZERO);
+                item.setDiscountLabel(null);
+            }
+        }
+    }
+
+
+    private void distributeItemLevelDiscount(Discount discount, Order order, BigDecimal calculatedAmount) {
+        DiscountScope scope = normalizeScope(discount.getScope());
+        if (scope != DiscountScope.SPECIFIC_ITEMS && scope != DiscountScope.SPECIFIC_CATEGORIES) {
+            return;
+        }
+        if (calculatedAmount == null || calculatedAmount.compareTo(BigDecimal.ZERO) <= 0) {
+            return;
+        }
+
+        List<OrderItem> eligible = eligibleItems(discount, order);
+        BigDecimal eligibleTotal = eligible.stream().map(this::grossLineTotal).reduce(BigDecimal.ZERO, BigDecimal::add);
+        if (eligibleTotal.compareTo(BigDecimal.ZERO) <= 0) {
+            return;
+        }
+
+        BigDecimal remaining = calculatedAmount;
+        for (int i = 0; i < eligible.size(); i++) {
+            OrderItem item = eligible.get(i);
+            BigDecimal share;
+            if (i == eligible.size() - 1) {
+                // Last line absorbs the rounding remainder so the parts sum
+                // exactly to calculatedAmount.
+                share = remaining;
+            } else {
+                BigDecimal lineTotal = grossLineTotal(item);
+                share = calculatedAmount.multiply(lineTotal)
+                        .divide(eligibleTotal, 2, RoundingMode.HALF_UP);
+                remaining = remaining.subtract(share);
+            }
+            item.setDiscountAmount(share.max(BigDecimal.ZERO));
+            item.setDiscountLabel(discount.getName());
+        }
     }
 
     private Coupon findUsableCoupon(UUID businessId, String code, BigDecimal subtotal, Customer customer) {
@@ -1301,10 +1647,12 @@ public class OrderServiceImpl implements OrderService {
                     .map(target -> target.getItem().getId())
                     .collect(java.util.stream.Collectors.toSet());
             if (itemIds.isEmpty()) return order.getItems();
-            List<OrderItem> matching = order.getItems().stream()
+            // No fallback to "all items" when none of the target items are
+            // in this cart: a discount scoped to items that aren't here
+            // means it applies to nothing, not to everything.
+            return order.getItems().stream()
                     .filter(item -> item.getItem() != null && itemIds.contains(item.getItem().getId()))
                     .toList();
-            return matching.isEmpty() ? order.getItems() : matching;
         }
         if (DiscountScope.SPECIFIC_CATEGORIES.equals(scope)) {
             Set<UUID> itemGroupIds = targets.stream()
@@ -1312,12 +1660,11 @@ public class OrderServiceImpl implements OrderService {
                     .map(target -> target.getItemGroup().getId())
                     .collect(java.util.stream.Collectors.toSet());
             if (itemGroupIds.isEmpty()) return order.getItems();
-            List<OrderItem> matching = order.getItems().stream()
+            return order.getItems().stream()
                     .filter(item -> item.getItem() != null
                             && item.getItem().getItemGroup() != null
                             && itemGroupIds.contains(item.getItem().getItemGroup().getId()))
                     .toList();
-            return matching.isEmpty() ? order.getItems() : matching;
         }
 
         return order.getItems();
@@ -1353,10 +1700,66 @@ public class OrderServiceImpl implements OrderService {
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 
-    private BigDecimal currentOrderLevelDiscount(Order order) {
-        BigDecimal storedTotalDiscount = order.getDiscountAmount() == null ? BigDecimal.ZERO : order.getDiscountAmount();
-        BigDecimal orderLevelDiscount = storedTotalDiscount.subtract(itemDiscountTotal(order));
-        return orderLevelDiscount.max(BigDecimal.ZERO);
+
+    private void syncOrderDiscount(UUID businessId, Order order) {
+        if (order.getDiscountId() != null || StringUtils.hasText(order.getDiscountCode())) {
+            BigDecimal discountableSubtotal = grossSubtotal(order).subtract(itemDiscountTotal(order));
+            // resolveOrderDiscountAmount already returns the order's FULL
+            // discount — the per-item attributed portion plus any order-wide
+            // portion — so it is stored as-is. Adding itemDiscountTotal on
+            // top of it double-counted every item-scoped discount.
+            BigDecimal totalDiscount = itemDiscountTotal(order);
+            if (discountableSubtotal.compareTo(BigDecimal.ZERO) > 0) {
+                try {
+                    totalDiscount = resolveOrderDiscountAmount(businessId, order, order.getCustomer(),
+                            order.getDiscountId(), order.getDiscountCode(), null, false);
+                } catch (ResponseStatusException e) {
+
+                    clearOrderDiscountSource(order);
+                    totalDiscount = itemDiscountTotal(order);
+                }
+            }
+            order.setDiscountAmount(totalDiscount);
+            return;
+        }
+
+        OrderChannel channel = order.getChannel();
+        BigDecimal grossOrderSubtotal = grossSubtotal(order);
+        BigDecimal itemDiscountTotal = BigDecimal.ZERO;
+        List<OrderLineUnits> lineUnits = new ArrayList<>();
+
+        for (OrderItem item : order.getItems()) {
+            BigDecimal unitPrice = item.priceWithAddOns();
+            int quantity = item.getQuantity() == null ? 0 : item.getQuantity();
+
+            // A permanently-deleted item detaches its old lines rather than
+            // losing the receipt — such a line no longer names a catalog item
+            // a discount could be resolved against, so it takes none.
+            BigDecimal amount = BigDecimal.ZERO;
+            if (item.getItem() != null) {
+                UUID itemId = item.getItem().getId();
+                UUID itemGroupId = item.getItem().getItemGroup() != null ? item.getItem().getItemGroup().getId() : null;
+
+                amount = discountApplicationService.resolveLineDiscount(
+                                businessId, channel, itemId, itemGroupId, unitPrice, quantity, grossOrderSubtotal)
+                        .map(LineDiscountApplication::amount)
+                        .orElse(BigDecimal.ZERO);
+            }
+
+            item.setDiscountAmount(amount);
+            item.setLineTotal(unitPrice.multiply(BigDecimal.valueOf(quantity)).subtract(amount));
+            itemDiscountTotal = itemDiscountTotal.add(amount);
+            lineUnits.add(new OrderLineUnits(unitPrice, quantity));
+        }
+
+        BigDecimal orderLevelDiscount = BigDecimal.ZERO;
+        if (itemDiscountTotal.compareTo(BigDecimal.ZERO) == 0) {
+            orderLevelDiscount = discountApplicationService.resolveOrderDiscount(businessId, channel, lineUnits)
+                    .map(LineDiscountApplication::amount)
+                    .orElse(BigDecimal.ZERO);
+        }
+
+        order.setDiscountAmount(itemDiscountTotal.add(orderLevelDiscount));
     }
 
     private BigDecimal grossLineTotal(OrderItem item) {
@@ -1419,10 +1822,7 @@ public class OrderServiceImpl implements OrderService {
             netSubtotal = BigDecimal.ZERO;
         }
 
-        // The order was first priced (possibly against an empty $0 cart) back
-        // in createOrder; every item/discount edit since has to re-run the
-        // same calculator against the new net amount, or tax stays frozen at
-        // whatever it was on that first, often-empty, cart.
+
         TaxCalculator.Result taxResult = taxCalculator.apply(order.getBusiness(), netSubtotal, scale);
         order.setTaxInclusionType(taxResult.inclusionType());
         order.setTaxRate(taxResult.taxRate());
@@ -1477,6 +1877,16 @@ public class OrderServiceImpl implements OrderService {
                 order.setStatus(dto.status() != null ? dto.status() : OrderStatus.PAID);
                 order.setSubtotal(dto.subtotal() != null ? dto.subtotal() : BigDecimal.ZERO);
                 order.setDiscountAmount(dto.discountAmount() != null ? dto.discountAmount() : BigDecimal.ZERO);
+
+                if (dto.taxRate() != null) {
+                    order.setTaxRate(dto.taxRate());
+                }
+                if (dto.taxAmount() != null) {
+                    order.setTaxAmount(dto.taxAmount());
+                }
+                if (dto.taxInclusionType() != null) {
+                    order.setTaxInclusionType(dto.taxInclusionType());
+                }
                 order.setTotal(dto.total() != null ? dto.total() : BigDecimal.ZERO);
 
                 if (dto.items() != null) {
@@ -1487,7 +1897,10 @@ public class OrderServiceImpl implements OrderService {
                         if (item == null) continue;
 
                         OrderItem orderItem = new OrderItem();
+
+                        attachAddOns(orderItem, item, itemDto.addOnIds());
                         orderItem.setItem(item);
+                        applySoldAs(item, itemDto, orderItem);
                         orderItem.setItemName(item.getName() != null ? item.getName() : "Item");
                         orderItem.setQuantity(itemDto.quantity() != null ? itemDto.quantity() : 1);
                         orderItem.setUnitPrice(itemDto.unitPrice() != null ? itemDto.unitPrice() : BigDecimal.ZERO);
@@ -1500,7 +1913,13 @@ public class OrderServiceImpl implements OrderService {
 
             Order savedOrder = orderRepository.save(order);
 
-            // Create Sale entity if not already present
+
+            if (isNewOrder && dto.createdAt() != null) {
+                savedOrder.setCreatedDate(
+                        LocalDateTime.ofInstant(dto.createdAt(), ZoneId.systemDefault()));
+                savedOrder = orderRepository.save(savedOrder);
+            }
+
             if (saleRepository.findByOrderId(savedOrder.getId()).isEmpty()) {
                 Sale sale = new Sale();
                 sale.setBusiness(business);

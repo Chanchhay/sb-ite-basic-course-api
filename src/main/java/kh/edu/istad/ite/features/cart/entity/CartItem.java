@@ -41,6 +41,16 @@ public class CartItem extends BasedAuditingEntity {
     @Column(nullable = false)
     private Integer quantity;
 
+    /**
+     * How many of {@link #quantity} a Buy X Get Y offer gave away, folded in
+     * automatically rather than left for the shopper to add by name. A
+     * subset of {@code quantity}, not additional to it — stock still moves
+     * for a free unit the same as a paid one. Zero for an ordinary line.
+     */
+    @Builder.Default
+    @Column(name = "free_quantity", nullable = false)
+    private Integer freeQuantity = 0;
+
     @Column(name = "price_snapshot", nullable = false, precision = 10, scale = 2)
     private BigDecimal priceSnapshot;
 

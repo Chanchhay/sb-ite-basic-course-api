@@ -14,6 +14,16 @@ public interface UserProfileRepository extends JpaRepository<UserProfile, UUID> 
 
     List<UserProfile> findByBusinessIdOrderByJoinedAtDesc(UUID businessId);
 
+    /**
+     * Platform staff specifically — `business IS NULL` alone also matches a
+     * self-registered business owner's own profile (`AuthServiceImpl` never
+     * links it to the `Business` it owns) and a plain customer's profile.
+     * Only profiles created through `StaffManagementService` ever get a
+     * `staffStatus`, so requiring it here is what actually scopes this to
+     * staff the platform created, not every businessId-less profile.
+     */
+    List<UserProfile> findByBusinessIdAndStaffStatusIsNotNullOrderByJoinedAtDesc(UUID businessId);
+
     Page<UserProfile> findByBusinessId(UUID businessId, Pageable pageable);
 
     Optional<UserProfile> findByUserIdAndBusinessId(UUID userId, UUID businessId);

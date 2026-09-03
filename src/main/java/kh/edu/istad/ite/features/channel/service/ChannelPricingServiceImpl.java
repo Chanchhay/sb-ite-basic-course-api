@@ -23,6 +23,7 @@ import kh.edu.istad.ite.features.channel.repository.ItemChannelRepository;
 import kh.edu.istad.ite.features.channel.repository.SalesChannelRepository;
 import kh.edu.istad.ite.shared.enums.PriceOverrideKind;
 import kh.edu.istad.ite.shared.helper.BusinessHelper;
+import kh.edu.istad.ite.shared.cache.BusinessCacheEvictor;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -62,6 +63,7 @@ public class ChannelPricingServiceImpl implements ChannelPricingService {
     private final BusinessChannelSettingsRepository settingsRepository;
     private final ItemRepository itemRepository;
     private final UnitRepository unitRepository;
+    private final BusinessCacheEvictor businessCacheEvictor;
 
     /** Its own, like every other JSON reader here — the app publishes no bean. */
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -86,6 +88,7 @@ public class ChannelPricingServiceImpl implements ChannelPricingService {
     public ChannelListingResponse saveListing(
             UUID businessId, UUID channelId, SaveChannelListingRequest request) {
         Business business = businessHelper.findOwnedBusiness(businessId);
+        businessCacheEvictor.evictStorefront(businessId);
         SalesChannel channel = findChannel(channelId);
 
         BusinessChannelSettings settings = settingsRepository

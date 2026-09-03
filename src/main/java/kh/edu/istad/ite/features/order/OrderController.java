@@ -103,6 +103,15 @@ public class OrderController {
         return orderService.cancelOrder(businessId, orderId);
     }
 
+    @DeleteMapping("/{orderId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void deleteOrder(
+            @PathVariable UUID businessId,
+            @PathVariable UUID orderId
+    ) {
+        orderService.deleteOrder(businessId, orderId);
+    }
+
     @PatchMapping("/{orderId}/confirm")
     public OrderResponse confirmOrder(
             @PathVariable UUID businessId,
@@ -165,6 +174,15 @@ public class OrderController {
             @Valid @RequestBody UpdateOrderNoteRequest request
     ) {
         return orderService.updateOrderNote(businessId, orderId, request);
+    }
+
+    @PatchMapping("/{orderId}/customer")
+    public OrderResponse updateOrderCustomer(
+            @PathVariable UUID businessId,
+            @PathVariable UUID orderId,
+            @Valid @RequestBody UpdateOrderCustomerRequest request
+    ) {
+        return orderService.updateOrderCustomer(businessId, orderId, request);
     }
 
     @PatchMapping("/{orderId}/discount")

@@ -33,8 +33,8 @@ public class OrderItem {
     @JoinColumn(name = "order_id", nullable = false)
     private Order order;
 
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "item_id", nullable = false)
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "item_id")
     private Item item;
 
     @ManyToOne(fetch = FetchType.LAZY)
@@ -47,6 +47,17 @@ public class OrderItem {
     @Column(nullable = false)
     private Integer quantity;
 
+    /**
+     * How many of {@link #quantity} a BUY_X_GET_Y offer gave away, folded in
+     * automatically rather than left for the customer to ask for by name.
+     *
+     * A subset of {@code quantity}, not additional to it: stock and the base
+     * quantity still move for every unit here, since a free unit still comes
+     * off the shelf. Zero for an ordinary line.
+     */
+    @Column(name = "free_quantity", nullable = false)
+    private Integer freeQuantity = 0;
+
     @Column(name = "unit_price", nullable = false, precision = 12, scale = 2)
     private BigDecimal unitPrice = BigDecimal.ZERO;
 
@@ -55,6 +66,12 @@ public class OrderItem {
 
     @Column(name = "discount_amount", nullable = false, precision = 12, scale = 2)
     private BigDecimal discountAmount = BigDecimal.ZERO;
+
+    // Name of the catalog Discount that produced discountAmount for this
+    // line, if any — so receipts/checkout can show which promo applied to
+    // which item instead of just a lump order-level discount total.
+    @Column(name = "discount_label", length = 150)
+    private String discountLabel;
 
     @Column(name = "line_total", nullable = false, precision = 14, scale = 2)
     private BigDecimal lineTotal = BigDecimal.ZERO;

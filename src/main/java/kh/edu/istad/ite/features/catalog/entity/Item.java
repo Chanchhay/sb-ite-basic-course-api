@@ -29,6 +29,7 @@ import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -123,6 +124,7 @@ public class Item extends BasedAuditingEntity {
     @Column(columnDefinition = "jsonb")
     private List<ItemAttribute> attributes;
 
+
     /**
      * The colours this item comes in, declared once and shared by every size.
      *
@@ -138,6 +140,7 @@ public class Item extends BasedAuditingEntity {
     @OrderBy("variantName ASC")
     private List<ItemVariant> variants = new ArrayList<>();
 
+
     /**
      * Larger units this item is bought or sold in, each expressed in base
      * units. They belong to the item, not to the unit — see
@@ -145,6 +148,7 @@ public class Item extends BasedAuditingEntity {
      */
     @OneToMany(mappedBy = "item", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<ItemUomConversion> uomConversions = new ArrayList<>();
+
 
     /**
      * Extras this item offers, and whether each is currently on sale here.
@@ -179,4 +183,10 @@ public class Item extends BasedAuditingEntity {
             columnDefinition = "varchar(20) default 'ACTIVE'"
     )
     private ItemStatus status = ItemStatus.ACTIVE;
+
+    @Column(name = "is_deleted", nullable = false, columnDefinition = "boolean default false")
+    private Boolean isDeleted = false;
+
+    @Column(name = "deleted_at")
+    private LocalDateTime deletedAt;
 }
