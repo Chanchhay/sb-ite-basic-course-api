@@ -14,6 +14,14 @@ public final class CacheNames {
     public static final String CATALOG_ITEM_GROUPS = "catalog:item-groups";
     public static final String PUBLIC_STORE_ITEMS = "public:store-items";
     public static final String PUBLIC_STORE_ITEM_GROUPS = "public:store-item-groups";
+    /**
+     * "Which business am I?" — the answer the dashboard asks for before nearly
+     * every other call it makes, and which for a given user essentially never
+     * changes. Keyed by the signed-in user rather than by business, because
+     * resolving the business is the whole point of the lookup.
+     */
+    public static final String BUSINESS_ME = "business:me";
+
     public static final String PUBLIC_STORE_DETAIL = "public:store-detail";
     public static final String PUBLIC_STORE_FACEBOOK = "public:store-facebook";
 
