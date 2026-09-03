@@ -18,16 +18,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
-/**
- * Wakes a business owner's phone for an event this backend is the only thing
- * that knows happened — a channel order landing, with no browser or POS
- * session in the loop to trigger the dashboard's own client-side push call.
- * The dashboard app owns Web Push subscriptions and VAPID keys; this just
- * tells it who to notify and with what, over the one webhook it exposes for
- * exactly this. Best-effort like the Telegram alerts sent from the same
- * checkout paths: a slow or unreachable dashboard must never hold up or fail
- * a checkout, so every failure is swallowed here and only logged.
- */
 @Component
 @Slf4j
 public class PushNotificationClient {

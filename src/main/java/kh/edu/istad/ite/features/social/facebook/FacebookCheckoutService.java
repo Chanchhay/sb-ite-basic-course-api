@@ -52,7 +52,6 @@ import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
-import java.time.format.DateTimeFormatter;
 import java.util.UUID;
 import java.util.List;
 import java.util.Map;
@@ -65,7 +64,6 @@ public class FacebookCheckoutService {
     private static final String CURRENCY_KHR = "KHR";
     private static final int QR_VALIDITY_MINUTES = 2;
     private static final int QR_IMAGE_SIZE = 512;
-    private static final DateTimeFormatter INVOICE_DATE = DateTimeFormatter.ofPattern("yyyyMMdd");
 
     private final BusinessRepository businessRepository;
     private final BusinessHelper businessHelper;
@@ -89,6 +87,7 @@ public class FacebookCheckoutService {
     private final StorefrontProps storefrontProps;
     private final kh.edu.istad.ite.features.business.service.TaxCalculator taxCalculator;
     private final kh.edu.istad.ite.features.notification.push.PushNotificationClient pushNotificationClient;
+    private final kh.edu.istad.ite.features.order.service.InvoiceNumberGenerator invoiceNumberGenerator;
 
     public record CheckoutDraft(
             java.util.UUID orderId,
@@ -365,9 +364,7 @@ public class FacebookCheckoutService {
     }
 
     private String nextInvoiceNumber(UUID businessId) {
-        String datePart = LocalDateTime.now().format(INVOICE_DATE);
-        long sequence = orderRepository.countByBusinessId(businessId) + 1;
-        return "INV-" + datePart + "-" + String.format("%05d", sequence);
+        return invoiceNumberGenerator.next(businessId);
     }
 
     @Transactional

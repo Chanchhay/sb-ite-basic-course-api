@@ -14,6 +14,7 @@ import kh.edu.istad.ite.shared.enums.DiscountScope;
 import kh.edu.istad.ite.shared.enums.DiscountType;
 import kh.edu.istad.ite.shared.enums.OrderChannel;
 import kh.edu.istad.ite.shared.enums.RecordStatus;
+import kh.edu.istad.ite.shared.helper.CurrencyDisplayHelper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -31,6 +32,7 @@ public class StorefrontMapper {
     private final MinioService minioService;
     private final DiscountRepository discountRepository;
     private final ChannelPriceResolver channelPriceResolver;
+    private final CurrencyDisplayHelper currencyDisplayHelper;
 
     /** The seeded channel the online store trades as. */
     private static final String WEB_CHANNEL_CODE = "WEB";
@@ -181,6 +183,10 @@ public class StorefrontMapper {
         boolean isClosed = Boolean.TRUE.equals(business.getIsClosed());
         ChannelScheduleDto onlineHours = onlineHoursOf(business);
         boolean openNow = isTakingWebOrders(business);
+        BigDecimal displayExchangeRate = currencyDisplayHelper
+                .snapshot(business, business.getBaseCurrency())
+                .map(CurrencyDisplayHelper.Snapshot::rate)
+                .orElse(null);
         return new PublicStoreDetailResponse(
                 business.getId(),
                 business.getSlug(),
@@ -201,6 +207,7 @@ public class StorefrontMapper {
                 buildStorefrontUrl(business.getSlug()),
                 business.getBaseCurrency(),
                 business.getDisplayCurrency(),
+                displayExchangeRate,
                 businessMapper.toSubCategoryResponse(business.getBusinessCategory()),
                 business.getSocialLinks(),
                 isClosed,
