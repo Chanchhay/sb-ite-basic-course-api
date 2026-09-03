@@ -7,7 +7,6 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -115,7 +114,6 @@ public class OrderServiceImpl implements OrderService {
 
     private static final String CURRENCY_KHR = "KHR";
     private static final int QR_VALIDITY_MINUTES = 2;
-    private static final DateTimeFormatter INVOICE_DATE = DateTimeFormatter.ofPattern("yyyyMMdd");
 
     private final BusinessHelper businessHelper;
     private final CurrencyDisplayHelper currencyDisplayHelper;
@@ -144,6 +142,7 @@ public class OrderServiceImpl implements OrderService {
     private final kh.edu.istad.ite.features.channel.service.ChannelPriceResolver channelPriceResolver;
     private final TaxCalculator taxCalculator;
     private final DiscountApplicationService discountApplicationService;
+    private final InvoiceNumberGenerator invoiceNumberGenerator;
 
     @Override
     @Transactional
@@ -1008,9 +1007,7 @@ public class OrderServiceImpl implements OrderService {
     }
 
     private String nextInvoiceNumber(UUID businessId) {
-        String datePart = LocalDateTime.now().format(INVOICE_DATE);
-        long sequence = orderRepository.countByBusinessId(businessId) + 1;
-        return "INV-" + datePart + "-" + String.format("%05d", sequence);
+        return invoiceNumberGenerator.next(businessId);
     }
 
     @Override

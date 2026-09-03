@@ -74,7 +74,6 @@ import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
-import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -94,7 +93,6 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
     private static final int QR_VALIDITY_MINUTES = 2;
     private static final int QR_IMAGE_SIZE = 512;
     private static final String TERMINAL_LABEL = "WEB";
-    private static final DateTimeFormatter INVOICE_DATE = DateTimeFormatter.ofPattern("yyyyMMdd");
 
     private final BusinessRepository businessRepository;
     private final BusinessHelper businessHelper;
@@ -123,6 +121,7 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
     private final CustomerChannelIdentityRepository customerChannelIdentityRepository;
     private final DiscountService discountService;
     private final PushNotificationClient pushNotificationClient;
+    private final kh.edu.istad.ite.features.order.service.InvoiceNumberGenerator invoiceNumberGenerator;
 
 
     @Override
@@ -351,6 +350,8 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
                 openOrder.getItems().stream().mapToInt(OrderItem::getQuantity).sum(),
                 openOrder.getTotal(),
                 openOrder.getCurrency(),
+                openOrder.getDisplayCurrency(),
+                openOrder.getDisplayExchangeRate(),
                 qrCode == null ? null : qrCode.getQrPayload(),
                 qrCode == null ? null : qrCode.getMd5Hash(),
                 qrCode == null ? null : qrImageRenderer.toPngDataUri(qrCode.getQrPayload(), QR_IMAGE_SIZE),
@@ -522,6 +523,8 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
                 order.getItems().stream().mapToInt(OrderItem::getQuantity).sum(),
                 order.getTotal(),
                 order.getCurrency(),
+                order.getDisplayCurrency(),
+                order.getDisplayExchangeRate(),
                 result.qr(),
                 result.md5(),
                 qrImageRenderer.toPngDataUri(result.qr(), QR_IMAGE_SIZE),
@@ -551,6 +554,8 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
                 order.getItems().stream().mapToInt(OrderItem::getQuantity).sum(),
                 order.getTotal(),
                 order.getCurrency(),
+                order.getDisplayCurrency(),
+                order.getDisplayExchangeRate(),
                 null,
                 null,
                 null,
@@ -988,9 +993,7 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
     }
 
     private String nextInvoiceNumber(UUID businessId) {
-        String datePart = LocalDateTime.now().format(INVOICE_DATE);
-        long sequence = orderRepository.countByBusinessId(businessId) + 1;
-        return "INV-" + datePart + "-" + String.format("%05d", sequence);
+        return invoiceNumberGenerator.next(businessId);
     }
 
     @Override
