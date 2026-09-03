@@ -503,6 +503,7 @@ public class ItemServiceImpl implements ItemService {
     }
 
     @Override
+    @Transactional(readOnly = true)
     public PageResponse<ItemResponse> filterItems(UUID businessId, RequestDto requestDto, Pageable pageable) {
         businessHelper.findAccessibleBusiness(businessId);
 

@@ -53,6 +53,11 @@ spring:
     properties:
       hibernate:
         format_sql: true
+        # With open-in-view off, every response is mapped inside its own
+        # transaction, and a page of items walks the same lazy association on
+        # each row. Batch fetching turns those per-row selects into one
+        # `in (...)` per association instead of one per item.
+        default_batch_fetch_size: 25
         jdbc:
           batch_size: 25
         order_inserts: true
