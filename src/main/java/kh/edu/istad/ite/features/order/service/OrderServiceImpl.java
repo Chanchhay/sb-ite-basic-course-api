@@ -324,16 +324,9 @@ public class OrderServiceImpl implements OrderService {
 
         requireSettleable(order);
 
-        if (OrderChannel.POS.equals(order.getChannel())) {
-            boolean hasOpenSession = false;
-            Optional<RegisterSession> sessionOpt =
-                    registerSessionRepository.findByBusinessIdAndStatus(business.getId(), SessionStatus.OPEN);
-            if (sessionOpt.isPresent() && sessionOpt.get().getParticipants().contains(AuthHelper.currentUserId().toString())) {
-                hasOpenSession = true;
-            }
-            if (!hasOpenSession) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "No open register session found for current cashier");
-            }
+        if (OrderChannel.POS.equals(order.getChannel())
+                && registerSessionIdFor(business, order) == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "No open register session found for current cashier");
         }
 
         int scale = scaleFor(order);
@@ -421,6 +414,29 @@ public class OrderServiceImpl implements OrderService {
     }
 
 
+    /**
+     * The drawer this order's money goes into, or null if it takes none.
+     *
+     * Resolved while the sale is being rung up, because this is the only
+     * moment it is actually known. Working it out afterwards from who sold it
+     * and when — which is how the register history used to do it — guesses
+     * wrong at every shift boundary and every shared drawer. A sale on any
+     * channel but the till never touches one.
+     */
+    private Long registerSessionIdFor(Business business, Order order) {
+        if (!OrderChannel.POS.equals(order.getChannel())) {
+            return null;
+        }
+
+        String cashierId = AuthHelper.currentUserId().toString();
+
+        return registerSessionRepository
+                .findByBusinessIdAndStatus(business.getId(), SessionStatus.OPEN)
+                .filter(open -> open.getParticipants().contains(cashierId))
+                .map(RegisterSession::getId)
+                .orElse(null);
+    }
+
     private Sale settle(
             Business business,
             Order order,
@@ -475,6 +491,7 @@ public class OrderServiceImpl implements OrderService {
         sale.setCustomer(order.getCustomer());
         sale.setInvoiceNumber(order.getInvoiceNumber());
         sale.setCashierId(AuthHelper.currentUserId());
+        sale.setRegisterSessionId(registerSessionIdFor(business, order));
         sale.setChannel(order.getChannel());
         sale.setSubtotal(order.getSubtotal());
         sale.setDiscountAmount(order.getDiscountAmount());
@@ -1853,6 +1870,18 @@ public class OrderServiceImpl implements OrderService {
             return new SyncOfflineOrdersResponse(true, syncedUuids);
         }
 
+        // The till that went offline is the till syncing now, so its cash is in
+        // the drawer that is open at this moment — not one chosen by the sale's
+        // own timestamp, which is from before the connection came back. If the
+        // shift ended while offline there is no drawer left to credit, and the
+        // sale stays unattributed rather than landing in the wrong one.
+        UUID syncingCashierId = AuthHelper.currentUserId();
+        Long syncSessionId = registerSessionRepository
+                .findByBusinessIdAndStatus(business.getId(), SessionStatus.OPEN)
+                .filter(open -> open.getParticipants().contains(syncingCashierId.toString()))
+                .map(RegisterSession::getId)
+                .orElse(null);
+
         for (OfflineOrderDto dto : request.orders()) {
             if (dto.uuid() == null || dto.uuid().isBlank()) {
                 continue;
@@ -1938,6 +1967,8 @@ public class OrderServiceImpl implements OrderService {
                 sale.setBusiness(business);
                 sale.setOrder(savedOrder);
                 sale.setInvoiceNumber(savedOrder.getInvoiceNumber());
+                sale.setCashierId(syncingCashierId);
+                sale.setRegisterSessionId(syncSessionId);
                 sale.setChannel(savedOrder.getChannel());
                 sale.setSubtotal(savedOrder.getSubtotal());
                 sale.setDiscountAmount(savedOrder.getDiscountAmount());

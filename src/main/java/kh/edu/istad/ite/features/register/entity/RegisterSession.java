@@ -60,6 +60,9 @@ public class RegisterSession extends BasedAuditingEntity {
     private String note;
 
     @ElementCollection
+    // A page of history is twenty sessions; without this each one costs its
+    // own query just to learn who shared the drawer.
+    @org.hibernate.annotations.BatchSize(size = 50)
     @CollectionTable(
             name = "register_session_participants",
             joinColumns = @JoinColumn(name = "session_id"),

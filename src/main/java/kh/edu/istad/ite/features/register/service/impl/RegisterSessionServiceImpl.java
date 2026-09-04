@@ -6,7 +6,6 @@ import kh.edu.istad.ite.config.props.KeycloakAdminClientProps;
 import kh.edu.istad.ite.config.specification.FilterSpecification;
 import kh.edu.istad.ite.features.business.entity.Business;
 import kh.edu.istad.ite.features.business.repository.BusinessRepository;
-import kh.edu.istad.ite.features.order.repository.OrderRepository;
 import kh.edu.istad.ite.features.register.dto.request.CashMovementRequest;
 import kh.edu.istad.ite.features.register.dto.request.CloseSessionRequest;
 import kh.edu.istad.ite.features.register.dto.request.OpenSessionRequest;
@@ -42,9 +41,6 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
 import java.time.Instant;
-import java.time.LocalDateTime;
-import java.time.ZoneId;
-import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.HashMap;
@@ -64,7 +60,6 @@ public class RegisterSessionServiceImpl implements RegisterSessionService {
     private final CashMovementRepository movementRepository;
     private final UserProfileRepository userProfileRepository;
     private final BusinessRepository businessRepository;
-    private final OrderRepository orderRepository;
     private final kh.edu.istad.ite.features.order.repository.SaleRepository saleRepository;
     private final Keycloak keycloak;
     private final KeycloakAdminClientProps props;
@@ -97,13 +92,17 @@ public class RegisterSessionServiceImpl implements RegisterSessionService {
                     return registerRepository.save(newRegister);
                 });
 
-        if (register.getStatus() == RegisterStatus.OPEN) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Cash register is already open");
-        }
-
+        // Checked before the register's own status: a drawer that is already
+        // open is not an error for a second cashier, it is the drawer they are
+        // meant to share. Rejecting first would leave this branch unreachable
+        // and send every cashier of the shop away with "already open".
         RegisterSession existingSession = sessionRepository.findByRegisterIdAndStatus(register.getId(), SessionStatus.OPEN).orElse(null);
         if (existingSession != null) {
             return joinSession(existingSession.getId(), userId);
+        }
+
+        if (register.getStatus() == RegisterStatus.OPEN) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Cash register is already open");
         }
 
         sessionRepository.findByUserIdAndStatus(userId, SessionStatus.OPEN).ifPresent(s -> {
@@ -135,16 +134,23 @@ public class RegisterSessionServiceImpl implements RegisterSessionService {
 
     @Override
     @Transactional
-    public RegisterSessionResponse closeSession(Long sessionId, CloseSessionRequest request) {
+    public RegisterSessionResponse closeSession(Long sessionId, CloseSessionRequest request, String userId) {
         RegisterSession session = sessionRepository.findById(sessionId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,"Register session not found"));
+
+        // Session ids are sequential, so without this a caller could close
+        // another shop's drawer by counting upwards. Joining already checks
+        // this; ending a shift is the heavier action of the two.
+        Business business = resolveBusiness(userId);
+        if (business == null || !business.getId().equals(session.getBusinessId())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Session does not belong to user's business");
+        }
 
         if (session.getStatus() == SessionStatus.CLOSED) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Session is already closed");
         }
 
-        LocalDateTime openedAt = LocalDateTime.ofInstant(session.getOpenedAt(), ZoneId.systemDefault());
-        BigDecimal totalCashSales = saleRepository.sumCashSalesByCashierAndDateRange(session.getUserId(), openedAt, LocalDateTime.now());
+        BigDecimal totalCashSales = saleRepository.sumCashSalesByRegisterSessionId(sessionId);
         BigDecimal totalPaidIn = movementRepository.sumAmountBySessionIdAndType(sessionId, CashMovementType.PAID_IN);
         BigDecimal totalPaidOut = movementRepository.sumAmountBySessionIdAndType(sessionId, CashMovementType.PAID_OUT);
 
@@ -275,6 +281,11 @@ public class RegisterSessionServiceImpl implements RegisterSessionService {
 
             if (!cashierIds.isEmpty()) {
                 matches.add(root.get("userId").in(cashierIds));
+                // A cashier who joined a drawer someone else opened is not in
+                // `userId`, so searching their name would otherwise miss every
+                // shift they actually worked. A subquery rather than a join:
+                // joining the collection would multiply rows and break paging.
+                matches.add(cb.exists(participantSubquery(root, query, cb, cashierIds)));
             }
 
             String word = search.toLowerCase();
@@ -290,6 +301,22 @@ public class RegisterSessionServiceImpl implements RegisterSessionService {
 
             return cb.or(matches.toArray(new Predicate[0]));
         };
+    }
+
+    /** Whether this session has a participant among the given user ids. */
+    private static jakarta.persistence.criteria.Subquery<String> participantSubquery(
+            jakarta.persistence.criteria.Root<RegisterSession> root,
+            jakarta.persistence.criteria.CriteriaQuery<?> query,
+            jakarta.persistence.criteria.CriteriaBuilder cb,
+            List<String> cashierIds) {
+
+        jakarta.persistence.criteria.Subquery<String> sub = query.subquery(String.class);
+        jakarta.persistence.criteria.Root<RegisterSession> other = sub.from(RegisterSession.class);
+        jakarta.persistence.criteria.Join<RegisterSession, String> participant =
+                other.join("participants");
+
+        return sub.select(participant)
+                .where(cb.equal(other.get("id"), root.get("id")), participant.in(cashierIds));
     }
 
     /** The user ids whose Keycloak name or username matches what was typed. */
@@ -325,19 +352,17 @@ public class RegisterSessionServiceImpl implements RegisterSessionService {
 
         BigDecimal totalOpening = BigDecimal.ZERO;
         BigDecimal totalDiscrepancies = BigDecimal.ZERO;
-        Long[] ids = new Long[matched.size()];
+        List<Long> ids = new ArrayList<>(matched.size());
 
-        for (int i = 0; i < matched.size(); i++) {
-            RegisterSession session = matched.get(i);
-            ids[i] = session.getId();
+        for (RegisterSession session : matched) {
+            ids.add(session.getId());
             totalOpening = totalOpening.add(orZero(session.getOpeningBalance()));
             // Absolute: over and short are both "out", and netting them off
             // would report a day that was ten over and ten short as balanced.
             totalDiscrepancies = totalDiscrepancies.add(orZero(session.getDifferenceAmount()).abs());
         }
 
-        BigDecimal totalCashSales = orZero(sessionRepository.sumCashSalesForSessions(
-                ids, ZoneId.systemDefault().getId()));
+        BigDecimal totalCashSales = orZero(saleRepository.sumCashSalesByRegisterSessionIds(ids));
 
         return new RegisterSessionMetrics(
                 activeCount, totalOpening, totalCashSales, totalDiscrepancies);
@@ -379,6 +404,26 @@ public class RegisterSessionServiceImpl implements RegisterSessionService {
                     totals.getOrDefault(CashMovementType.PAID_OUT, BigDecimal.ZERO),
                     cashierNames);
         });
+    }
+
+    /**
+     * Everyone whose takings belong to this drawer, the opener first.
+     *
+     * The opener is unioned in rather than assumed to be a participant row:
+     * sessions opened before the drawer became shareable have none, and their
+     * cash still has to be counted.
+     */
+    private static java.util.Set<String> cashierIdsOf(RegisterSession session) {
+        java.util.Set<String> ids = new java.util.LinkedHashSet<>();
+
+        if (session.getUserId() != null) {
+            ids.add(session.getUserId());
+        }
+        if (session.getParticipants() != null) {
+            session.getParticipants().stream().filter(java.util.Objects::nonNull).forEach(ids::add);
+        }
+
+        return ids;
     }
 
     private Business resolveBusiness(String userId) {
@@ -487,13 +532,44 @@ public class RegisterSessionServiceImpl implements RegisterSessionService {
             BigDecimal totalPaidOut,
             Map<String, String> cashierNames) {
 
-        LocalDateTime openedAt = LocalDateTime.ofInstant(session.getOpenedAt(), ZoneId.systemDefault());
-        LocalDateTime closedAt = session.getClosedAt() != null
-                ? LocalDateTime.ofInstant(session.getClosedAt(), ZoneId.systemDefault())
-                : LocalDateTime.now();
-        BigDecimal totalCashSales = saleRepository.sumCashSalesByCashierAndDateRange(session.getUserId(), openedAt, closedAt);
+        return mapToResponse(
+                session,
+                saleRepository.sumCashSalesByRegisterSessionId(session.getId()),
+                totalPaidIn,
+                totalPaidOut,
+                cashierNames);
+    }
 
-        return mapToResponse(session, totalCashSales, totalPaidIn, totalPaidOut, cashierNames);
+    /**
+     * A cashier's display name, cached for the page being rendered.
+     *
+     * One Keycloak round trip per distinct user, not per row: a shared drawer
+     * repeats the same handful of people down the whole history.
+     */
+    private String resolveCashierName(String userId, Map<String, String> cache) {
+        String cached = cache.get(userId);
+        if (cached != null) {
+            return cached;
+        }
+
+        String name;
+        try {
+            UserResource userResource = keycloak.realm(props.getTargetRealm())
+                    .users()
+                    .get(userId);
+            UserRepresentation keycloakUser = userResource.toRepresentation();
+            name = (keycloakUser.getFirstName() != null ? keycloakUser.getFirstName() : "") +
+                   (keycloakUser.getLastName() != null ? " " + keycloakUser.getLastName() : "");
+            name = name.trim();
+            if (name.isEmpty()) {
+                name = keycloakUser.getUsername();
+            }
+        } catch (Exception e) {
+            name = "Unknown";
+        }
+
+        cache.put(userId, name);
+        return name;
     }
 
     private RegisterSessionResponse mapToResponse(RegisterSession session, BigDecimal totalCashSales, BigDecimal totalPaidIn, BigDecimal totalPaidOut) {
@@ -511,35 +587,16 @@ public class RegisterSessionServiceImpl implements RegisterSessionService {
             else if (diff.compareTo(BigDecimal.ZERO) < 0) reconStatus = "SHORT";
         }
 
-        int orderCount = 0;
-        if (session.getUserId() != null) {
-            LocalDateTime start = LocalDateTime.ofInstant(session.getOpenedAt(), ZoneId.systemDefault());
-            LocalDateTime end = session.getClosedAt() != null 
-                    ? LocalDateTime.ofInstant(session.getClosedAt(), ZoneId.systemDefault()) 
-                    : LocalDateTime.now();
-            orderCount = (int) orderRepository.countByCashierIdAndCreatedDateBetween(UUID.fromString(session.getUserId()), start, end);
-        }
+        // Sales, not orders: an order that was never paid for put nothing in
+        // the drawer, and this figure sits beside the cash it took.
+        int orderCount = (int) saleRepository.countByRegisterSessionId(session.getId());
 
-        String cashierName = null;
-        if (session.getUserId() != null && cashierNames.containsKey(session.getUserId())) {
-            cashierName = cashierNames.get(session.getUserId());
-        } else if (session.getUserId() != null) {
-            try {
-                UserResource userResource = keycloak.realm(props.getTargetRealm())
-                        .users()
-                        .get(session.getUserId());
-                UserRepresentation keycloakUser = userResource.toRepresentation();
-                cashierName = (keycloakUser.getFirstName() != null ? keycloakUser.getFirstName() : "") + 
-                              (keycloakUser.getLastName() != null ? " " + keycloakUser.getLastName() : "");
-                cashierName = cashierName.trim();
-                if (cashierName.isEmpty()) {
-                    cashierName = keycloakUser.getUsername();
-                }
-            } catch (Exception e) {
-                cashierName = "Unknown";
-            }
-            cashierNames.put(session.getUserId(), cashierName);
-        }
+        List<String> names = cashierIdsOf(session).stream()
+                .map(id -> resolveCashierName(id, cashierNames))
+                .collect(Collectors.toList());
+        // The opener stays the headline name; the rest are what the history
+        // row counts its "+N" from.
+        String cashierName = names.isEmpty() ? null : names.get(0);
 
         return RegisterSessionResponse.builder()
                 .id(session.getId())
@@ -547,6 +604,7 @@ public class RegisterSessionServiceImpl implements RegisterSessionService {
                 .registerName(session.getRegister().getName())
                 .userId(session.getUserId())
                 .cashierName(cashierName)
+                .cashierNames(names)
                 .businessId(session.getBusinessId())
                 .orderCount(orderCount)
                 .openedAt(session.getOpenedAt())
