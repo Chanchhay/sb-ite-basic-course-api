@@ -26,7 +26,8 @@ import java.util.UUID;
         ),
         indexes = {
                 @Index(name = "idx_sales_business_sold_at", columnList = "business_owner_id, sold_at"),
-                @Index(name = "idx_sales_cashier", columnList = "business_owner_id, cashier_id")
+                @Index(name = "idx_sales_cashier", columnList = "business_owner_id, cashier_id"),
+                @Index(name = "idx_sales_register_session", columnList = "register_session_id")
         }
 )
 public class Sale {
@@ -52,6 +53,19 @@ public class Sale {
 
     @Column(name = "cashier_id")
     private UUID cashierId;
+
+    /**
+     * The drawer this sale's cash went into, or null if it took none.
+     *
+     * Stamped when the sale is rung up rather than worked out afterwards from
+     * who sold it and when: a shift is shared, and cashier-and-time-window
+     * attribution guesses wrong at every boundary — a sale rung up as one shift
+     * hands over to the next lands in whichever drawer the clock says, not the
+     * one the notes are actually in. Online orders take no cash at a till and
+     * leave this null.
+     */
+    @Column(name = "register_session_id")
+    private Long registerSessionId;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)

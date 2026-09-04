@@ -16,6 +16,13 @@ public class RegisterSessionResponse {
     private String registerName;
     private String userId;
     private String cashierName;
+    /**
+     * Everyone who worked this drawer, the opener first.
+     *
+     * A session is shared, so one name never describes the shift; the list is
+     * what the history row counts its "+N more" from.
+     */
+    private java.util.List<String> cashierNames;
     private UUID businessId;
     private Integer orderCount;
     private Instant openedAt;

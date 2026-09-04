@@ -55,6 +55,8 @@ public enum PermissionCode {
     ITEM_READ("item:read", "Item Read", PermissionGroup.ITEM, true, false),
     ITEM_UPDATE("item:update", "Item Update", PermissionGroup.ITEM, true, false),
     
+    AUDIT_READ("audit:read", "Audit Read", PermissionGroup.MEMBER, true, false),
+
     MEMBER_MANAGE("member:manage", "Member Manage", PermissionGroup.MEMBER, true, false),
     MEMBER_READ("member:read", "Member Read", PermissionGroup.MEMBER, true, false),
     
