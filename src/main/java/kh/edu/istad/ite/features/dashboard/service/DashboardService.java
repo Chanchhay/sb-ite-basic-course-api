@@ -34,6 +34,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
@@ -153,20 +154,49 @@ public class DashboardService {
             return List.of();
         }
 
-        List<DashboardOverviewResponse.ChannelShare> shares = new ArrayList<>();
-        for (SalesProfitResponse.ChannelProfit channel : channels) {
-            BigDecimal revenue = orZero(channel.revenue());
-            int percentage = revenue
-                    .multiply(BigDecimal.valueOf(100))
-                    .divide(totalRevenue, 0, RoundingMode.HALF_UP)
-                    .intValue();
+        int count = channels.size();
+        List<BigDecimal> revenues = new ArrayList<>(count);
+        int[] floorPcts = new int[count];
+        BigDecimal[] remainders = new BigDecimal[count];
+        int sumFloor = 0;
 
+        for (int i = 0; i < count; i++) {
+            BigDecimal rev = orZero(channels.get(i).revenue());
+            revenues.add(rev);
+            BigDecimal pct = rev.multiply(BigDecimal.valueOf(100))
+                    .divide(totalRevenue, 6, RoundingMode.HALF_UP);
+            int floor = pct.intValue();
+            floorPcts[i] = floor;
+            remainders[i] = pct.subtract(BigDecimal.valueOf(floor));
+            sumFloor += floor;
+        }
+
+        int deficit = 100 - sumFloor;
+
+        Integer[] indices = new Integer[count];
+        for (int i = 0; i < count; i++) {
+            indices[i] = i;
+        }
+        Arrays.sort(indices, (a, b) -> {
+            int cmp = remainders[b].compareTo(remainders[a]);
+            if (cmp != 0) {
+                return cmp;
+            }
+            return revenues.get(b).compareTo(revenues.get(a));
+        });
+
+        int[] finalPcts = Arrays.copyOf(floorPcts, count);
+        for (int i = 0; i < deficit && i < count; i++) {
+            finalPcts[indices[i]]++;
+        }
+
+        List<DashboardOverviewResponse.ChannelShare> shares = new ArrayList<>(count);
+        for (int i = 0; i < count; i++) {
+            SalesProfitResponse.ChannelProfit channel = channels.get(i);
             shares.add(new DashboardOverviewResponse.ChannelShare(
                     channel.channel() == null ? "OTHER" : channel.channel().name(),
-                    // A channel that sold something but rounds to nothing is
-                    // still a channel; a zero slice would vanish from the ring.
-                    Math.max(percentage, 1),
-                    revenue));
+                    finalPcts[i],
+                    revenues.get(i)));
         }
         return shares;
     }
