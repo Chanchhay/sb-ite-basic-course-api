@@ -149,8 +149,6 @@ public class OrderServiceImpl implements OrderService {
     public OrderResponse createOrder(UUID businessId, CreateOrderRequest request) {
         Business business = businessHelper.findAccessibleBusiness(businessId);
 
-        // Opening hours nothing enforces are a note to self, so a channel that
-        // has said it is shut does not take the order.
         if (request.channel() != null) {
             channelPriceResolver.requireOpen(businessId, request.channel().name());
         }
@@ -576,29 +574,6 @@ public class OrderServiceImpl implements OrderService {
         }
     }
 
-    /**
-     * Takes every stock-tracked line off the shelf, batch by batch, and
-     * prices the line and its add-ons at what those batches actually cost.
-     *
-     * Called exactly once per order — from {@link #confirmOrder} if the
-     * order is confirmed before it is paid, otherwise from {@link #settle}
-     * at payment time. Never both: a line's cost is persisted the moment it
-     * is priced, and {@code settle} skips this entirely for an order that
-     * arrives already {@link OrderStatus#CONFIRMED}.
-     */
-    /**
-     * Rebuilds what an offline line was sold as, so the stock it moves is the
-     * stock it actually took.
-     *
-     * `consumeStockForOrder` already deducts `baseQuantity()`, which is the
-     * quantity times the pack's factor — it only ever read one because nothing
-     * here set a unit on the line.
-     *
-     * A shape the shop no longer has is logged and left off rather than thrown:
-     * the cash was taken hours ago and refusing the sale now would lose the
-     * only record of it. The count is wrong either way; a sale that never
-     * arrives is worse.
-     */
     private void applySoldAs(Item item, OfflineOrderItemDto itemDto, OrderItem orderItem) {
         ItemVariant variant = null;
 
@@ -1095,23 +1070,6 @@ public class OrderServiceImpl implements OrderService {
         }));
     }
 
-    /**
-     * The line's real total once a Buy X Get Y offer it qualifies for is
-     * folded in — the free units a completed bundle owes the customer, added
-     * on their own rather than left for the customer to ask for by name.
-     *
-     * {@code newPaidQuantity} is always the *paid* count this edit wants:
-     * for an add, that is the line's current paid units (backed out of its
-     * current total) plus however many more were just requested; for an
-     * absolute quantity edit, it is exactly the number requested — a cashier
-     * typing "2" means two they are paying for, never two total once a free
-     * one is mixed in. Everything downstream (this order's own discount sync)
-     * still does the actual pricing; this only ever decides the quantity.
-     *
-     * Refuses the whole edit — not just the free portion — when the shelf
-     * cannot cover the bundle it is about to create. A promotion is not a
-     * reason to oversell stock nobody has.
-     */
     private int applyBundleQuantity(
             UUID businessId,
             Business business,
