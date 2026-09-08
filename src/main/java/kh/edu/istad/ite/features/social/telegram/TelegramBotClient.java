@@ -179,7 +179,7 @@ public class TelegramBotClient {
     public void sendMessage(String botToken, Long chatId, String text, List<List<InlineKeyboardButton>> keyboard, ReplyKeyboardMarkup replyKeyboardMarkup) {
         String safeText = truncate(nullSafe(text, "..."), MAX_MESSAGE_LENGTH);
 
-        if (postMessage(botToken, chatId, safeText, keyboard, replyKeyboardMarkup, true)) {
+        if (postMessage(botToken, chatId, safeText, keyboard, replyKeyboardMarkup, true).success()) {
             return;
         }
 
@@ -187,7 +187,33 @@ public class TelegramBotClient {
         postMessage(botToken, chatId, safeText, keyboard, replyKeyboardMarkup, false);
     }
 
-    private boolean postMessage(
+    public record SendResult(boolean success, String errorMessage) {
+        static SendResult ok() {
+            return new SendResult(true, null);
+        }
+
+        static SendResult failed(String errorMessage) {
+            return new SendResult(false, errorMessage);
+        }
+    }
+
+    /**
+     * Same delivery as {@link #sendMessage}, but hands the caller the actual
+     * failure reason instead of only logging it — for the one place (the
+     * settings "test notification" button) where a merchant needs to find
+     * out *now* that their chat id is wrong or the bot was kicked, rather
+     * than discovering it only when a real payment alert goes nowhere.
+     */
+    public SendResult trySendMessage(String botToken, Long chatId, String text) {
+        String safeText = truncate(nullSafe(text, "..."), MAX_MESSAGE_LENGTH);
+        SendResult result = postMessage(botToken, chatId, safeText, null, null, true);
+        if (result.success()) {
+            return result;
+        }
+        return postMessage(botToken, chatId, safeText, null, null, false);
+    }
+
+    private SendResult postMessage(
             String botToken,
             Long chatId,
             String text,
@@ -219,14 +245,28 @@ public class TelegramBotClient {
                     .retrieve()
                     .toBodilessEntity();
 
-            return true;
+            return SendResult.ok();
         } catch (HttpStatusCodeException exception) {
+            String description = extractDescription(exception.getResponseBodyAsString());
             log.warn("Telegram sendMessage failed for chat {}: {} -> {}",
                     chatId, exception.getStatusCode(), exception.getResponseBodyAsString());
-            return false;
+            return SendResult.failed(description != null ? description : "Telegram returned " + exception.getStatusCode());
         } catch (RestClientException exception) {
             log.warn("Telegram sendMessage failed for chat {}: {}", chatId, exception.getMessage());
-            return false;
+            return SendResult.failed(exception.getMessage());
+        }
+    }
+
+    private String extractDescription(String responseBody) {
+        if (responseBody == null || responseBody.isBlank()) {
+            return null;
+        }
+        try {
+            Map<?, ?> body = objectMapper.readValue(responseBody, Map.class);
+            Object description = body.get("description");
+            return description != null ? String.valueOf(description) : null;
+        } catch (Exception exception) {
+            return null;
         }
     }
 

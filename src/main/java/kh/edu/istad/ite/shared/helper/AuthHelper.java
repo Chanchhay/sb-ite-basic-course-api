@@ -9,20 +9,13 @@ import java.util.UUID;
 
 public final class AuthHelper {
 
-    /** The scope a FluxiBiz support account carries. */
     private static final String OPERATOR_AUTHORITY = "SCOPE_admin-business:manage";
 
 
     private AuthHelper() {
     }
 
-    /**
-     * Whether the caller is FluxiBiz staff acting on a shop's behalf.
-     *
-     * Support operators are not owners or staff of the shops they help, so the
-     * ordinary tenant check would refuse them. This is the one authority that
-     * lets them past it, and it is held only by platform accounts.
-     */
+
     public static boolean isPlatformOperator() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
 

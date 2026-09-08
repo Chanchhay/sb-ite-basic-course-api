@@ -28,8 +28,13 @@ public class TelegramAlertService {
             }
 
             Optional<BusinessTelegramBot> botSetting = telegramBotRepository.findByBusiness_Id(order.getBusiness().getId());
-            if (botSetting.isEmpty() || !Boolean.TRUE.equals(botSetting.get().getIsActive())) {
-                log.debug("No active Telegram bot for business {}, skipping alert", order.getBusiness().getId());
+            // isActive only governs the bot's webhook (the old text-chat reply
+            // flow) — sending an outbound alert via sendMessage doesn't need a
+            // webhook at all, so a business that saved a notificationChatId but
+            // never turned on (or deliberately turned off) the text flow would
+            // otherwise silently get no alerts either.
+            if (botSetting.isEmpty()) {
+                log.debug("No Telegram bot configured for business {}, skipping alert", order.getBusiness().getId());
                 return;
             }
 
