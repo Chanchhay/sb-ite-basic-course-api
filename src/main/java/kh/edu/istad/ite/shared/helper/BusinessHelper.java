@@ -27,41 +27,11 @@ public class BusinessHelper {
     private final BusinessFeatureFlagRepository featureFlagRepository;
     private final PlatformFeatureFlagRepository platformFeatureFlagRepository;
 
-    /**
-     * @deprecated ownership is the wrong question, and asking it here broke
-     *             every staff account: a manager granted {@code item:update}
-     *             still owns no business, so this refused them. What may be
-     *             done is decided by the permission, which {@code SecurityConfig}
-     *             checks; all this layer needs to establish is that the caller
-     *             belongs to the business. Delegates to
-     *             {@link #findAccessibleBusiness(UUID)}; call that directly in
-     *             new code.
-     *             <p>
-     *             Nothing is loosened by this. The two operations that really
-     *             are owner-only — creating and deleting a business — are held
-     *             back by {@code PermissionCode}, which marks
-     *             {@code business:create} and {@code business:delete} as not
-     *             assignable to business staff, so no staff role can carry them.
-     */
     @Deprecated
     public Business findOwnedBusiness(UUID businessId) {
         return findAccessibleBusiness(businessId);
     }
 
-    /**
-     * The business, for FluxiBiz staff working on its behalf.
-     *
-     * Deliberately a separate door rather than a widening of the tenant check.
-     * Assisted migration needs a support operator to reach a shop they are not
-     * staff of, and the check above is used in more than a hundred places
-     * across a dozen features — letting operators through it would hand them
-     * that shop's carts, orders, customers and discounts to buy a handover of
-     * four calls.
-     *
-     * So this exists, only migration calls it, and it grants nothing anywhere
-     * else. The endpoints that reach it are separately guarded by the same
-     * admin scope, and the entities record who acted.
-     */
     public Business findBusinessForOperator(UUID businessId) {
         if (!AuthHelper.isPlatformOperator()) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You have been forbidden");
@@ -94,30 +64,17 @@ public class BusinessHelper {
         return business;
     }
 
-    /** @deprecated see {@link #findOwnedBusiness(UUID)}; same reasoning. */
     @Deprecated
     public Business findOwnedBusinessOrNotFound(UUID businessId) {
         return findAccessibleBusiness(businessId);
     }
 
-    /**
-     * The business the caller works in, without being told which.
-     *
-     * Backs {@code GET /api/v1/businesses/me} and every "my settings" screen.
-     * An owner is found by ownership; a staff member by the membership
-     * {@code StaffManagementService} writes onto their {@code UserProfile}.
-     * Looking only at ownership — which is what this used to do everywhere —
-     * gave staff a 404 for the business they work in, and since the dashboard
-     * resolves every other id through this call, it left them with an
-     * application in which nothing at all would load.
-     */
     public Business currentBusiness() {
         return currentBusinessOrEmpty()
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND, "Business has not been found"));
     }
 
-    /** As {@link #currentBusiness()}, for callers that treat "none" as an answer. */
     public Optional<Business> currentBusinessOrEmpty() {
         UUID keycloakUserId = AuthHelper.currentUserId();
 

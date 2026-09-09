@@ -28,12 +28,22 @@ public interface SaleRepository extends JpaRepository<Sale, UUID> {
 
     long countBySoldAtGreaterThanEqual(LocalDateTime since);
 
-    @Query("select coalesce(sum(s.totalAmount), 0) from Sale s where cast(s.cashierId as string) = :cashierId and s.paymentMethod = 'CASH' and s.soldAt >= :startTime and (cast(:endTime as timestamp) is null or s.soldAt <= :endTime)")
-    java.math.BigDecimal sumCashSalesByCashierAndDateRange(
-            @Param("cashierId") String cashierId,
-            @Param("startTime") LocalDateTime startTime,
-            @Param("endTime") LocalDateTime endTime
-    );
+    /**
+     * Cash that went into one drawer.
+     *
+     * Read off the sale's own session stamp, not reconstructed from who sold
+     * it and when: the session is shared between cashiers and its window abuts
+     * the next one, so both halves of the old guess were wrong.
+     */
+    @Query("select coalesce(sum(s.totalAmount), 0) from Sale s where s.registerSessionId = :sessionId and s.paymentMethod = 'CASH'")
+    java.math.BigDecimal sumCashSalesByRegisterSessionId(@Param("sessionId") Long sessionId);
+
+    /** The same, totalled across a page of sessions. */
+    @Query("select coalesce(sum(s.totalAmount), 0) from Sale s where s.registerSessionId in :sessionIds and s.paymentMethod = 'CASH'")
+    java.math.BigDecimal sumCashSalesByRegisterSessionIds(@Param("sessionIds") Collection<Long> sessionIds);
+
+    /** How many sales one drawer rang up, cash or otherwise. */
+    long countByRegisterSessionId(Long registerSessionId);
 
     @Query("select count(distinct s.business.id) from Sale s where s.soldAt >= :since")
     long countTradingBusinessesSince(@Param("since") LocalDateTime since);

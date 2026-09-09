@@ -33,7 +33,7 @@ public class BakongSettingServiceImpl implements BakongSettingService {
 
     private static final int QR_VALIDITY_MINUTES = 2;
 
-    private final BusinessRepository businessRepository;
+//  private final BusinessRepository businessRepository;
     private final BusinessPaymentSettingRepository settingRepository;
     private final CredentialCipher credentialCipher;
     private final KhqrGenerator khqrGenerator;

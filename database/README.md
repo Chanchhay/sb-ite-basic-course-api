@@ -91,6 +91,13 @@ the app after these changes creates:
   columns. A batch that predates them simply has no expiry, and queues behind
   every batch that has one. The **index** behind the new rotation order is not
   covered — see `006`.
+- `business_audit_logs` — a new table: a shop's own record of who signed in and
+  who changed staff or roles. Hibernate creates it with its indexes and the
+  unique `(business_id, session_id)` constraint that keeps one sign-in from
+  logging a row per request. No script and no backfill: nothing before it was
+  recording sign-ins anywhere, so there is no history to recover. Distinct from
+  `admin_audit_logs`, which is the platform's record of FluxiBiz staff acting
+  *on* businesses and has no business column at all.
 - `items.available_quantity` — **not** a column. Storefront availability is
   computed per request from stock less the channel's allocation; it is never
   stored.
@@ -106,3 +113,4 @@ the app after these changes creates:
 | `006_stock_batch_expiry.sql` | Indexes the expiry-first rotation order on `stock_layers`, and the lot number a recall is answered by. Hibernate adds the columns but knows nothing of the sort, and every sale reads that query. |
 | `007_repair_sale_cost_unit_factor.sql` | Recomputes `sales.total_cost` for sales containing a pack line. It was summed as `unit_cost * quantity` where `unit_cost` is per *base* unit, so a case of 24 was costed as one unit and the margin was flattered. Only sales with a `unit_factor` other than 1 are touched. |
 | `008_add_order_item_add_on_cost.sql` | Adds `order_item_add_ons.cost` with a default of zero, so an extra's FIFO cost lands on the line that charged for it. Hibernate cannot add a NOT NULL column to a table that already has rows. No backfill: pre-existing lines and the sales holding them both exclude add-on cost, so they agree. |
+| `017_sales_register_session.sql` | Adds the index on the new `sales.register_session_id` and backfills it for sales that predate the column. A drawer's takings used to be reconstructed from cashier id and time window, which missed every cashier who *joined* a shared session and misfiled anything near a shift boundary; sales now carry the session they were rung up in. |

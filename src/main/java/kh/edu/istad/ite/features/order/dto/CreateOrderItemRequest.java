@@ -13,14 +13,8 @@ public record CreateOrderItemRequest(
 
         UUID variantId,
 
-        /**
-         * The unit being sold — a case, a six-pack. Left out, the line is sold
-         * in the item's base unit, which is how everything sold before items
-         * could be sold by the pack.
-         */
         UUID unitId,
 
-        /** Extras chosen on this line. Each must be on sale for the item. */
         List<UUID> addOnIds,
 
         @NotNull

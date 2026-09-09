@@ -38,6 +38,13 @@ public class RedisCacheConfig implements CachingConfigurer {
                         Map.entry(CacheNames.CATALOG_ITEM_GROUPS, cacheConfiguration(Duration.ofMinutes(10))),
                         Map.entry(CacheNames.PUBLIC_STORE_ITEMS, cacheConfiguration(Duration.ofSeconds(30))),
                         Map.entry(CacheNames.PUBLIC_STORE_ITEM_GROUPS, cacheConfiguration(Duration.ofMinutes(5))),
+                        // Long enough to spare the database the same two queries on
+                        // every dashboard request, short enough that a change made by
+                        // someone else — an admin, or a colleague editing the shop —
+                        // reaches this user without anyone having to think about it.
+                        // Whoever makes the change evicts their own entry and sees it
+                        // immediately; see BusinessServiceImpl.
+                        Map.entry(CacheNames.BUSINESS_ME, cacheConfiguration(Duration.ofMinutes(5))),
                         Map.entry(CacheNames.PUBLIC_STORE_DETAIL, cacheConfiguration(Duration.ofMinutes(5))),
                         Map.entry(CacheNames.PUBLIC_STORE_FACEBOOK, cacheConfiguration(Duration.ofMinutes(5))),
 
@@ -50,6 +57,20 @@ public class RedisCacheConfig implements CachingConfigurer {
                         Map.entry(CacheNames.PUBLIC_STORE_RECOMMENDED, cacheConfiguration(Duration.ofMinutes(1))),
                         Map.entry(CacheNames.PUBLIC_STORE_PROVINCES, cacheConfiguration(Duration.ofHours(1)))
                 ))
+                // Without this a RedisCache keeps no tally, and `cache.gets` in the
+                // metrics reads zero for everything — which looks exactly like a
+                // cache nobody is using. The counters are per instance and in
+                // memory; the cost is a few longs per cache.
+                //
+                // Reading them, bear in mind that Spring Data Redis writes cache
+                // entries asynchronously whenever the connection factory is Lettuce:
+                // a put returns before the value has reached Redis, and a read
+                // arriving in that window misses and recomputes. Measured here at
+                // roughly one in six for back-to-back put/get. It costs a little
+                // repeated work on a hot key and nothing in correctness — a miss
+                // just reads the database — so the default stands; it only means a
+                // hit rate will never quite reach what the key pattern suggests.
+                .enableStatistics()
                 .transactionAware()
                 .build();
     }

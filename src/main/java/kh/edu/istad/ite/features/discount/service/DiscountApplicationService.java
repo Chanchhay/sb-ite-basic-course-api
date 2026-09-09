@@ -99,4 +99,57 @@ public interface DiscountApplicationService {
             UUID itemId,
             UUID itemGroupId
     );
+
+    /**
+     * The buy/get shape of the best ITEM- or CATEGORY-scoped BUY_X_GET_Y
+     * offer on this item, if any — independent of how many are already in
+     * the basket.
+     *
+     * {@link #resolveLineDiscount} answers "how much is this free, given
+     * this quantity"; this answers "what quantity would make more of it
+     * free", which is what a caller needs to top a line up to the next
+     * complete bundle on its own, rather than waiting for the customer to
+     * ask for the free unit by name. ALL_ITEMS/ORDER-scoped bundles are
+     * deliberately excluded — completing one of those depends on the whole
+     * basket, not one line, so auto-topping a single line up would be a
+     * guess at best.
+     */
+    Optional<BundleOffer> resolveBundleOffer(
+            UUID businessId,
+            OrderChannel channel,
+            UUID itemId,
+            UUID itemGroupId
+    );
+
+    /**
+     * One BUY_X_GET_Y offer's shape: buy this many, get this many of them
+     * free — and the one place the quantity math for "top this line up to
+     * the next complete bundle" lives, so POS and the storefront cart, which
+     * each auto-bump a line independently, can never compute it two
+     * different ways.
+     */
+    record BundleOffer(UUID discountId, String label, int buyQuantity, int getQuantity) {
+        public int bundleSize() {
+            return buyQuantity + getQuantity;
+        }
+
+        /** How many of {@code totalQuantity} this offer gives away for free. */
+        public int freeUnitsWithin(int totalQuantity) {
+            if (totalQuantity <= 0) return 0;
+            return (totalQuantity / bundleSize()) * getQuantity;
+        }
+
+        /** How many of {@code totalQuantity} the customer is actually paying for. */
+        public int paidUnitsWithin(int totalQuantity) {
+            return totalQuantity - freeUnitsWithin(totalQuantity);
+        }
+
+        /** The smallest total that delivers exactly {@code paidQuantity} paid units. */
+        public int totalForPaidUnits(int paidQuantity) {
+            int paid = Math.max(0, paidQuantity);
+            int completeBundles = paid / buyQuantity;
+            int remainder = paid % buyQuantity;
+            return completeBundles * bundleSize() + remainder;
+        }
+    }
 }

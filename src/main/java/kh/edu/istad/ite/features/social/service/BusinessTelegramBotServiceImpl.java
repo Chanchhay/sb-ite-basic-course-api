@@ -9,6 +9,7 @@ import kh.edu.istad.ite.features.business.entity.Business;
 import kh.edu.istad.ite.features.business.repository.BusinessRepository;
 import kh.edu.istad.ite.features.social.dto.TelegramBotSettingRequest;
 import kh.edu.istad.ite.features.social.dto.TelegramBotSettingResponse;
+import kh.edu.istad.ite.features.social.dto.TelegramTestNotificationResponse;
 import kh.edu.istad.ite.features.social.entity.BusinessTelegramBot;
 import kh.edu.istad.ite.features.social.repository.BusinessTelegramBotRepository;
 import kh.edu.istad.ite.features.social.telegram.TelegramBotClient;
@@ -146,6 +147,29 @@ public class BusinessTelegramBotServiceImpl implements BusinessTelegramBotServic
         setting.setIsMiniAppEnabled(enabled);
 
         return toResponse(telegramBotRepository.save(setting));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public TelegramTestNotificationResponse testNotification() {
+        BusinessTelegramBot setting = findMySetting();
+
+        if (!StringUtils.hasText(setting.getNotificationChatId())) {
+            return new TelegramTestNotificationResponse(false, "No notification chat id has been saved yet.");
+        }
+
+        long chatId;
+        try {
+            chatId = Long.parseLong(setting.getNotificationChatId().trim());
+        } catch (NumberFormatException exception) {
+            return new TelegramTestNotificationResponse(false, "The saved chat id is not a valid number.");
+        }
+
+        String botToken = credentialCipher.decrypt(setting.getBotTokenEncrypted());
+        TelegramBotClient.SendResult result = telegramBotClient.trySendMessage(
+                botToken, chatId, "✅ ការសាកល្បង៖ notification នេះមកពី FluxiBiz — configuration របស់អ្នកដំណើរការត្រឹមត្រូវ!");
+
+        return new TelegramTestNotificationResponse(result.success(), result.errorMessage());
     }
 
     private BusinessTelegramBot findMySetting() {

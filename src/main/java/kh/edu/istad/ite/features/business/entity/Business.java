@@ -57,7 +57,7 @@ public class Business extends BasedAuditingEntity {
     @Column(length = 255)
     private String thumbnail;
 
-    @Column(length = 255)
+    @Column(length = 300)
     private String about;
 
     @Column(name = "phone_number")

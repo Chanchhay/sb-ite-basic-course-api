@@ -1,5 +1,6 @@
 package kh.edu.istad.ite.config;
 
+import kh.edu.istad.ite.shared.helper.AuthHelper;
 import org.springframework.data.domain.Pageable;
 
 import java.util.Locale;
@@ -20,6 +21,15 @@ public final class CacheKeys {
 
     public static String page(UUID businessId, Pageable pageable) {
         return businessId + ":" + page(pageable);
+    }
+
+    /**
+     * The signed-in user, for reads that answer "mine" rather than an id. Read from
+     * the security context rather than a parameter, because the methods that serve
+     * these reads take no parameter at all — that is what makes them "mine".
+     */
+    public static String currentUser() {
+        return AuthHelper.currentUserId().toString();
     }
 
     public static String store(String slugOrId) {

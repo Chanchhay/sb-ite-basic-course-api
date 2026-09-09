@@ -29,6 +29,8 @@ public record PublicStoreDetailResponse(
         String storefrontUrl,
         String baseCurrency,
         String displayCurrency,
+        /** Units of displayCurrency per one unit of baseCurrency — null when the shop shows only one currency. */
+        BigDecimal displayExchangeRate,
         BusinessSubCategoryResponse category,
         List<Map<String, String>> socialLinks,
         Boolean isClosed,

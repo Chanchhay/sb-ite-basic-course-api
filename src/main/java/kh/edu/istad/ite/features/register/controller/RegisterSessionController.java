@@ -46,7 +46,8 @@ public class RegisterSessionController {
     public ResponseEntity<RegisterSessionResponse> closeSession(
             @PathVariable Long sessionId,
             @Valid @RequestBody CloseSessionRequest request) {
-        return ResponseEntity.ok(sessionService.closeSession(sessionId, request));
+        String userId = AuthHelper.currentUserId().toString();
+        return ResponseEntity.ok(sessionService.closeSession(sessionId, request, userId));
     }
 
     @GetMapping("/sessions/{sessionId}/summary")

@@ -22,8 +22,12 @@ import kh.edu.istad.ite.features.discount.repository.CouponRepository;
 import kh.edu.istad.ite.features.discount.repository.DiscountRepository;
 import kh.edu.istad.ite.features.inventory.entity.StockEntry;
 import kh.edu.istad.ite.features.inventory.repository.StockEntryRepository;
+import kh.edu.istad.ite.features.order.entity.Order;
+import kh.edu.istad.ite.features.order.entity.OrderItem;
+import kh.edu.istad.ite.features.order.repository.OrderRepository;
 import kh.edu.istad.ite.features.register.repository.RegisterSessionRepository;
 import kh.edu.istad.ite.shared.enums.DiscountType;
+import kh.edu.istad.ite.shared.enums.OrderStatus;
 import kh.edu.istad.ite.shared.enums.SessionStatus;
 import kh.edu.istad.ite.shared.helper.BusinessHelper;
 import kh.edu.istad.ite.shared.helper.TextHelper;
@@ -61,6 +65,7 @@ public class BusinessCurrencyServiceImpl implements BusinessCurrencyService {
     private final CouponRepository couponRepository;
     private final StockEntryRepository stockEntryRepository;
     private final CartItemRepository cartItemRepository;
+    private final OrderRepository orderRepository;
     private final RegisterSessionRepository registerSessionRepository;
 
     @Override
@@ -204,6 +209,7 @@ public class BusinessCurrencyServiceImpl implements BusinessCurrencyService {
 
         repriceToNewBase(
                 businessId,
+                baseCode,
                 repriceFactor,
                 validateDecimalPlaces(desired.get(baseCode).decimalPlaces())
         );
@@ -309,7 +315,12 @@ public class BusinessCurrencyServiceImpl implements BusinessCurrencyService {
 
         // Prices are denominated in the base, so they move with it. The old
         // base was 1, making the new base's former rate the conversion factor.
-        repriceToNewBase(businessId, newBaseOldRate, newBaseCurrency.getDecimalPlaces());
+        repriceToNewBase(
+                businessId,
+                newBaseCurrency.getCode(),
+                newBaseOldRate,
+                newBaseCurrency.getDecimalPlaces()
+        );
 
         return businessMapper.toCurrencyConfigurationResponse(business, currencies);
     }
@@ -412,7 +423,7 @@ public class BusinessCurrencyServiceImpl implements BusinessCurrencyService {
      * <p>Settled orders and sales are deliberately excluded: they record their
      * own currency and are history, not pricing.
      */
-    private void repriceToNewBase(UUID businessId, BigDecimal factor, int decimalPlaces) {
+    private void repriceToNewBase(UUID businessId, String baseCode, BigDecimal factor, int decimalPlaces) {
         if (factor == null
                 || factor.compareTo(BigDecimal.ZERO) <= 0
                 || factor.compareTo(BigDecimal.ONE) == 0) {
@@ -465,6 +476,51 @@ public class BusinessCurrencyServiceImpl implements BusinessCurrencyService {
             cartItem.setPriceSnapshot(restate(cartItem.getPriceSnapshot(), factor, decimalPlaces));
         }
         cartItemRepository.saveAll(cartItems);
+
+        repriceOpenOrders(businessId, baseCode, factor, decimalPlaces);
+    }
+
+    /**
+     * Moves orders still being rung up onto the new base.
+     *
+     * An order freezes its currency at creation, so one opened before the
+     * switch would otherwise keep naming the old code while every line added
+     * after it is priced in the new base — the till then labels new-base
+     * amounts with the old symbol, and the secondary line converts figures
+     * that are already in the base a second time.
+     *
+     * Only PENDING orders move. A CONFIRMED or PAID one is a record of what
+     * the customer was actually charged and stays at the numbers on its
+     * receipt.
+     */
+    private void repriceOpenOrders(UUID businessId, String baseCode, BigDecimal factor, int decimalPlaces) {
+        List<Order> orders =
+                orderRepository.findAllWithItemsByBusinessIdAndStatus(businessId, OrderStatus.PENDING);
+
+        for (Order order : orders) {
+            order.setSubtotal(restate(order.getSubtotal(), factor, decimalPlaces));
+            order.setDiscountAmount(restate(order.getDiscountAmount(), factor, decimalPlaces));
+            // A rate is not money and a percentage is not either, so tax rate
+            // is left alone while the amount it produced moves with the rest.
+            order.setTaxAmount(restate(order.getTaxAmount(), factor, decimalPlaces));
+            order.setTotal(restate(order.getTotal(), factor, decimalPlaces));
+            order.setCurrency(baseCode);
+
+            // Quoted against the order's currency, which just changed, so the
+            // stale pair is dropped rather than left to misconvert. The next
+            // push re-snapshots it from the configuration this call just saved.
+            order.setDisplayCurrency(null);
+            order.setDisplayExchangeRate(null);
+
+            for (OrderItem line : order.getItems()) {
+                line.setUnitPrice(restate(line.getUnitPrice(), factor, decimalPlaces));
+                line.setUnitCost(restate(line.getUnitCost(), factor, decimalPlaces));
+                line.setDiscountAmount(restate(line.getDiscountAmount(), factor, decimalPlaces));
+                line.setLineTotal(restate(line.getLineTotal(), factor, decimalPlaces));
+            }
+        }
+
+        orderRepository.saveAll(orders);
     }
 
     private BigDecimal restate(BigDecimal amount, BigDecimal factor, int decimalPlaces) {

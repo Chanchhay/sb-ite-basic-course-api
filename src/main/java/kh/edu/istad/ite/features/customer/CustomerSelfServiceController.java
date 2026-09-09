@@ -10,6 +10,8 @@ import kh.edu.istad.ite.features.customer.entity.GlobalCustomer;
 import kh.edu.istad.ite.features.customer.repository.CustomerRepository;
 import kh.edu.istad.ite.features.customer.repository.GlobalCustomerRepository;
 import kh.edu.istad.ite.features.customer.service.CustomerIdentityService;
+import kh.edu.istad.ite.features.user.entity.UserProfile;
+import kh.edu.istad.ite.features.user.repository.UserProfileRepository;
 import kh.edu.istad.ite.shared.helper.AuthHelper;
 import kh.edu.istad.ite.shared.helper.TextHelper;
 import lombok.RequiredArgsConstructor;
@@ -39,6 +41,7 @@ public class CustomerSelfServiceController {
     private final GlobalCustomerRepository globalCustomerRepository;
     private final CustomerIdentityService customerIdentityService;
     private final CustomerRepository customerRepository;
+    private final UserProfileRepository userProfileRepository;
 
     /**
      * Lets a checkout screen (web, Telegram, or Messenger) check whether this
@@ -46,6 +49,13 @@ public class CustomerSelfServiceController {
      * prompt for one — {@code phoneNumber} lives on {@link GlobalCustomer},
      * not per-business, so no {@code businessId} is needed here the way the
      * PUT below needs one for {@code address}.
+     *
+     * A number entered on the {@code /user-profile} page lands on
+     * {@link UserProfile} instead — a separate, Keycloak-user-scoped record
+     * this checkout flow never used to read — so a shopper who filled that in
+     * first still got asked again here. Falling back to it when
+     * {@link GlobalCustomer}'s own is empty means either place someone
+     * entered it satisfies both from now on.
      */
     @GetMapping
     public CustomerSelfProfileResponse getMyProfile() {
@@ -54,10 +64,20 @@ public class CustomerSelfServiceController {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Sign in required");
         }
 
+        String profilePhone = userProfileRepository.findById(keycloakUserId)
+                .map(UserProfile::getPhoneNumber)
+                .filter(StringUtils::hasText)
+                .orElse(null);
+
         return globalCustomerRepository.findByKeycloakUserId(keycloakUserId)
                 .map(gc -> new CustomerSelfProfileResponse(
-                        gc.getFullName(), gc.getEmail(), gc.getGender(), gc.getPhoneNumber(), null, false))
-                .orElseGet(() -> new CustomerSelfProfileResponse(null, null, null, null, null, false));
+                        gc.getFullName(),
+                        gc.getEmail(),
+                        gc.getGender(),
+                        StringUtils.hasText(gc.getPhoneNumber()) ? gc.getPhoneNumber() : profilePhone,
+                        null,
+                        false))
+                .orElseGet(() -> new CustomerSelfProfileResponse(null, null, null, profilePhone, null, false));
     }
 
     @PutMapping
@@ -82,6 +102,18 @@ public class CustomerSelfServiceController {
                         throw new ResponseStatusException(HttpStatus.CONFLICT, "That phone number is already in use");
                     });
             globalCustomer.setPhoneNumber(normalizedPhone);
+
+            // Kept in step with UserProfile too, so a number entered at
+            // checkout also satisfies the /user-profile page instead of
+            // being asked for a second time there.
+            UserProfile userProfile = userProfileRepository.findById(keycloakUserId)
+                    .orElseGet(() -> {
+                        UserProfile created = new UserProfile();
+                        created.setUserId(keycloakUserId);
+                        return created;
+                    });
+            userProfile.setPhoneNumber(normalizedPhone);
+            userProfileRepository.save(userProfile);
         }
 
         String normalizedEmail = TextHelper.trimToNull(request.email());

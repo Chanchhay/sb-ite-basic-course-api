@@ -4,6 +4,7 @@ import kh.edu.istad.ite.features.discount.dto.DiscountResponse;
 import kh.edu.istad.ite.features.discount.dto.LineDiscountApplication;
 import kh.edu.istad.ite.features.discount.dto.OrderLineUnits;
 import kh.edu.istad.ite.features.discount.service.DiscountApplicationService;
+import kh.edu.istad.ite.features.discount.service.DiscountApplicationService.BundleOffer;
 import kh.edu.istad.ite.features.discount.service.DiscountService;
 import kh.edu.istad.ite.shared.enums.DiscountRuleType;
 import kh.edu.istad.ite.shared.enums.DiscountScope;
@@ -167,6 +168,28 @@ public class DiscountApplicationServiceImpl implements DiscountApplicationServic
         return pickBest(candidates).map(this::labelFor);
     }
 
+
+    @Override
+    public Optional<BundleOffer> resolveBundleOffer(
+            UUID businessId,
+            OrderChannel channel,
+            UUID itemId,
+            UUID itemGroupId
+    ) {
+        List<DiscountResponse> candidates = discountService
+                .findApplicableDiscounts(businessId, channel, itemId, itemGroupId)
+                .stream()
+                .filter(d -> !Boolean.TRUE.equals(d.requiresCoupon()))
+                .filter(d -> d.ruleType() == DiscountRuleType.BUY_X_GET_Y)
+                .filter(d -> !isOrderScoped(d))
+                .toList();
+
+        return pickBest(candidates).map(discount -> new BundleOffer(
+                discount.id(),
+                labelFor(discount),
+                discount.buyQuantity() != null && discount.buyQuantity() > 0 ? discount.buyQuantity() : 1,
+                discount.getQuantity() != null && discount.getQuantity() > 0 ? discount.getQuantity() : 1));
+    }
 
     private BigDecimal computeOrderBundleAmount(DiscountResponse discount, List<OrderLineUnits> lines) {
         int bundle = bundleSize(discount);

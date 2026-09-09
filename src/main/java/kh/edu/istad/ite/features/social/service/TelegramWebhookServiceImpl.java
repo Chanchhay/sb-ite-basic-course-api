@@ -158,6 +158,20 @@ public class TelegramWebhookServiceImpl implements TelegramWebhookService {
             String botToken = credentialCipher.decrypt(setting.getBotTokenEncrypted());
 
             if (isGroupChat(update)) {
+                // /getid has to work here specifically — it's the only way a
+                // merchant can learn a GROUP's chat id (a negative number,
+                // unlike a private chat's) to paste into the notification
+                // settings. It used to only be reachable through the private-
+                // chat text flow below, which groups never reach.
+                String groupText = update.message() == null || update.message().text() == null
+                        ? ""
+                        : update.message().text().trim();
+                if ("/getid".equalsIgnoreCase(groupText) || "/myid".equalsIgnoreCase(groupText)) {
+                    telegramBotClient.sendMessage(botToken, chatId,
+                            "🔑 *Chat ID របស់ក្រុមនេះគឺ៖* `" + chatId + "`\n\nសូមចម្លងលេខខាងលើនេះ (រួមទាំងសញ្ញា - ខាងមុខ) យកទៅបញ្ចូលក្នុងកន្លែងកំណត់ Notification Chat ID របស់ហាងអ្នក។");
+                    return;
+                }
+
                 // The persistent menu button (set via setChatMenuButton) is a
                 // private-chat-only affordance — it never appears in groups,
                 // and the text/reply-keyboard flow below was never designed

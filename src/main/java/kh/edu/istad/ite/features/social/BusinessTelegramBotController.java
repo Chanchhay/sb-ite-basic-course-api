@@ -3,6 +3,7 @@ package kh.edu.istad.ite.features.social;
 import jakarta.validation.Valid;
 import kh.edu.istad.ite.features.social.dto.TelegramBotSettingRequest;
 import kh.edu.istad.ite.features.social.dto.TelegramBotSettingResponse;
+import kh.edu.istad.ite.features.social.dto.TelegramTestNotificationResponse;
 import kh.edu.istad.ite.features.social.service.BusinessTelegramBotService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -44,5 +45,10 @@ public class BusinessTelegramBotController {
     @PatchMapping("/mini-app")
     public TelegramBotSettingResponse setMiniAppEnabled(@RequestParam boolean enabled) {
         return businessTelegramBotService.setMiniAppEnabled(enabled);
+    }
+
+    @PostMapping("/test-notification")
+    public TelegramTestNotificationResponse testNotification() {
+        return businessTelegramBotService.testNotification();
     }
 }

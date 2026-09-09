@@ -9,6 +9,8 @@ import kh.edu.istad.ite.features.order.dto.PeriodProfitResponse;
 import kh.edu.istad.ite.features.order.dto.SalesProfitResponse;
 import kh.edu.istad.ite.features.order.dto.SalesPredictionsResponse;
 import kh.edu.istad.ite.features.order.dto.PredictionWindow;
+import kh.edu.istad.ite.features.order.dto.SaleProfitCalculatorRequest;
+import kh.edu.istad.ite.features.order.dto.SaleProfitCalculatorResponse;
 import kh.edu.istad.ite.features.order.service.SalesReportService;
 import kh.edu.istad.ite.shared.enums.ReportGranularity;
 import lombok.RequiredArgsConstructor;
@@ -16,6 +18,7 @@ import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -124,5 +127,18 @@ public class SalesReportController {
             @RequestParam(defaultValue = "WEEK") PredictionWindow window) {
 
         return salesReportService.getSalesPredictions(businessId, window);
+    }
+
+    /**
+     * "What if I priced the catalog at this margin" — priced against a fresh
+     * read of inventory rather than whatever the caller has cached, so a
+     * stock delivery mid-session can't leave the prediction stale.
+     */
+    @PostMapping("/profit/calculator")
+    public SaleProfitCalculatorResponse calculateSaleProfit(
+            @PathVariable UUID businessId,
+            @Valid @RequestBody SaleProfitCalculatorRequest request) {
+
+        return salesReportService.calculateSaleProfit(businessId, request);
     }
 }

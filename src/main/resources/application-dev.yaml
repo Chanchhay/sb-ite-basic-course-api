@@ -41,7 +41,7 @@ spring:
 
   datasource:
     driver-class-name: org.postgresql.Driver
-    url: jdbc:postgresql://${PGHOST:localhost}:${PGPORT:5432}/${PGDATABASE:fluxibix}
+    url: jdbc:postgresql://${PGHOST:localhost}:${PGPORT:1681}/${PGDATABASE:fluxibix}
     username: ${DB_USER}
     password: ${DB_PASS}
 
@@ -113,3 +113,11 @@ minio:
     # by the import that owns them, never linked to, so they are kept out of
     # the asset bucket whose objects are served straight to browsers.
     imports: fluxibiz-imports
+
+# Same endpoints as production, so a cache that misbehaves can be looked at here
+# before it is looked at there.
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,metrics

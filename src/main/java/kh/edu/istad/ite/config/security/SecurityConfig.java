@@ -20,7 +20,9 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.web.access.intercept.RequestAuthorizationContext;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
+import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
 import org.springframework.security.web.SecurityFilterChain;
+import kh.edu.istad.ite.features.audit.web.SignInAuditFilter;
 import org.springframework.web.filter.CorsFilter;
 
 import java.util.ArrayList;
@@ -47,11 +49,22 @@ public class SecurityConfig {
                 return registration;
         }
 
+        /** As above: kept out of the plain servlet chain so it runs only here. */
+        @Bean
+        public FilterRegistrationBean<SignInAuditFilter> signInAuditFilterRegistration(
+                        SignInAuditFilter signInAuditFilter) {
+                FilterRegistrationBean<SignInAuditFilter> registration =
+                                new FilterRegistrationBean<>(signInAuditFilter);
+                registration.setEnabled(false);
+                return registration;
+        }
+
         @Bean
         public SecurityFilterChain configureApiSecurity(HttpSecurity http,
                                                         JwtAuthenticationConverter jwtAuthenticationConverter,
                                                         BusinessAccessAuthorizationManager tenant,
-                                                        RateLimitFilter rateLimitFilter) throws Exception {
+                                                        RateLimitFilter rateLimitFilter,
+                                                        SignInAuditFilter signInAuditFilter) throws Exception {
 
                 http.oauth2ResourceServer(oauth2 -> oauth2.jwt(jwt -> jwt.jwtAuthenticationConverter(
                         jwtAuthenticationConverter)));
@@ -62,6 +75,12 @@ public class SecurityConfig {
                 // opaque network failure, and before authentication so a flood is
                 // turned away without a token check or a database round trip.
                 http.addFilterAfter(rateLimitFilter, CorsFilter.class);
+
+                // After the bearer token has been turned into an authentication:
+                // the session id it records lives in the JWT, so there is nothing
+                // to see before this point. Anonymous and public requests fall
+                // through it untouched.
+                http.addFilterAfter(signInAuditFilter, BearerTokenAuthenticationFilter.class);
                 http.csrf(AbstractHttpConfigurer::disable);
                 http.formLogin(AbstractHttpConfigurer::disable);
                 http.httpBasic(Customizer.withDefaults());
@@ -72,6 +91,19 @@ public class SecurityConfig {
                         // only /health is exposed, so nothing else is reachable.
                         .requestMatchers("/api/v1/telegram/webhook/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/actuator/health", "/actuator/health/**").permitAll()
+
+                        // Push subscription lookup/prune: no dashboard user in the
+                        // loop, only the dashboard server itself asking who to wake
+                        // for a push it was just told to send. Gated on its own
+                        // shared secret inside PushSubscriptionController, the same
+                        // one PushNotificationClient sends the other direction.
+                        .requestMatchers("/api/v1/internal/push-subscriptions/**").permitAll()
+
+                        // Cache hit rates and request timings. Operational detail
+                        // about the running system, so it is read by the people who
+                        // run it and by nobody else.
+                        .requestMatchers(HttpMethod.GET, "/actuator/metrics", "/actuator/metrics/**")
+                        .access(permissionOrSuperAdmin("admin-dashboard:read"))
                         .requestMatchers(HttpMethod.GET, "/api/v1/storefronts/*").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/storefronts/*/items").permitAll()
                         .requestMatchers(
@@ -147,6 +179,12 @@ public class SecurityConfig {
                         .access(permissionOrSuperAdmin("admin-unit:update"))
                         .requestMatchers(HttpMethod.DELETE, "/api/v1/admin/units/**")
                         .access(permissionOrSuperAdmin("admin-unit:delete"))
+
+                        // A shop's own audit log: who signed in, and who changed
+                        // staff or roles. Scoped to the caller's business by the
+                        // controller, which is why there is no {businessId} here.
+                        .requestMatchers(HttpMethod.GET, "/api/v1/audit-logs")
+                        .access(permissionOrBusinessRole("audit:read"))
 
                         // Admin Audit Logs
                         .requestMatchers(HttpMethod.GET, "/api/v1/admin/audit-logs",
@@ -274,8 +312,20 @@ public class SecurityConfig {
                         .hasAuthority("SCOPE_bakong-setting:update")
 
                         // --- The business collection ---
-                        .requestMatchers(HttpMethod.GET, "/api/v1/businesses/me", "/api/v1/businesses")
-                        .hasAuthority("SCOPE_business:read")
+                        // "Which business am I in?" is identity, not data, and
+                        // it must not need a permission. The dashboard resolves
+                        // every other business id from this call and refuses to
+                        // open at all when it fails, so gating it on
+                        // business:read locked out every staff member whose role
+                        // did not happen to include "View shop details" — a
+                        // cashier with only order:* could not sign in.
+                        //
+                        // Nothing here can be forged or fished for: it answers
+                        // for the caller's own business, found by ownership or
+                        // by active staff membership, and returns the details of
+                        // the shop they already work in.
+                        .requestMatchers(HttpMethod.GET, "/api/v1/businesses/me")
+                        .authenticated()
                         .requestMatchers(HttpMethod.POST, "/api/v1/businesses")
                         .hasAuthority("SCOPE_business:create")
 

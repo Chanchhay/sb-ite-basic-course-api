@@ -1,5 +1,6 @@
 package kh.edu.istad.ite.shared.cache;
 
+import kh.edu.istad.ite.config.CacheKeys;
 import kh.edu.istad.ite.config.CacheNames;
 import kh.edu.istad.ite.features.business.repository.BusinessRepository;
 import lombok.RequiredArgsConstructor;
@@ -111,6 +112,27 @@ public class BusinessCacheEvictor {
                 deleteByPrefix(CacheNames.keyPrefix(cacheName));
             }
         });
+    }
+
+    /**
+     * Drops this user's cached answer to "which business am I?".
+     * <p>
+     * Only theirs: the entry is keyed by user, and a business has staff as well as
+     * an owner, so there is no way to reach the others from here. That is the
+     * intended trade — whoever made the change sees it on their next request, and
+     * their colleagues catch up when the short TTL expires.
+     */
+    public void evictMyBusiness() {
+        String user;
+        try {
+            user = CacheKeys.currentUser();
+        } catch (RuntimeException ex) {
+            // No signed-in user to invalidate for — a scheduled job or an internal
+            // call. There is nothing cached under "mine" for it either.
+            return;
+        }
+
+        afterCommit(() -> deleteKey(CacheNames.keyPrefix(CacheNames.BUSINESS_ME) + user));
     }
 
     private void evict(UUID businessId, boolean includeCatalog) {

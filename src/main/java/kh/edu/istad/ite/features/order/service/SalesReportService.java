@@ -13,6 +13,9 @@ import kh.edu.istad.ite.features.order.dto.SalesProfitResponse;
 import kh.edu.istad.ite.features.order.dto.PredictionItem;
 import kh.edu.istad.ite.features.order.dto.PredictionWindow;
 import kh.edu.istad.ite.features.order.dto.SalesPredictionsResponse;
+import kh.edu.istad.ite.features.order.dto.SaleProfitCalculatorMode;
+import kh.edu.istad.ite.features.order.dto.SaleProfitCalculatorRequest;
+import kh.edu.istad.ite.features.order.dto.SaleProfitCalculatorResponse;
 import kh.edu.istad.ite.features.order.entity.Sale;
 import kh.edu.istad.ite.features.order.mapper.OrderMapper;
 import kh.edu.istad.ite.features.order.repository.SaleRepository;
@@ -50,6 +53,7 @@ import java.util.stream.Collectors;
 public class SalesReportService {
 
     private static final String CURRENCY_KHR = "KHR";
+    private static final BigDecimal HUNDRED = BigDecimal.valueOf(100);
 
     private final SaleRepository saleRepository;
     private final BusinessHelper businessHelper;
@@ -484,6 +488,156 @@ public class SalesReportService {
                 revenueForecast,
                 predictionItems
         );
+    }
+
+    /**
+     * A margin experiment against the current catalog, priced server-side.
+     *
+     * This used to run in the browser against whatever cost the client last
+     * fetched, so a stock delivery landing mid-session could quietly go
+     * stale. Pricing it here against a fresh read of inventory means the
+     * numbers a shop plans a price change around can't drift from the shelf.
+     */
+    public SaleProfitCalculatorResponse calculateSaleProfit(
+            UUID businessId,
+            SaleProfitCalculatorRequest request) {
+
+        businessHelper.findOwnedBusiness(businessId);
+
+        boolean businessTarget = request.mode() == SaleProfitCalculatorMode.BUSINESS_TARGET;
+        BigDecimal targetMarginPercent = request.targetMarginPercent();
+        if (businessTarget && targetMarginPercent == null) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "targetMarginPercent is required in BUSINESS_TARGET mode");
+        }
+
+        Map<UUID, BigDecimal> marginOverrides = new HashMap<>();
+        if (request.itemMargins() != null) {
+            for (SaleProfitCalculatorRequest.ItemMargin override : request.itemMargins()) {
+                marginOverrides.put(override.itemId(), override.marginPercent());
+            }
+        }
+
+        Map<UUID, BigDecimal> qtyByItemId = new HashMap<>();
+        Map<UUID, BigDecimal> valueByItemId = new HashMap<>();
+        for (StockSummaryResponse summary : stockEntryService.findCurrentStock(businessId)) {
+            if (summary.itemId() == null) continue;
+            qtyByItemId.merge(summary.itemId(), orZero(summary.quantityOnHand()), BigDecimal::add);
+            valueByItemId.merge(summary.itemId(), orZero(summary.stockValue()), BigDecimal::add);
+        }
+
+        List<Item> allItems = itemRepository.findAllByBusinessIdOrderByNameAsc(businessId);
+
+        List<SaleProfitCalculatorResponse.CalculatorItem> currentItems = new ArrayList<>();
+        BigDecimal totalCost = BigDecimal.ZERO;
+        BigDecimal totalRevenue = BigDecimal.ZERO;
+
+        for (Item item : allItems) {
+            UUID itemId = item.getId();
+            BigDecimal qty = qtyByItemId.getOrDefault(itemId, BigDecimal.ZERO);
+            BigDecimal stockValue = valueByItemId.getOrDefault(itemId, BigDecimal.ZERO);
+            // The stock's own weighted value, not the next-out unit cost — an
+            // item with two deliveries at different prices has no single cost.
+            BigDecimal cost = qty.signum() > 0
+                    ? stockValue.divide(qty, 6, RoundingMode.HALF_UP)
+                    : BigDecimal.ZERO;
+
+            BigDecimal marginPercent = marginOverrides.getOrDefault(itemId, request.defaultMarginPercent());
+            BigDecimal price = priceForMargin(cost, marginPercent);
+
+            BigDecimal lineRevenue = (price != null ? price : cost).multiply(qty);
+            BigDecimal lineProfit = price != null ? price.subtract(cost).multiply(qty) : BigDecimal.ZERO;
+
+            totalCost = totalCost.add(cost.multiply(qty));
+            totalRevenue = totalRevenue.add(lineRevenue);
+
+            currentItems.add(new SaleProfitCalculatorResponse.CalculatorItem(
+                    itemId,
+                    item.getName(),
+                    money(cost),
+                    qty,
+                    marginPercent,
+                    price == null ? null : money(price),
+                    money(lineRevenue),
+                    money(lineProfit),
+                    null,
+                    null));
+        }
+
+        BigDecimal currentGrossProfit = totalRevenue.subtract(totalCost);
+        BigDecimal currentGrossMargin = totalRevenue.signum() == 0
+                ? BigDecimal.ZERO
+                : currentGrossProfit.multiply(HUNDRED).divide(totalRevenue, 2, RoundingMode.HALF_UP);
+
+        List<SaleProfitCalculatorResponse.CalculatorItem> finalItems = currentItems;
+        BigDecimal revenue = totalRevenue;
+        BigDecimal grossProfit = currentGrossProfit;
+        BigDecimal grossMargin = currentGrossMargin;
+
+        if (businessTarget) {
+            BigDecimal targetFraction = targetMarginPercent.divide(HUNDRED, 6, RoundingMode.HALF_UP);
+            BigDecimal requiredRevenue = targetFraction.compareTo(BigDecimal.ONE) >= 0
+                    ? null
+                    : totalCost.divide(BigDecimal.ONE.subtract(targetFraction), 6, RoundingMode.HALF_UP);
+            BigDecimal multiplier = requiredRevenue == null || totalRevenue.signum() <= 0
+                    ? null
+                    : requiredRevenue.divide(totalRevenue, 6, RoundingMode.HALF_UP);
+
+            List<SaleProfitCalculatorResponse.CalculatorItem> targetItems = new ArrayList<>();
+            for (SaleProfitCalculatorResponse.CalculatorItem row : currentItems) {
+                BigDecimal newPrice = multiplier == null || row.price() == null
+                        ? null
+                        : row.price().multiply(multiplier);
+                BigDecimal newMargin = newPrice == null ? null : marginForPrice(row.cost(), newPrice);
+
+                targetItems.add(new SaleProfitCalculatorResponse.CalculatorItem(
+                        row.itemId(),
+                        row.name(),
+                        row.cost(),
+                        row.qty(),
+                        row.marginPercent(),
+                        row.price(),
+                        row.revenue(),
+                        row.profit(),
+                        newPrice == null ? null : money(newPrice),
+                        newMargin == null ? null : newMargin.setScale(2, RoundingMode.HALF_UP)));
+            }
+
+            finalItems = targetItems;
+            revenue = requiredRevenue != null ? requiredRevenue : totalRevenue;
+            grossProfit = requiredRevenue != null ? requiredRevenue.subtract(totalCost) : currentGrossProfit;
+            grossMargin = targetMarginPercent;
+        }
+
+        BigDecimal netProfit = grossProfit.subtract(request.operatingExpense());
+        BigDecimal netMargin = revenue.signum() == 0
+                ? BigDecimal.ZERO
+                : netProfit.multiply(HUNDRED).divide(revenue, 2, RoundingMode.HALF_UP);
+
+        return new SaleProfitCalculatorResponse(
+                request.mode(),
+                money(request.operatingExpense()),
+                businessTarget ? targetMarginPercent.setScale(2, RoundingMode.HALF_UP) : null,
+                money(revenue),
+                money(totalCost),
+                money(grossProfit),
+                grossMargin.setScale(2, RoundingMode.HALF_UP),
+                money(netProfit),
+                netMargin,
+                finalItems);
+    }
+
+    /** Null once the margin reaches 100% — no finite price gives that margin. */
+    private static BigDecimal priceForMargin(BigDecimal cost, BigDecimal marginPercent) {
+        BigDecimal fraction = marginPercent.divide(HUNDRED, 6, RoundingMode.HALF_UP);
+        if (fraction.compareTo(BigDecimal.ONE) >= 0) return null;
+        return cost.divide(BigDecimal.ONE.subtract(fraction), 6, RoundingMode.HALF_UP);
+    }
+
+    private static BigDecimal marginForPrice(BigDecimal cost, BigDecimal price) {
+        if (price.signum() <= 0) return null;
+        return price.subtract(cost).multiply(HUNDRED).divide(price, 6, RoundingMode.HALF_UP);
     }
 
     private static double roundTo1Decimal(double val) {

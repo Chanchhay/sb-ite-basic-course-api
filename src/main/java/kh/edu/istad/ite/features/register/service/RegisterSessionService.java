@@ -15,7 +15,7 @@ import java.util.List;
 
 public interface RegisterSessionService {
     RegisterSessionResponse openSession(OpenSessionRequest request, String userId);
-    RegisterSessionResponse closeSession(Long sessionId, CloseSessionRequest request);
+    RegisterSessionResponse closeSession(Long sessionId, CloseSessionRequest request, String userId);
     RegisterSessionResponse getCurrentSession(String userId);
     PageResponse<RegisterSessionResponse> listSessions(String userId, Pageable pageable);
     RegisterSessionSearchResponse searchSessions(

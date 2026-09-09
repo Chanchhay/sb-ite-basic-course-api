@@ -176,6 +176,15 @@ public class OrderController {
         return orderService.updateOrderNote(businessId, orderId, request);
     }
 
+    @PatchMapping("/{orderId}/customer")
+    public OrderResponse updateOrderCustomer(
+            @PathVariable UUID businessId,
+            @PathVariable UUID orderId,
+            @Valid @RequestBody UpdateOrderCustomerRequest request
+    ) {
+        return orderService.updateOrderCustomer(businessId, orderId, request);
+    }
+
     @PatchMapping("/{orderId}/discount")
     public OrderResponse updateOrderDiscount(
             @PathVariable UUID businessId,

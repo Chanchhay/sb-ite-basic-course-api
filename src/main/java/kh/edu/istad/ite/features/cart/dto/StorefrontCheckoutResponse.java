@@ -13,6 +13,10 @@ public record StorefrontCheckoutResponse(
         int itemCount,
         BigDecimal total,
         String currency,
+        /** The second currency this order is shown in, frozen at checkout — null when the shop shows only one currency. */
+        String displayCurrency,
+        /** Units of displayCurrency per one unit of currency. */
+        BigDecimal displayExchangeRate,
         String qr,
         String md5,
         String qrImage,
