@@ -1,6 +1,7 @@
 package kh.edu.istad.ite.features.customer.service;
 
 import kh.edu.istad.ite.features.business.entity.Business;
+import kh.edu.istad.ite.features.channel.repository.SalesChannelRepository;
 import kh.edu.istad.ite.features.customer.entity.Customer;
 import kh.edu.istad.ite.features.customer.entity.GlobalCustomer;
 import kh.edu.istad.ite.features.customer.repository.CustomerRepository;
@@ -24,6 +25,7 @@ public class CustomerIdentityService {
 
     private final GlobalCustomerRepository globalCustomerRepository;
     private final CustomerRepository customerRepository;
+    private final SalesChannelRepository salesChannelRepository;
 
 
     @Transactional
@@ -58,12 +60,29 @@ public class CustomerIdentityService {
 
     @Transactional
     public Customer customerFor(Business business, GlobalCustomer globalCustomer) {
+        return customerFor(business, globalCustomer, null);
+    }
+
+    /**
+     * Same as {@link #customerFor(Business, GlobalCustomer)}, but tags a
+     * brand-new customer with the sales channel it was auto-registered
+     * through (by {@code channelCode}, e.g. {@code OrderChannel.WEB.name()}),
+     * so the dashboard can tell a self-registered customer apart from one
+     * created by Back Office or Cashier and keep membership assignment
+     * restricted to the latter. An already-existing customer is never
+     * retagged — staff may have since reclassified it.
+     */
+    @Transactional
+    public Customer customerFor(Business business, GlobalCustomer globalCustomer, String channelCode) {
         return customerRepository
                 .findByBusiness_IdAndGlobalCustomer_Id(business.getId(), globalCustomer.getId())
                 .orElseGet(() -> {
                     Customer customer = new Customer();
                     customer.setBusiness(business);
                     customer.setGlobalCustomer(globalCustomer);
+                    if (channelCode != null) {
+                        salesChannelRepository.findByCode(channelCode).ifPresent(customer::setSalesChannel);
+                    }
                     return customerRepository.save(customer);
                 });
     }

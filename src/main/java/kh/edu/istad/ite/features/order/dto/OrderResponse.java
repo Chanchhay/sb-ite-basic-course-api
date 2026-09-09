@@ -48,4 +48,8 @@ public class OrderResponse {
     private boolean awaitingPayLaterApproval;
     private List<OrderItemResponse> items;
     private LocalDateTime createdDate;
+
+    private BigDecimal paidAmount;
+    private BigDecimal changeAmount;
+    private String tenderNote;
 }

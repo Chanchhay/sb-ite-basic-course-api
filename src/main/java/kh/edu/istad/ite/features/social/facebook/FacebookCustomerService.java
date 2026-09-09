@@ -1,5 +1,6 @@
 package kh.edu.istad.ite.features.social.facebook;
 
+import kh.edu.istad.ite.features.channel.repository.SalesChannelRepository;
 import kh.edu.istad.ite.features.customer.entity.Customer;
 import kh.edu.istad.ite.features.customer.repository.CustomerRepository;
 import kh.edu.istad.ite.features.social.entity.BotSession;
@@ -8,6 +9,7 @@ import kh.edu.istad.ite.features.social.repository.BotSessionRepository;
 import kh.edu.istad.ite.features.order.entity.Order;
 import kh.edu.istad.ite.features.order.repository.OrderRepository;
 import kh.edu.istad.ite.shared.enums.ChannelType;
+import kh.edu.istad.ite.shared.enums.OrderChannel;
 import kh.edu.istad.ite.shared.enums.OrderStatus;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -32,6 +34,7 @@ public class FacebookCustomerService {
     private final CustomerRepository customerRepository;
     private final FacebookGraphClient graphClient;
     private final OrderRepository orderRepository;
+    private final SalesChannelRepository salesChannelRepository;
 
     @Transactional
     public BotSession getOrCreateSession(BusinessFacebookPage page, String psid) {
@@ -54,6 +57,7 @@ public class FacebookCustomerService {
         customer.setActive(true);
         customer.setTotalSpend(BigDecimal.ZERO);
         customer.setAddress("Facebook Messenger");
+        salesChannelRepository.findByCode(OrderChannel.MESSENGER.name()).ifPresent(customer::setSalesChannel);
         customer = customerRepository.save(customer);
 
         BotSession session = new BotSession();

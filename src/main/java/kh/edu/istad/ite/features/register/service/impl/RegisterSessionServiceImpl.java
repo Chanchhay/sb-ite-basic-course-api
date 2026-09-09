@@ -5,6 +5,8 @@ import kh.edu.istad.ite.config.filter.RequestDto;
 import kh.edu.istad.ite.config.props.KeycloakAdminClientProps;
 import kh.edu.istad.ite.config.specification.FilterSpecification;
 import kh.edu.istad.ite.features.business.entity.Business;
+import kh.edu.istad.ite.features.business.entity.BusinessCurrency;
+import kh.edu.istad.ite.features.business.repository.BusinessCurrencyRepository;
 import kh.edu.istad.ite.features.business.repository.BusinessRepository;
 import kh.edu.istad.ite.features.register.dto.request.CashMovementRequest;
 import kh.edu.istad.ite.features.register.dto.request.CloseSessionRequest;
@@ -60,6 +62,7 @@ public class RegisterSessionServiceImpl implements RegisterSessionService {
     private final CashMovementRepository movementRepository;
     private final UserProfileRepository userProfileRepository;
     private final BusinessRepository businessRepository;
+    private final BusinessCurrencyRepository businessCurrencyRepository;
     private final kh.edu.istad.ite.features.order.repository.SaleRepository saleRepository;
     private final Keycloak keycloak;
     private final KeycloakAdminClientProps props;
@@ -112,6 +115,14 @@ public class RegisterSessionServiceImpl implements RegisterSessionService {
         register.setStatus(RegisterStatus.OPEN);
         registerRepository.save(register);
 
+        BigDecimal secondaryExchangeRate = request.getSecondaryExchangeRate();
+        if (request.getSecondaryCurrency() != null && secondaryExchangeRate == null) {
+            secondaryExchangeRate = businessCurrencyRepository
+                    .findByBusinessIdAndCodeIgnoreCase(businessId, request.getSecondaryCurrency())
+                    .map(BusinessCurrency::getExchangeRate)
+                    .orElse(null);
+        }
+
         RegisterSession session = RegisterSession.builder()
                 .register(register)
                 .userId(userId)
@@ -123,6 +134,10 @@ public class RegisterSessionServiceImpl implements RegisterSessionService {
                         .map(kh.edu.istad.ite.features.business.entity.Business::getBaseCurrency)
                         .orElse(null))
                 .openingBalance(request.getOpeningBalance())
+                .baseOpeningBalance(request.getBaseOpeningBalance())
+                .secondaryCurrency(request.getSecondaryCurrency())
+                .secondaryOpeningBalance(request.getSecondaryOpeningBalance())
+                .secondaryExchangeRate(secondaryExchangeRate)
                 .status(SessionStatus.OPEN)
                 .note(request.getNote())
                 .participants(new java.util.HashSet<>(java.util.Collections.singletonList(userId)))
@@ -165,6 +180,22 @@ public class RegisterSessionServiceImpl implements RegisterSessionService {
         session.setClosedAt(Instant.now());
         session.setExpectedAmount(expected);
         session.setActualAmount(actual);
+        session.setBaseActualAmount(request.getBaseActualAmount());
+        session.setSecondaryActualAmount(request.getSecondaryActualAmount());
+        if (request.getSecondaryCurrency() != null && session.getSecondaryCurrency() == null) {
+            session.setSecondaryCurrency(request.getSecondaryCurrency());
+        }
+        if (request.getSecondaryExchangeRate() != null) {
+            if (session.getSecondaryExchangeRate() == null) {
+                session.setSecondaryExchangeRate(request.getSecondaryExchangeRate());
+            }
+        } else if (session.getSecondaryCurrency() != null && session.getSecondaryExchangeRate() == null) {
+            BigDecimal boRate = businessCurrencyRepository
+                    .findByBusinessIdAndCodeIgnoreCase(session.getBusinessId(), session.getSecondaryCurrency())
+                    .map(BusinessCurrency::getExchangeRate)
+                    .orElse(null);
+            session.setSecondaryExchangeRate(boRate);
+        }
         session.setDifferenceAmount(difference);
         session.setStatus(SessionStatus.CLOSED);
         if (request.getClosingNote() != null) {
@@ -611,11 +642,17 @@ public class RegisterSessionServiceImpl implements RegisterSessionService {
                 .closedAt(session.getClosedAt())
                 .currency(session.getCurrency())
                 .openingBalance(session.getOpeningBalance())
+                .baseOpeningBalance(session.getBaseOpeningBalance())
+                .secondaryCurrency(session.getSecondaryCurrency())
+                .secondaryOpeningBalance(session.getSecondaryOpeningBalance())
+                .secondaryExchangeRate(session.getSecondaryExchangeRate())
                 .totalCashSales(totalCashSales)
                 .totalPaidIn(totalPaidIn)
                 .totalPaidOut(totalPaidOut)
                 .expectedAmount(expected)
                 .actualAmount(session.getActualAmount())
+                .baseActualAmount(session.getBaseActualAmount())
+                .secondaryActualAmount(session.getSecondaryActualAmount())
                 .differenceAmount(diff)
                 .reconciliationStatus(reconStatus)
                 .status(session.getStatus())

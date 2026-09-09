@@ -44,6 +44,11 @@ public class CustomerServiceImpl implements CustomerService {
     public CustomerResponse createCustomer(UUID businessId, CreateCustomerRequest request) {
         Business business = businessHelper.findOwnedBusiness(businessId);
 
+        SalesChannel salesChannel = findSalesChannelOrNull(request.salesChannelId());
+        if (request.membershipTypeId() != null) {
+            ensureMembershipTypeAssignable(salesChannel);
+        }
+
         Customer customer = new Customer();
         customer.setBusiness(business);
         customer.setGlobalCustomer(resolveGlobalCustomer(
@@ -51,7 +56,7 @@ public class CustomerServiceImpl implements CustomerService {
                 request.phoneNumber()
         ));
         customer.setMembershipType(findMembershipTypeOrNull(request.membershipTypeId(), businessId));
-        customer.setSalesChannel(findSalesChannelOrNull(request.salesChannelId()));
+        customer.setSalesChannel(salesChannel);
         customer.setTotalSpend(request.totalSpend() == null ? BigDecimal.ZERO : request.totalSpend());
         customer.setBecameMembershipAt(request.becameMembershipAt());
         customer.setActive(request.active() == null || request.active());
@@ -94,9 +99,15 @@ public class CustomerServiceImpl implements CustomerService {
             ensureCustomerDoesNotExist(businessId, globalCustomer, customerId);
             customer.setGlobalCustomer(globalCustomer);
         }
+        SalesChannel effectiveSalesChannel = request.salesChannelId() != null
+                ? findSalesChannelOrNull(request.salesChannelId())
+                : customer.getSalesChannel();
+        if (request.membershipTypeId() != null) {
+            ensureMembershipTypeAssignable(effectiveSalesChannel);
+        }
         customer.setMembershipType(findMembershipTypeOrNull(request.membershipTypeId(), businessId));
         if (request.salesChannelId() != null) {
-            customer.setSalesChannel(findSalesChannelOrNull(request.salesChannelId()));
+            customer.setSalesChannel(effectiveSalesChannel);
         }
         if (request.totalSpend() != null) {
             customer.setTotalSpend(request.totalSpend());
@@ -154,6 +165,28 @@ public class CustomerServiceImpl implements CustomerService {
 
         return membershipTypeRepository.findByIdAndBusinessId(membershipTypeId, businessId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Membership type has not been found"));
+    }
+
+    /**
+     * Only customers created by Back Office or Cashier (POS) — i.e. no
+     * sales channel, or one of the staff-facing channel codes — can have a
+     * membership type applied. Customers auto-registered through an
+     * external channel (web storefront, Telegram, Messenger) are tagged
+     * with that channel at creation time in {@code CustomerIdentityService},
+     * so this rejects membership assignment for them.
+     */
+    private void ensureMembershipTypeAssignable(SalesChannel channel) {
+        if (channel == null || channel.getCode() == null) {
+            return;
+        }
+
+        String code = channel.getCode().toUpperCase();
+        if (!code.equals("POS") && !code.equals("DIRECT") && !code.equals("BO")) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "Membership type can only be applied to customers created by Back Office or Cashier (POS)."
+            );
+        }
     }
 
     private SalesChannel findSalesChannelOrNull(UUID salesChannelId) {
