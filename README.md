@@ -1,7 +1,7 @@
-# iPOS Backend API
+# FluxiBiz Backend API
 
 <p align="center">
-  <strong>Scalable, Secure & Production-Ready Backend Service for the FluxiBiz / iPOS Platform</strong>
+  <strong>Scalable, Secure & Production-Ready Backend Service for the FluxiBiz / FluxiBiz Platform</strong>
 </p>
 
 <p align="center">
@@ -22,7 +22,7 @@
 
 ## Overview
 
-**iPOS Backend API** is the core backend service powering the **FluxiBiz / iPOS ecosystem**.
+**FluxiBiz Backend API** is the core backend service powering the **FluxiBiz / FluxiBiz ecosystem**.
 
 Built with **Java 25** and **Spring Boot 4.1**, the application provides secure REST APIs for business operations, product catalog management, inventory, customers, carts, orders, payments, data migration, notifications, social integrations, authentication, and platform administration.
 
@@ -168,14 +168,14 @@ The backend is designed to serve multiple clients including:
 
 <p align="center">
   <img
-    src="./src/main/resources/system-architecture.png"
-    alt="iPOS Backend System Architecture"
+    src="./src/main/resources/software-architecture.png"
+    alt="FluxiBiz Backend System Architecture"
     width="900"
   />
 </p>
 
 <p align="center">
-  <em>High-Level System Architecture of the FluxiBiz / iPOS Backend Platform</em>
+  <em>High-Level System Architecture of the FluxiBiz / FluxiBiz Backend Platform</em>
 </p>
 
 ---
@@ -213,7 +213,7 @@ sb-ite-basic-course-api/
 │
 ├── api-docs/
 │   ├── endpoints-authorizations.json
-│   ├── ipos_api_endpoints_updated.md
+│   ├── FluxiBiz_api_endpoints_updated.md
 │   ├── keycloak-client-role.json
 │   └── storefront-item-api.md
 │
@@ -488,7 +488,7 @@ Including:
 ```text
 api-docs/
 ├── endpoints-authorizations.json
-├── ipos_api_endpoints_updated.md
+├── FluxiBiz_api_endpoints_updated.md
 ├── keycloak-client-role.json
 └── storefront-item-api.md
 ```
@@ -516,7 +516,7 @@ Frontend
   │
   │ Authorization: Bearer <ACCESS_TOKEN>
   ▼
-iPOS Backend API
+FluxiBiz Backend API
   │
   ├── JWT Signature Validation
   ├── Issuer Validation
@@ -827,7 +827,7 @@ cp "$(find build/libs -maxdepth 1 -type f -name '*.jar' ! -name '*-plain.jar' | 
 ### Build Docker Image
 
 ```bash
-docker build -t ipos-api:local .
+docker build -t FluxiBiz-api:local .
 ```
 
 ### Run Docker Container
@@ -836,7 +836,7 @@ docker build -t ipos-api:local .
 docker run \
   --env-file .env \
   -p 8080:8080 \
-  ipos-api:local
+  FluxiBiz-api:local
 ```
 
 Remove the temporary JAR afterward if necessary:
@@ -859,7 +859,7 @@ The production Compose stack includes:
 
 - PostgreSQL 18
 - Redis 8
-- iPOS Backend API
+- FluxiBiz Backend API
 
 The API also connects to externally configured services such as Keycloak and MinIO.
 
@@ -988,13 +988,13 @@ Production API
 Images are tagged using the Git commit SHA:
 
 ```text
-ipos-api:<git-sha>
+FluxiBiz-api:<git-sha>
 ```
 
 and also published as:
 
 ```text
-ipos-api:latest
+FluxiBiz-api:latest
 ```
 
 The immutable Git SHA tag is used to identify the deployed application version.
@@ -1037,7 +1037,7 @@ HTTPS
 Traefik
    │
    ▼
-iPOS Backend API
+FluxiBiz Backend API
    │
    ├── PostgreSQL
    ├── Redis
@@ -1097,7 +1097,7 @@ Use environment variables or a secure secret-management mechanism instead.
 | `./gradlew clean test` | Clean and run tests |
 | `./gradlew build` | Build and test application |
 | `./gradlew bootJar` | Create executable Spring Boot JAR |
-| `docker build -t ipos-api:local .` | Build Docker image |
+| `docker build -t FluxiBiz-api:local .` | Build Docker image |
 | `docker compose up -d` | Start Compose services |
 | `docker compose ps` | Show container status |
 | `docker compose logs -f api` | Follow API logs |
@@ -1325,9 +1325,9 @@ chore: update dependencies
 
 ## Related Applications
 
-The API is part of the larger **FluxiBiz / iPOS ecosystem** and serves multiple client applications:
+The API is part of the larger **FluxiBiz / FluxiBiz ecosystem** and serves multiple client applications:
 
-- iPOS Frontend
+- FluxiBiz Frontend
 - Business Dashboard
 - Admin Dashboard
 - Storefront
@@ -1338,7 +1338,7 @@ The API is part of the larger **FluxiBiz / iPOS ecosystem** and serves multiple 
 
 
 <p align="center">
-  <strong>iPOS Backend API</strong>
+  <strong>FluxiBiz Backend API</strong>
 </p>
 
 <p align="center">
