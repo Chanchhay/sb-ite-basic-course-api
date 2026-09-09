@@ -185,8 +185,16 @@ public class RegisterSessionServiceImpl implements RegisterSessionService {
         if (request.getSecondaryCurrency() != null && session.getSecondaryCurrency() == null) {
             session.setSecondaryCurrency(request.getSecondaryCurrency());
         }
-        if (request.getSecondaryExchangeRate() != null && session.getSecondaryExchangeRate() == null) {
-            session.setSecondaryExchangeRate(request.getSecondaryExchangeRate());
+        if (request.getSecondaryExchangeRate() != null) {
+            if (session.getSecondaryExchangeRate() == null) {
+                session.setSecondaryExchangeRate(request.getSecondaryExchangeRate());
+            }
+        } else if (session.getSecondaryCurrency() != null && session.getSecondaryExchangeRate() == null) {
+            BigDecimal boRate = businessCurrencyRepository
+                    .findByBusinessIdAndCodeIgnoreCase(session.getBusinessId(), session.getSecondaryCurrency())
+                    .map(BusinessCurrency::getExchangeRate)
+                    .orElse(null);
+            session.setSecondaryExchangeRate(boRate);
         }
         session.setDifferenceAmount(difference);
         session.setStatus(SessionStatus.CLOSED);
