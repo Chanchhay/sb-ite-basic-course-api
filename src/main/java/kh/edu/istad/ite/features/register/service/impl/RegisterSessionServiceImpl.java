@@ -5,6 +5,8 @@ import kh.edu.istad.ite.config.filter.RequestDto;
 import kh.edu.istad.ite.config.props.KeycloakAdminClientProps;
 import kh.edu.istad.ite.config.specification.FilterSpecification;
 import kh.edu.istad.ite.features.business.entity.Business;
+import kh.edu.istad.ite.features.business.entity.BusinessCurrency;
+import kh.edu.istad.ite.features.business.repository.BusinessCurrencyRepository;
 import kh.edu.istad.ite.features.business.repository.BusinessRepository;
 import kh.edu.istad.ite.features.order.repository.OrderRepository;
 import kh.edu.istad.ite.features.register.dto.request.CashMovementRequest;
@@ -64,6 +66,7 @@ public class RegisterSessionServiceImpl implements RegisterSessionService {
     private final CashMovementRepository movementRepository;
     private final UserProfileRepository userProfileRepository;
     private final BusinessRepository businessRepository;
+    private final BusinessCurrencyRepository businessCurrencyRepository;
     private final OrderRepository orderRepository;
     private final kh.edu.istad.ite.features.order.repository.SaleRepository saleRepository;
     private final Keycloak keycloak;
@@ -113,6 +116,14 @@ public class RegisterSessionServiceImpl implements RegisterSessionService {
         register.setStatus(RegisterStatus.OPEN);
         registerRepository.save(register);
 
+        BigDecimal secondaryExchangeRate = request.getSecondaryExchangeRate();
+        if (request.getSecondaryCurrency() != null && secondaryExchangeRate == null) {
+            secondaryExchangeRate = businessCurrencyRepository
+                    .findByBusinessIdAndCodeIgnoreCase(businessId, request.getSecondaryCurrency())
+                    .map(BusinessCurrency::getExchangeRate)
+                    .orElse(null);
+        }
+
         RegisterSession session = RegisterSession.builder()
                 .register(register)
                 .userId(userId)
@@ -124,6 +135,10 @@ public class RegisterSessionServiceImpl implements RegisterSessionService {
                         .map(kh.edu.istad.ite.features.business.entity.Business::getBaseCurrency)
                         .orElse(null))
                 .openingBalance(request.getOpeningBalance())
+                .baseOpeningBalance(request.getBaseOpeningBalance())
+                .secondaryCurrency(request.getSecondaryCurrency())
+                .secondaryOpeningBalance(request.getSecondaryOpeningBalance())
+                .secondaryExchangeRate(secondaryExchangeRate)
                 .status(SessionStatus.OPEN)
                 .note(request.getNote())
                 .participants(new java.util.HashSet<>(java.util.Collections.singletonList(userId)))
@@ -159,6 +174,14 @@ public class RegisterSessionServiceImpl implements RegisterSessionService {
         session.setClosedAt(Instant.now());
         session.setExpectedAmount(expected);
         session.setActualAmount(actual);
+        session.setBaseActualAmount(request.getBaseActualAmount());
+        session.setSecondaryActualAmount(request.getSecondaryActualAmount());
+        if (request.getSecondaryCurrency() != null && session.getSecondaryCurrency() == null) {
+            session.setSecondaryCurrency(request.getSecondaryCurrency());
+        }
+        if (request.getSecondaryExchangeRate() != null && session.getSecondaryExchangeRate() == null) {
+            session.setSecondaryExchangeRate(request.getSecondaryExchangeRate());
+        }
         session.setDifferenceAmount(difference);
         session.setStatus(SessionStatus.CLOSED);
         if (request.getClosingNote() != null) {
@@ -541,23 +564,61 @@ public class RegisterSessionServiceImpl implements RegisterSessionService {
             cashierNames.put(session.getUserId(), cashierName);
         }
 
+        List<String> allCashierNames = new ArrayList<>();
+        if (cashierName != null && !cashierName.isEmpty()) {
+            allCashierNames.add(cashierName);
+        }
+        if (session.getParticipants() != null) {
+            for (String participantId : session.getParticipants()) {
+                if (participantId.equals(session.getUserId())) continue;
+                String pName = cashierNames.get(participantId);
+                if (pName == null) {
+                    try {
+                        UserResource userResource = keycloak.realm(props.getTargetRealm())
+                                .users()
+                                .get(participantId);
+                        UserRepresentation keycloakUser = userResource.toRepresentation();
+                        pName = (keycloakUser.getFirstName() != null ? keycloakUser.getFirstName() : "") + 
+                                (keycloakUser.getLastName() != null ? " " + keycloakUser.getLastName() : "");
+                        pName = pName.trim();
+                        if (pName.isEmpty()) {
+                            pName = keycloakUser.getUsername();
+                        }
+                    } catch (Exception e) {
+                        pName = "Cashier";
+                    }
+                    cashierNames.put(participantId, pName);
+                }
+                if (!allCashierNames.contains(pName)) {
+                    allCashierNames.add(pName);
+                }
+            }
+        }
+
         return RegisterSessionResponse.builder()
                 .id(session.getId())
                 .registerId(session.getRegister().getId())
                 .registerName(session.getRegister().getName())
                 .userId(session.getUserId())
                 .cashierName(cashierName)
+                .cashierNames(allCashierNames)
                 .businessId(session.getBusinessId())
                 .orderCount(orderCount)
                 .openedAt(session.getOpenedAt())
                 .closedAt(session.getClosedAt())
                 .currency(session.getCurrency())
                 .openingBalance(session.getOpeningBalance())
+                .baseOpeningBalance(session.getBaseOpeningBalance())
+                .secondaryCurrency(session.getSecondaryCurrency())
+                .secondaryOpeningBalance(session.getSecondaryOpeningBalance())
+                .secondaryExchangeRate(session.getSecondaryExchangeRate())
                 .totalCashSales(totalCashSales)
                 .totalPaidIn(totalPaidIn)
                 .totalPaidOut(totalPaidOut)
                 .expectedAmount(expected)
                 .actualAmount(session.getActualAmount())
+                .baseActualAmount(session.getBaseActualAmount())
+                .secondaryActualAmount(session.getSecondaryActualAmount())
                 .differenceAmount(diff)
                 .reconciliationStatus(reconStatus)
                 .status(session.getStatus())

@@ -44,11 +44,29 @@ public class RegisterSession extends BasedAuditingEntity {
     @Column(nullable = false, precision = 12, scale = 2)
     private BigDecimal openingBalance;
 
+    @Column(name = "base_opening_balance", precision = 12, scale = 2)
+    private BigDecimal baseOpeningBalance;
+
+    @Column(name = "secondary_currency", length = 10)
+    private String secondaryCurrency;
+
+    @Column(name = "secondary_opening_balance", precision = 14, scale = 2)
+    private BigDecimal secondaryOpeningBalance;
+
+    @Column(name = "secondary_exchange_rate", precision = 20, scale = 8)
+    private BigDecimal secondaryExchangeRate;
+
     @Column(precision = 12, scale = 2)
     private BigDecimal expectedAmount;
 
     @Column(precision = 12, scale = 2)
     private BigDecimal actualAmount;
+
+    @Column(name = "base_actual_amount", precision = 12, scale = 2)
+    private BigDecimal baseActualAmount;
+
+    @Column(name = "secondary_actual_amount", precision = 14, scale = 2)
+    private BigDecimal secondaryActualAmount;
 
     @Column(precision = 12, scale = 2)
     private BigDecimal differenceAmount;

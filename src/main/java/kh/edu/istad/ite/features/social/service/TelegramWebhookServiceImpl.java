@@ -920,7 +920,7 @@ public class TelegramWebhookServiceImpl implements TelegramWebhookService {
 
     private Customer findOrCreateCustomer(BusinessTelegramBot setting, GlobalCustomer globalCustomer) {
 
-        return customerIdentityService.customerFor(setting.getBusiness(), globalCustomer);
+        return customerIdentityService.customerFor(setting.getBusiness(), globalCustomer, OrderChannel.TELEGRAM.name());
     }
 
     private void linkTelegramIdentity(BusinessTelegramBot setting, BotSession session, Customer customer) {

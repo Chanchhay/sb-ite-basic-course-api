@@ -236,7 +236,23 @@ public class OrderServiceImpl implements OrderService {
 
         if (OrderStatus.PAID.equals(order.getStatus())) {
             saleRepository.findByOrderId(order.getId())
-                    .ifPresent(sale -> response.setPaymentMethod(sale.getPaymentMethod()));
+                    .ifPresent(sale -> {
+                        response.setPaymentMethod(sale.getPaymentMethod());
+                        response.setPaidAmount(sale.getPaidAmount());
+                        response.setChangeAmount(sale.getChangeAmount());
+                        if (StringUtils.hasText(sale.getNote())) {
+                            response.setTenderNote(sale.getNote());
+                            if (!StringUtils.hasText(response.getNote())) {
+                                response.setNote(sale.getNote());
+                            }
+                        }
+                        if (StringUtils.hasText(sale.getDisplayCurrency())) {
+                            response.setDisplayCurrency(sale.getDisplayCurrency());
+                        }
+                        if (sale.getDisplayExchangeRate() != null) {
+                            response.setDisplayExchangeRate(sale.getDisplayExchangeRate());
+                        }
+                    });
         }
 
         return response;
@@ -463,6 +479,9 @@ public class OrderServiceImpl implements OrderService {
         BigDecimal effectiveTotal = order.getTotal();
 
         order.setStatus(OrderStatus.PAID);
+        if (StringUtils.hasText(note)) {
+            order.setNote(note);
+        }
         orderRepository.save(order);
 
         Sale sale = new Sale();
@@ -1007,15 +1026,34 @@ public class OrderServiceImpl implements OrderService {
                 .map(Order::getId)
                 .toList();
 
-        java.util.Map<UUID, PaymentMethodType> paymentMethodByOrderId = paidOrderIds.isEmpty()
+        java.util.Map<UUID, Sale> saleByOrderId = paidOrderIds.isEmpty()
                 ? java.util.Map.of()
                 : saleRepository.findByOrder_IdIn(paidOrderIds).stream()
                         .collect(java.util.stream.Collectors.toMap(
-                                sale -> sale.getOrder().getId(), Sale::getPaymentMethod));
+                                sale -> sale.getOrder().getId(),
+                                sale -> sale,
+                                (existing, replacing) -> existing));
 
         return PageResponse.from(orders.map(order -> {
             OrderResponse response = orderMapper.toResponse(order);
-            response.setPaymentMethod(paymentMethodByOrderId.get(order.getId()));
+            Sale sale = saleByOrderId.get(order.getId());
+            if (sale != null) {
+                response.setPaymentMethod(sale.getPaymentMethod());
+                response.setPaidAmount(sale.getPaidAmount());
+                response.setChangeAmount(sale.getChangeAmount());
+                if (StringUtils.hasText(sale.getNote())) {
+                    response.setTenderNote(sale.getNote());
+                    if (!StringUtils.hasText(response.getNote())) {
+                        response.setNote(sale.getNote());
+                    }
+                }
+                if (StringUtils.hasText(sale.getDisplayCurrency())) {
+                    response.setDisplayCurrency(sale.getDisplayCurrency());
+                }
+                if (sale.getDisplayExchangeRate() != null) {
+                    response.setDisplayExchangeRate(sale.getDisplayExchangeRate());
+                }
+            }
             return response;
         }));
     }
@@ -1051,15 +1089,34 @@ public class OrderServiceImpl implements OrderService {
                 .map(Order::getId)
                 .toList();
 
-        java.util.Map<UUID, PaymentMethodType> paymentMethodByOrderId = paidOrderIds.isEmpty()
+        java.util.Map<UUID, Sale> saleByOrderId = paidOrderIds.isEmpty()
                 ? java.util.Map.of()
                 : saleRepository.findByOrder_IdIn(paidOrderIds).stream()
                         .collect(java.util.stream.Collectors.toMap(
-                                sale -> sale.getOrder().getId(), Sale::getPaymentMethod));
+                                sale -> sale.getOrder().getId(),
+                                sale -> sale,
+                                (existing, replacing) -> existing));
 
         return PageResponse.from(orders.map(order -> {
             OrderResponse response = orderMapper.toResponse(order);
-            response.setPaymentMethod(paymentMethodByOrderId.get(order.getId()));
+            Sale sale = saleByOrderId.get(order.getId());
+            if (sale != null) {
+                response.setPaymentMethod(sale.getPaymentMethod());
+                response.setPaidAmount(sale.getPaidAmount());
+                response.setChangeAmount(sale.getChangeAmount());
+                if (StringUtils.hasText(sale.getNote())) {
+                    response.setTenderNote(sale.getNote());
+                    if (!StringUtils.hasText(response.getNote())) {
+                        response.setNote(sale.getNote());
+                    }
+                }
+                if (StringUtils.hasText(sale.getDisplayCurrency())) {
+                    response.setDisplayCurrency(sale.getDisplayCurrency());
+                }
+                if (sale.getDisplayExchangeRate() != null) {
+                    response.setDisplayExchangeRate(sale.getDisplayExchangeRate());
+                }
+            }
             return response;
         }));
     }
@@ -1876,8 +1933,12 @@ public class OrderServiceImpl implements OrderService {
                 sale.setSubtotal(savedOrder.getSubtotal());
                 sale.setDiscountAmount(savedOrder.getDiscountAmount());
                 sale.setTotalAmount(savedOrder.getTotal());
-                sale.setPaidAmount(savedOrder.getTotal());
-                sale.setChangeAmount(BigDecimal.ZERO);
+                BigDecimal paid = dto.paidAmount() != null ? dto.paidAmount() : savedOrder.getTotal();
+                BigDecimal change = dto.changeAmount() != null
+                        ? dto.changeAmount()
+                        : (paid.compareTo(savedOrder.getTotal()) >= 0 ? paid.subtract(savedOrder.getTotal()) : BigDecimal.ZERO);
+                sale.setPaidAmount(paid);
+                sale.setChangeAmount(change);
                 sale.setPaymentMethod(dto.paymentMethod() != null ? dto.paymentMethod() : PaymentMethodType.CASH);
                 sale.setItemCount(savedOrder.getItems() != null ? savedOrder.getItems().size() : 0);
                 sale.setSoldAt(dto.createdAt() != null ? LocalDateTime.ofInstant(dto.createdAt(), ZoneId.systemDefault()) : LocalDateTime.now());

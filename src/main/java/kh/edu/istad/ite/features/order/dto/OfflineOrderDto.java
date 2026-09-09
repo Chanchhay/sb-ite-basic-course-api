@@ -40,6 +40,12 @@ public record OfflineOrderDto(
         @JsonProperty("payment_method")
         PaymentMethodType paymentMethod,
 
+        @JsonProperty("paid_amount")
+        BigDecimal paidAmount,
+
+        @JsonProperty("change_amount")
+        BigDecimal changeAmount,
+
         @JsonProperty("created_at")
         Instant createdAt,
 

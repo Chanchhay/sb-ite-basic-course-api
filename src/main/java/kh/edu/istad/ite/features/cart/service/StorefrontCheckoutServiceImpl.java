@@ -157,7 +157,7 @@ public class StorefrontCheckoutServiceImpl implements StorefrontCheckoutService 
             return issueQrFor(business, openOrder);
         }
 
-        Customer customer = customerIdentityService.customerFor(business, shopper);
+        Customer customer = customerIdentityService.customerFor(business, shopper, OrderChannel.WEB.name());
         log.info("createCheckout: business={} shopper(globalCustomer)={} customer={}",
                 business.getId(), shopper.getId(), customer.getId());
 
