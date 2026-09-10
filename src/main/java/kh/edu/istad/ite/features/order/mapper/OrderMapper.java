@@ -62,7 +62,10 @@ public class OrderMapper {
                 order.getNote(),
                 order.isAwaitingPayLaterApproval(),
                 items,
-                order.getCreatedDate()
+                order.getCreatedDate(),
+                null,
+                null,
+                null
         );
     }
 

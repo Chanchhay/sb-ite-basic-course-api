@@ -12,5 +12,13 @@ public class CloseSessionRequest {
     @PositiveOrZero(message = "Actual amount must be zero or positive")
     private BigDecimal actualAmount;
 
+    private BigDecimal baseActualAmount;
+
+    private String secondaryCurrency;
+
+    private BigDecimal secondaryActualAmount;
+
+    private BigDecimal secondaryExchangeRate;
+
     private String closingNote;
 }

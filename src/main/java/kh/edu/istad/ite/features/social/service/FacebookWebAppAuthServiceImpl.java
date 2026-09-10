@@ -17,6 +17,7 @@ import kh.edu.istad.ite.features.social.entity.BusinessFacebookPage;
 import kh.edu.istad.ite.features.social.facebook.FacebookGraphClient;
 import kh.edu.istad.ite.features.social.repository.BusinessFacebookPageRepository;
 import kh.edu.istad.ite.shared.enums.ChannelType;
+import kh.edu.istad.ite.shared.enums.OrderChannel;
 import kh.edu.istad.ite.shared.helper.FacebookSignedRequestValidator;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -104,7 +105,7 @@ public class FacebookWebAppAuthServiceImpl implements FacebookWebAppAuthService 
                 userInfo.phoneNumber(),
                 userInfo.getFullName());
 
-        Customer customer = customerIdentityService.customerFor(business, globalCustomer);
+        Customer customer = customerIdentityService.customerFor(business, globalCustomer, OrderChannel.MESSENGER.name());
         linkChannelIdentity(business, customer, psid);
 
         boolean profileComplete = StringUtils.hasText(globalCustomer.getEmail())
@@ -176,7 +177,7 @@ public class FacebookWebAppAuthServiceImpl implements FacebookWebAppAuthService 
                 phoneNumber,
                 fullName);
 
-        Customer customer = customerIdentityService.customerFor(business, globalCustomer);
+        Customer customer = customerIdentityService.customerFor(business, globalCustomer, OrderChannel.MESSENGER.name());
         linkChannelIdentity(business, customer, deviceId);
 
         boolean profileComplete = StringUtils.hasText(globalCustomer.getEmail())

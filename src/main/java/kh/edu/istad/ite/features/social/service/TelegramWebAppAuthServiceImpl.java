@@ -16,6 +16,7 @@ import kh.edu.istad.ite.features.social.dto.TelegramWebAppAuthResponse;
 import kh.edu.istad.ite.features.social.entity.BusinessTelegramBot;
 import kh.edu.istad.ite.features.social.repository.BusinessTelegramBotRepository;
 import kh.edu.istad.ite.shared.enums.BusinessFeature;
+import kh.edu.istad.ite.shared.enums.OrderChannel;
 import kh.edu.istad.ite.shared.helper.BusinessHelper;
 import kh.edu.istad.ite.shared.helper.TelegramInitDataValidator;
 import lombok.RequiredArgsConstructor;
@@ -109,7 +110,7 @@ public class TelegramWebAppAuthServiceImpl implements TelegramWebAppAuthService 
                 userInfo.phoneNumber(),
                 userInfo.getFullName());
 
-        Customer customer = customerIdentityService.customerFor(business, globalCustomer);
+        Customer customer = customerIdentityService.customerFor(business, globalCustomer, OrderChannel.TELEGRAM.name());
         linkChannelIdentity(business, customer, telegramUser);
 
         boolean profileComplete = StringUtils.hasText(globalCustomer.getEmail())

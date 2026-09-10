@@ -151,7 +151,7 @@ public class StorefrontCartService {
         List<CartItemSelection> selections = resolveSelections(item, request.selections());
         List<CartItemAddOn> addOns = resolveAddOns(item, request.addOnIds());
 
-        Customer customer = customerIdentityService.customerFor(business, shopper);
+        Customer customer = customerIdentityService.customerFor(business, shopper, OrderChannel.WEB.name());
         Cart cart = activeCartFor(customer, business);
 
         String selectionKey = selections.stream()

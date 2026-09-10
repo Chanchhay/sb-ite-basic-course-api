@@ -12,5 +12,13 @@ public class OpenSessionRequest {
     @PositiveOrZero(message = "Opening balance must be zero or positive")
     private BigDecimal openingBalance;
 
+    private BigDecimal baseOpeningBalance;
+
+    private String secondaryCurrency;
+
+    private BigDecimal secondaryOpeningBalance;
+
+    private BigDecimal secondaryExchangeRate;
+
     private String note;
 }
