@@ -191,11 +191,11 @@ public class SecurityConfig {
                                 "/api/v1/admin/audit-logs/**")
                         .access(permissionOrSuperAdmin("admin-audit:read"))
 
-                        // Admin Channels (read-only list of businesses' channel adoption)
+                        // Admin Channels
                         .requestMatchers(HttpMethod.GET, "/api/v1/admin/channels")
                         .access(permissionOrSuperAdmin("admin-channel:read"))
 
-                        // Sales Channels (the platform-wide channel catalog: POS, WEB, Telegram, ...)
+                        // Sales Channels
                         .requestMatchers(HttpMethod.GET, "/api/v1/sales-channels", "/api/v1/sales-channels/**")
                         .access(permissionOrBusinessRole("item:read"))
                         .requestMatchers(HttpMethod.POST, "/api/v1/sales-channels")
@@ -223,9 +223,7 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.DELETE, "/api/v1/platform/roles/**")
                         .access(permissionOrSuperAdmin("role:delete"))
 
-                        // Platform Staff. Creating/updating a staff member is how a role
-                        // gets handed to them, so these reuse role:assign rather than
-                        // introducing a staff-specific PermissionCode.
+                        // Platform Staff
                         .requestMatchers(HttpMethod.GET, "/api/v1/platform/staff", "/api/v1/platform/staff/**")
                         .access(permissionOrSuperAdmin("role:read"))
                         .requestMatchers(HttpMethod.POST, "/api/v1/platform/staff")
