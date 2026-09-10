@@ -7,6 +7,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -64,9 +65,9 @@ import kh.edu.istad.ite.features.order.dto.PayOrderRequest;
 import kh.edu.istad.ite.features.order.dto.PaymentStatusResponse;
 import kh.edu.istad.ite.features.order.dto.SaleResponse;
 import kh.edu.istad.ite.features.order.dto.UpdateOrderItemRequest;
-import kh.edu.istad.ite.features.order.dto.UpdateOrderCustomerRequest;
 import kh.edu.istad.ite.features.order.dto.UpdateOrderDiscountRequest;
 import kh.edu.istad.ite.features.order.dto.UpdateOrderNoteRequest;
+import kh.edu.istad.ite.features.order.dto.UpdateOrderCustomerRequest;
 import kh.edu.istad.ite.features.order.entity.Order;
 import kh.edu.istad.ite.features.order.entity.OrderItem;
 import kh.edu.istad.ite.features.order.entity.Sale;
@@ -114,6 +115,7 @@ public class OrderServiceImpl implements OrderService {
 
     private static final String CURRENCY_KHR = "KHR";
     private static final int QR_VALIDITY_MINUTES = 2;
+    private static final DateTimeFormatter INVOICE_DATE = DateTimeFormatter.ofPattern("yyyyMMdd");
 
     private final BusinessHelper businessHelper;
     private final CurrencyDisplayHelper currencyDisplayHelper;
@@ -237,7 +239,23 @@ public class OrderServiceImpl implements OrderService {
 
         if (OrderStatus.PAID.equals(order.getStatus())) {
             saleRepository.findByOrderId(order.getId())
-                    .ifPresent(sale -> response.setPaymentMethod(sale.getPaymentMethod()));
+                    .ifPresent(sale -> {
+                        response.setPaymentMethod(sale.getPaymentMethod());
+                        response.setPaidAmount(sale.getPaidAmount());
+                        response.setChangeAmount(sale.getChangeAmount());
+                        if (StringUtils.hasText(sale.getNote())) {
+                            response.setTenderNote(sale.getNote());
+                            if (!StringUtils.hasText(response.getNote())) {
+                                response.setNote(sale.getNote());
+                            }
+                        }
+                        if (StringUtils.hasText(sale.getDisplayCurrency())) {
+                            response.setDisplayCurrency(sale.getDisplayCurrency());
+                        }
+                        if (sale.getDisplayExchangeRate() != null) {
+                            response.setDisplayExchangeRate(sale.getDisplayExchangeRate());
+                        }
+                    });
         }
 
         return response;
@@ -321,9 +339,16 @@ public class OrderServiceImpl implements OrderService {
 
         requireSettleable(order);
 
-        if (OrderChannel.POS.equals(order.getChannel())
-                && registerSessionIdFor(business, order) == null) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "No open register session found for current cashier");
+        if (OrderChannel.POS.equals(order.getChannel())) {
+            boolean hasOpenSession = false;
+            Optional<RegisterSession> sessionOpt =
+                    registerSessionRepository.findByBusinessIdAndStatus(business.getId(), SessionStatus.OPEN);
+            if (sessionOpt.isPresent() && sessionOpt.get().getParticipants().contains(AuthHelper.currentUserId().toString())) {
+                hasOpenSession = true;
+            }
+            if (!hasOpenSession) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "No open register session found for current cashier");
+            }
         }
 
         int scale = scaleFor(order);
@@ -480,6 +505,9 @@ public class OrderServiceImpl implements OrderService {
         BigDecimal effectiveTotal = order.getTotal();
 
         order.setStatus(OrderStatus.PAID);
+        if (StringUtils.hasText(note)) {
+            order.setNote(note);
+        }
         orderRepository.save(order);
 
         Sale sale = new Sale();
@@ -999,7 +1027,9 @@ public class OrderServiceImpl implements OrderService {
     }
 
     private String nextInvoiceNumber(UUID businessId) {
-        return invoiceNumberGenerator.next(businessId);
+        String datePart = LocalDateTime.now().format(INVOICE_DATE);
+        long sequence = orderRepository.countByBusinessId(businessId) + 1;
+        return "INV-" + datePart + "-" + String.format("%05d", sequence);
     }
 
     @Override
@@ -1013,15 +1043,34 @@ public class OrderServiceImpl implements OrderService {
                 .map(Order::getId)
                 .toList();
 
-        java.util.Map<UUID, PaymentMethodType> paymentMethodByOrderId = paidOrderIds.isEmpty()
+        java.util.Map<UUID, Sale> saleByOrderId = paidOrderIds.isEmpty()
                 ? java.util.Map.of()
                 : saleRepository.findByOrder_IdIn(paidOrderIds).stream()
                         .collect(java.util.stream.Collectors.toMap(
-                                sale -> sale.getOrder().getId(), Sale::getPaymentMethod));
+                                sale -> sale.getOrder().getId(),
+                                sale -> sale,
+                                (existing, replacing) -> existing));
 
         return PageResponse.from(orders.map(order -> {
             OrderResponse response = orderMapper.toResponse(order);
-            response.setPaymentMethod(paymentMethodByOrderId.get(order.getId()));
+            Sale sale = saleByOrderId.get(order.getId());
+            if (sale != null) {
+                response.setPaymentMethod(sale.getPaymentMethod());
+                response.setPaidAmount(sale.getPaidAmount());
+                response.setChangeAmount(sale.getChangeAmount());
+                if (StringUtils.hasText(sale.getNote())) {
+                    response.setTenderNote(sale.getNote());
+                    if (!StringUtils.hasText(response.getNote())) {
+                        response.setNote(sale.getNote());
+                    }
+                }
+                if (StringUtils.hasText(sale.getDisplayCurrency())) {
+                    response.setDisplayCurrency(sale.getDisplayCurrency());
+                }
+                if (sale.getDisplayExchangeRate() != null) {
+                    response.setDisplayExchangeRate(sale.getDisplayExchangeRate());
+                }
+            }
             return response;
         }));
     }
@@ -1057,15 +1106,34 @@ public class OrderServiceImpl implements OrderService {
                 .map(Order::getId)
                 .toList();
 
-        java.util.Map<UUID, PaymentMethodType> paymentMethodByOrderId = paidOrderIds.isEmpty()
+        java.util.Map<UUID, Sale> saleByOrderId = paidOrderIds.isEmpty()
                 ? java.util.Map.of()
                 : saleRepository.findByOrder_IdIn(paidOrderIds).stream()
                         .collect(java.util.stream.Collectors.toMap(
-                                sale -> sale.getOrder().getId(), Sale::getPaymentMethod));
+                                sale -> sale.getOrder().getId(),
+                                sale -> sale,
+                                (existing, replacing) -> existing));
 
         return PageResponse.from(orders.map(order -> {
             OrderResponse response = orderMapper.toResponse(order);
-            response.setPaymentMethod(paymentMethodByOrderId.get(order.getId()));
+            Sale sale = saleByOrderId.get(order.getId());
+            if (sale != null) {
+                response.setPaymentMethod(sale.getPaymentMethod());
+                response.setPaidAmount(sale.getPaidAmount());
+                response.setChangeAmount(sale.getChangeAmount());
+                if (StringUtils.hasText(sale.getNote())) {
+                    response.setTenderNote(sale.getNote());
+                    if (!StringUtils.hasText(response.getNote())) {
+                        response.setNote(sale.getNote());
+                    }
+                }
+                if (StringUtils.hasText(sale.getDisplayCurrency())) {
+                    response.setDisplayCurrency(sale.getDisplayCurrency());
+                }
+                if (sale.getDisplayExchangeRate() != null) {
+                    response.setDisplayExchangeRate(sale.getDisplayExchangeRate());
+                }
+            }
             return response;
         }));
     }
@@ -1931,13 +1999,12 @@ public class OrderServiceImpl implements OrderService {
                 // What the till took, where it said so. Assuming the exact
                 // money was tendered made every reprinted offline receipt
                 // disagree with the one the customer was handed.
-                BigDecimal paid = dto.paidAmount() != null
-                        ? dto.paidAmount()
-                        : savedOrder.getTotal();
-                sale.setPaidAmount(paid);
-                sale.setChangeAmount(dto.changeAmount() != null
+                BigDecimal paid = dto.paidAmount() != null ? dto.paidAmount() : savedOrder.getTotal();
+                BigDecimal change = dto.changeAmount() != null
                         ? dto.changeAmount()
-                        : paid.subtract(savedOrder.getTotal()).max(BigDecimal.ZERO));
+                        : (paid.compareTo(savedOrder.getTotal()) >= 0 ? paid.subtract(savedOrder.getTotal()) : BigDecimal.ZERO);
+                sale.setPaidAmount(paid);
+                sale.setChangeAmount(change);
                 sale.setPaymentMethod(dto.paymentMethod() != null ? dto.paymentMethod() : PaymentMethodType.CASH);
                 sale.setItemCount(savedOrder.getItems() != null ? savedOrder.getItems().size() : 0);
                 sale.setSoldAt(dto.createdAt() != null ? LocalDateTime.ofInstant(dto.createdAt(), ZoneId.systemDefault()) : LocalDateTime.now());
