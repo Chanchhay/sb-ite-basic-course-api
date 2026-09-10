@@ -403,8 +403,6 @@ public class OrderServiceImpl implements OrderService {
 
         settle(business, order, PaymentMethodType.DIGITAL, order.getTotal(), null);
 
-        telegramAlertService.sendQrPaymentAlert(order);
-
         return new PaymentStatusResponse(
                 order.getId(), OrderStatus.PAID, QrStatus.PAID, true,
                 "Payment confirmed by Bakong", qrCode.getExpiresAt(), paidAt);
@@ -539,6 +537,8 @@ public class OrderServiceImpl implements OrderService {
                         }
                     });
         }
+
+        telegramAlertService.sendPaymentAlert(order, paymentMethod);
 
         return saved;
     }
@@ -1945,6 +1945,12 @@ public class OrderServiceImpl implements OrderService {
 
                 // Deduct Inventory Stock for Tracked Items
                 consumeStockForOrder(business, savedOrder);
+
+                // This bypasses settle() entirely (an offline POS sale
+                // synced after the fact), which is the one other place a
+                // sale gets created and stock gets cut without ever
+                // notifying Telegram.
+                telegramAlertService.sendPaymentAlert(savedOrder, sale.getPaymentMethod());
             }
 
             syncedUuids.add(dto.uuid());

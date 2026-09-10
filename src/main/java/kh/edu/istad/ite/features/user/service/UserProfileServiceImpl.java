@@ -254,10 +254,6 @@ public class UserProfileServiceImpl implements UserProfileService {
             return priorityMatch;
         }
 
-        // Platform/business staff carry only the generic "USER" base role plus
-        // a named custom role (platform_xxx / biz_<id>_xxx, added after this
-        // priority list was written) — show that role's readable name instead
-        // of the meaningless "USER" every account has.
         Optional<RoleRepresentation> staffRole = effectiveRoles.stream()
                 .filter(role -> role.getName().startsWith("platform_") || role.getName().startsWith("biz_"))
                 .findFirst();

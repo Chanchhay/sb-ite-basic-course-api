@@ -14,11 +14,6 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
-/**
- * Access to every endpoint here is enforced in SecurityConfig via the
- * role:read/create/update/delete permissions (or SUPER_ADMIN outright) —
- * not re-checked here.
- */
 @RestController
 @RequestMapping("/api/v1/platform/roles")
 @RequiredArgsConstructor

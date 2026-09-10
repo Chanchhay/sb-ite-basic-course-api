@@ -13,11 +13,6 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 import java.util.UUID;
 
-/**
- * Access to every endpoint here is enforced in SecurityConfig via the
- * role:read/assign permissions (or SUPER_ADMIN outright) — not re-checked
- * here.
- */
 @RestController
 @RequestMapping("/api/v1/platform/staff")
 @RequiredArgsConstructor

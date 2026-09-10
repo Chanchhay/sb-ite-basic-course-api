@@ -213,16 +213,12 @@ public class StaffManagementService {
     }
 
     public StaffResponse getPlatformStaffDetail(UUID userId) {
-        // `business IS NULL` alone also matches a business owner's or a plain
-        // customer's own profile (see findByBusinessIdAndStaffStatusIsNotNullOrderByJoinedAtDesc) —
-        // require staffStatus too so this can't return one of those as "staff".
         UserProfile profile = userProfileRepository.findByUserIdAndBusinessId(userId, null)
                 .filter(candidate -> candidate.getStaffStatus() != null)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Staff not found"));
         return mapToStaffResponseOrThrow404(profile);
     }
 
-    /** List views: an orphaned profile shouldn't fail the whole page, so it's dropped (and logged). */
     private StaffResponse mapToStaffResponseOrNull(UserProfile profile) {
         try {
             return mapToStaffResponse(profile);
@@ -235,7 +231,6 @@ public class StaffManagementService {
         }
     }
 
-    /** Detail views: the caller asked for exactly this one, so an orphaned profile is a 404, not a 500. */
     private StaffResponse mapToStaffResponseOrThrow404(UserProfile profile) {
         try {
             return mapToStaffResponse(profile);
