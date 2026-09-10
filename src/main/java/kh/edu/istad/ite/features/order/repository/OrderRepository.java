@@ -67,6 +67,7 @@ public interface OrderRepository extends JpaRepository<Order, UUID>, JpaSpecific
             Pageable pageable);
     Optional<Order> findByIdAndBusinessId(UUID id, UUID businessId);
     Optional<Order> findByBusinessIdAndInvoiceNumber(UUID businessId, String invoiceNumber);
+    Optional<Order> findByBusinessIdAndClientReference(UUID businessId, String clientReference);
     boolean existsByInvoiceNumber(String invoiceNumber);
     long countByBusinessId(UUID businessId);
 

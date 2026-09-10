@@ -1910,7 +1910,7 @@ public class OrderServiceImpl implements OrderService {
                 continue;
             }
 
-            Optional<Order> existingOpt = orderRepository.findByBusinessIdAndInvoiceNumber(business.getId(), dto.uuid());
+            Optional<Order> existingOpt = orderRepository.findByBusinessIdAndClientReference(business.getId(), dto.uuid());
 
             Order order;
             boolean isNewOrder = false;
@@ -1937,7 +1937,14 @@ public class OrderServiceImpl implements OrderService {
                 isNewOrder = true;
                 order = new Order();
                 order.setBusiness(business);
-                order.setInvoiceNumber(dto.uuid());
+                // The offline device's own id is kept only to recognize a
+                // resync of this same sale (the lookup above) — the real,
+                // gapless, collision-free invoice number always comes from
+                // the shared counter, the same one every online channel
+                // uses, never from whatever the device made up while it had
+                // no way to ask the server what came next.
+                order.setClientReference(dto.uuid());
+                order.setInvoiceNumber(nextInvoiceNumber(business.getId()));
                 order.setChannel(dto.channel() != null ? dto.channel() : OrderChannel.POS);
                 order.setStatus(dto.status() != null ? dto.status() : OrderStatus.PAID);
                 order.setSubtotal(dto.subtotal() != null ? dto.subtotal() : BigDecimal.ZERO);

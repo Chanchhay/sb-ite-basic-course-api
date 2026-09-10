@@ -50,6 +50,10 @@ public class Order extends BasedAuditingEntity {
     @Column(name = "invoice_number", nullable = false, length = 60)
     private String invoiceNumber;
 
+    /** The offline POS device's own locally-generated id for this sale, used only to recognize a resync of the same sale — never the invoice number shown to anyone. Null for orders that were never offline. */
+    @Column(name = "client_reference", length = 100)
+    private String clientReference;
+
     @Column(name = "cashier_id")
     private UUID cashierId;
 
