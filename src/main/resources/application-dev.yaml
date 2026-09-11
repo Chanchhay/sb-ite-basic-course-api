@@ -53,6 +53,12 @@ keycloak:
     realm: master
     target-realm: ${TARGET_REALM}
     send-verification-email: true
+    business-verify-email:
+      client-id: ${KEYCLOAK_BUSINESS_CLIENT_ID:fluxipos-client}
+      redirect-uri: ${BUSINESS_VERIFY_EMAIL_REDIRECT_URI:https://bo-dashboard-ite-basic-lyart.vercel.app}
+    customer-verify-email:
+      client-id: ${KEYCLOAK_CUSTOMER_CLIENT_ID:fluxibiz-front}
+      redirect-uri: ${CUSTOMER_VERIFY_EMAIL_REDIRECT_URI:https://fluxibiz.store/api/auth/login}
 
 app:
   cors:

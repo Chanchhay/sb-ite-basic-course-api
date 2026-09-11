@@ -1,5 +1,6 @@
 package kh.edu.istad.ite.features.auth;
 
+import jakarta.ws.rs.BadRequestException;
 import jakarta.ws.rs.NotFoundException;
 import jakarta.ws.rs.ProcessingException;
 import jakarta.ws.rs.WebApplicationException;
@@ -32,6 +33,7 @@ import org.springframework.dao.DataAccessException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 import org.springframework.web.server.ResponseStatusException;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -75,7 +77,7 @@ public class AuthServiceImpl implements AuthService{
                 createDefaultBusinessForUser(UUID.fromString(createdUserId), registerRequest);
             }
             
-            sendVerificationEmail(userResource, createdUserId);
+            sendVerificationEmail(userResource, createdUserId, role);
 
             UserRepresentation createdUser = userResource.toRepresentation();
             return authMapper.toRegisterResponse(createdUser, role);
@@ -172,14 +174,39 @@ public class AuthServiceImpl implements AuthService{
         userProfileRepository.save(userProfile);
     }
 
-    private void sendVerificationEmail(UserResource userResource, String createdUserId) {
+    /**
+     * Sends the verification email tied to the app the user signed up for, so the
+     * page the link opens can send business owners to the back office and
+     * everyone else to the storefront. Without a client, Keycloak attributes the
+     * link to its own account console and has nowhere to send them.
+     */
+    private void sendVerificationEmail(UserResource userResource, String createdUserId, String role) {
         if (!props.isSendVerificationEmail()) {
             log.info("Skipping verification email for Keycloak user {}", createdUserId);
             return;
         }
 
+        KeycloakAdminClientProps.VerifyEmailTarget target = RoleEnum.BUSINESS.name().equals(role)
+                ? props.getBusinessVerifyEmail()
+                : props.getCustomerVerifyEmail();
+
         try {
-            userResource.sendVerifyEmail();
+            if (StringUtils.hasText(target.getClientId()) && StringUtils.hasText(target.getRedirectUri())) {
+                userResource.sendVerifyEmail(target.getClientId(), target.getRedirectUri());
+            } else {
+                userResource.sendVerifyEmail();
+            }
+        } catch (BadRequestException e) {
+            // Keycloak rejects a redirect URI missing from the client's "Valid
+            // redirect URIs". A misconfigured client must not cost the user their
+            // email, so fall back to the plain link.
+            log.warn("Keycloak rejected verify-email target {} -> {} for user {}; sending without redirect: {}",
+                    target.getClientId(), target.getRedirectUri(), createdUserId, e.getMessage());
+            try {
+                userResource.sendVerifyEmail();
+            } catch (WebApplicationException | ProcessingException retryError) {
+                log.warn("Failed to send verification email for Keycloak user {}: {}", createdUserId, retryError.getMessage());
+            }
         } catch (WebApplicationException | ProcessingException e) {
             log.warn("Failed to send verification email for Keycloak user {}: {}", createdUserId, e.getMessage());
         }
